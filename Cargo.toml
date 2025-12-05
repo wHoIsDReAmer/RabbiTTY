@@ -4,9 +4,18 @@ version = "0.0.1"
 edition = "2024"
 authors = ["neverprogrammer@gmail.com"]
 
+[profile.release]
+lto = true
+opt-level = 'z'
+codegen-units = 1
+panic = "abort"
+debug = false
+strip = false
+
 [dependencies]
 # GUI & Rendering
 iced = { version = "0.13.1", default-features = false, features = ["wgpu", "tokio", "canvas", "advanced", "image"] }
+wgpu = "27.0.1"
 
 # Async
 tokio = { version = "1.48", default-features = false, features = ["rt-multi-thread", "macros", "net", "sync", "time"] }
@@ -14,3 +23,4 @@ futures = "0.3.31"
 
 # Terminal
 alacritty_terminal = "0.25.1"
+portable-pty = "0.9"

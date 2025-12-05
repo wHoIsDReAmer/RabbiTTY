@@ -1,8 +1,9 @@
 mod gui;
 
-use crate::gui::Counter;
+use crate::gui::App;
 
-#[tokio::main]
-async fn main() {
-    let _ = iced::run("foo", Counter::update, Counter::view);
+fn main() -> iced::Result {
+    iced::application("foo", App::update, App::view)
+        .subscription(App::subscription)
+        .run()
 }
