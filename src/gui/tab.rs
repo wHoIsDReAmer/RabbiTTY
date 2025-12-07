@@ -20,6 +20,14 @@ impl TerminalTab {
         Self::launch(ShellKind::Zsh)
     }
 
+    pub fn cmd() -> Self {
+        Self::launch(ShellKind::Cmd)
+    }
+
+    pub fn powershell() -> Self {
+        Self::launch(ShellKind::PowerShell)
+    }
+
     fn launch(shell: ShellKind) -> Self {
         let size = TerminalSize::new(DEFAULT_COLUMNS, DEFAULT_LINES);
         let session = match Session::spawn(shell.launch_spec(size)) {
@@ -63,15 +71,21 @@ impl TerminalTab {
 #[derive(Debug, Clone, Copy)]
 pub enum ShellKind {
     Zsh,
+    Cmd,
+    PowerShell,
 }
 
 impl ShellKind {
     fn launch_spec(self, size: TerminalSize) -> LaunchSpec<'static> {
+        let (program, args): (&str, &[&str]) = match self {
+            ShellKind::Zsh => ("zsh", &["-i"]),
+            ShellKind::Cmd => ("cmd", &["/K"]),
+            ShellKind::PowerShell => ("powershell", &["-NoLogo"]),
+        };
+
         LaunchSpec {
-            program: match self {
-                ShellKind::Zsh => "zsh",
-            },
-            args: &["-i"],
+            program,
+            args,
             rows: size.lines as u16,
             cols: size.columns as u16,
         }
@@ -82,6 +96,8 @@ impl Display for ShellKind {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match self {
             ShellKind::Zsh => write!(f, "zsh"),
+            ShellKind::Cmd => write!(f, "cmd"),
+            ShellKind::PowerShell => write!(f, "powershell"),
         }
     }
 }

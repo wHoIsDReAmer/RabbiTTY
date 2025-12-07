@@ -23,7 +23,11 @@ pub struct App {
 impl App {
     pub fn new() -> Self {
         let render = RenderConfig::default();
-        let tabs = vec![TerminalTab::zsh()];
+        let tabs = vec![
+            TerminalTab::zsh(),
+            TerminalTab::cmd(),
+            TerminalTab::powershell(),
+        ];
         Self {
             tabs,
             active_tab: 0,
