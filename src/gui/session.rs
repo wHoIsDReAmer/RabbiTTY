@@ -1,8 +1,10 @@
-use portable_pty::{Child, CommandBuilder, PtySize, native_pty_system};
-use std::io::{Read, Write};
+use portable_pty::{Child, CommandBuilder, MasterPty, PtySize, native_pty_system};
+use std::io::{ErrorKind, Read, Write};
 use std::sync::mpsc::{self, Receiver};
 use std::sync::{Arc, Mutex};
 use std::thread;
+use std::thread::JoinHandle;
+use std::time::Duration;
 
 pub struct LaunchSpec<'a> {
     pub program: &'a str,
@@ -13,8 +15,10 @@ pub struct LaunchSpec<'a> {
 
 pub struct Session {
     writer: Arc<Mutex<Box<dyn Write + Send>>>,
-    output_rx: Receiver<String>,
-    _child: Box<dyn Child + Send>,
+    output_rx: Receiver<Vec<u8>>,
+    child: Option<Box<dyn Child + Send>>,
+    master: Option<Box<dyn MasterPty + Send>>,
+    reader: Option<JoinHandle<()>>,
 }
 
 #[derive(Debug, Clone)]
@@ -58,16 +62,25 @@ impl Session {
         let writer = Arc::new(Mutex::new(writer));
         let (tx, rx) = mpsc::channel();
 
-        thread::spawn(move || {
+        let _writer_for_reader = Arc::clone(&writer);
+        let reader_handle = thread::spawn(move || {
             let mut buf = [0u8; 4096];
             loop {
                 match reader.read(&mut buf) {
                     Ok(0) => break,
                     Ok(n) => {
-                        let chunk = String::from_utf8_lossy(&buf[..n]).to_string();
+                        let chunk = buf[..n].to_vec();
+                        if chunk.is_empty() {
+                            continue;
+                        }
                         if tx.send(chunk).is_err() {
                             break;
                         }
+                    }
+                    Err(err) if err.kind() == ErrorKind::Interrupted => continue,
+                    Err(err) if err.kind() == ErrorKind::WouldBlock => {
+                        thread::sleep(Duration::from_millis(5));
+                        continue;
                     }
                     Err(_) => break,
                 }
@@ -77,7 +90,9 @@ impl Session {
         Ok(Self {
             writer,
             output_rx: rx,
-            _child: child,
+            child: Some(child),
+            master: Some(pair.master),
+            reader: Some(reader_handle),
         })
     }
 
@@ -89,14 +104,34 @@ impl Session {
         guard
             .write_all(line.as_bytes())
             .and_then(|_| guard.write_all(b"\n"))
+            .and_then(|_| guard.flush())
             .map_err(|err| SessionError::Io(format!("write failed: {err}")))
     }
 
-    pub fn drain_output(&self) -> Vec<String> {
+    pub fn drain_output(&self) -> Vec<Vec<u8>> {
         let mut chunks = Vec::new();
         while let Ok(chunk) = self.output_rx.try_recv() {
             chunks.push(chunk);
         }
         chunks
+    }
+
+    pub fn writer(&self) -> Arc<Mutex<Box<dyn Write + Send>>> {
+        Arc::clone(&self.writer)
+    }
+}
+
+impl Drop for Session {
+    fn drop(&mut self) {
+        if let Some(mut child) = self.child.take() {
+            let _ = child.kill();
+            let _ = child.wait();
+        }
+
+        self.master.take();
+
+        if let Some(handle) = self.reader.take() {
+            let _ = handle.join();
+        }
     }
 }

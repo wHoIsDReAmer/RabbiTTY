@@ -1,6 +1,6 @@
 #![allow(unused)]
 
-use iced::{color, Color};
+use iced::{Color, color};
 
 #[derive(Debug, Clone, Copy)]
 pub struct Palette {

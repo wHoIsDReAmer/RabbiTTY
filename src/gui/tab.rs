@@ -1,6 +1,8 @@
 use crate::gui::session::{LaunchSpec, Session, SessionError};
 use crate::gui::terminal::{DEFAULT_COLUMNS, DEFAULT_LINES, TerminalEngine, TerminalSize};
 use std::fmt::{Display, Formatter};
+use std::io::Write;
+use std::sync::{Arc, Mutex};
 
 pub struct TerminalTab {
     pub title: String,
@@ -30,9 +32,17 @@ impl TerminalTab {
 
     fn launch(shell: ShellKind) -> Self {
         let size = TerminalSize::new(DEFAULT_COLUMNS, DEFAULT_LINES);
-        let session = match Session::spawn(shell.launch_spec(size)) {
-            Ok(session) => TerminalSession::Active(session),
-            Err(err) => TerminalSession::Failed(err.to_string()),
+        let (session, writer) = match Session::spawn(shell.launch_spec(size)) {
+            Ok(session) => {
+                let writer = session.writer();
+                (TerminalSession::Active(session), writer)
+            }
+            Err(err) => (
+                TerminalSession::Failed(err.to_string()),
+                Arc::new(Mutex::new(
+                    Box::new(std::io::sink()) as Box<dyn Write + Send>
+                )),
+            ),
         };
 
         Self {
@@ -40,14 +50,14 @@ impl TerminalTab {
             shell,
             session,
             input: String::new(),
-            engine: TerminalEngine::new(size, 10_000),
+            engine: TerminalEngine::new(size, 10_000, writer),
         }
     }
 
     pub fn pull_output(&mut self) {
         if let TerminalSession::Active(session) = &self.session {
             for chunk in session.drain_output() {
-                self.engine.feed_str(&chunk);
+                self.engine.feed_bytes(&chunk);
             }
         }
     }
@@ -79,8 +89,8 @@ impl ShellKind {
     fn launch_spec(self, size: TerminalSize) -> LaunchSpec<'static> {
         let (program, args): (&str, &[&str]) = match self {
             ShellKind::Zsh => ("zsh", &["-i"]),
-            ShellKind::Cmd => ("cmd", &["/K"]),
-            ShellKind::PowerShell => ("powershell", &["-NoLogo"]),
+            ShellKind::Cmd => ("cmd", &["/Q", "/K"]),
+            ShellKind::PowerShell => ("powershell", &["-NoLogo", "-ExecutionPolicy", "Bypass"]),
         };
 
         LaunchSpec {
