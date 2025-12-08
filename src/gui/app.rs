@@ -1,17 +1,21 @@
-use crate::gui::components::{button_primary, button_secondary, panel, text_input_default};
+use crate::gui::components::{button_primary, button_secondary, panel};
 use crate::gui::render::RenderConfig;
-use crate::gui::tab::{TerminalSession, TerminalTab};
+use crate::gui::tab::TerminalTab;
+use iced::keyboard::{self, Key, Modifiers};
 use iced::widget::text::LineHeight;
 use iced::widget::{column, row, scrollable, text};
-use iced::{Element, Length, Subscription, Task, time};
+use iced::{Element, Event, Length, Subscription, Task, event, time};
 use std::time::Duration;
 
 #[derive(Debug, Clone)]
 pub enum Message {
     TabSelected(usize),
-    InputChanged(String),
-    SubmitInput,
     Tick,
+    KeyPressed {
+        key: Key,
+        modifiers: Modifiers,
+        text: Option<String>,
+    },
 }
 
 pub struct App {
@@ -40,25 +44,18 @@ impl App {
             Message::TabSelected(index) if index < self.tabs.len() => {
                 self.active_tab = index;
             }
-            Message::InputChanged(input) => {
-                if let Some(tab) = self.tabs.get_mut(self.active_tab) {
-                    tab.input = input;
-                }
-            }
-            Message::SubmitInput => {
-                if let Some(tab) = self.tabs.get_mut(self.active_tab)
-                    && let TerminalSession::Active(session) = &tab.session
-                    && !tab.input.is_empty()
-                {
-                    if let Err(err) = session.send_line(&tab.input) {
-                        tab.session = TerminalSession::Failed(err.to_string());
-                    }
-                    tab.input.clear();
-                }
-            }
             Message::Tick => {
                 if let Some(tab) = self.tabs.get_mut(self.active_tab) {
                     tab.pull_output();
+                }
+            }
+            Message::KeyPressed {
+                key,
+                modifiers,
+                text,
+            } => {
+                if let Some(tab) = self.tabs.get_mut(self.active_tab) {
+                    tab.handle_key(&key, modifiers, text.as_deref());
                 }
             }
             _ => {}
@@ -97,18 +94,10 @@ impl App {
             text(rendered)
                 .size(15)
                 .line_height(LineHeight::Relative(1.2))
-                .font(iced::font::Font::MONOSPACE), // Use monospace font
+                .font(iced::font::Font::MONOSPACE),
         )
         .height(Length::Fill)
         .width(Length::Fill);
-
-        let input_bar = text_input_default("type and hit enter", &active_tab.input)
-            .on_input(Message::InputChanged)
-            .on_submit(Message::SubmitInput);
-
-        let send_button = button_primary("Send").on_press(Message::SubmitInput);
-
-        let input_row = row(vec![input_bar.into(), send_button.into()]).spacing(8);
 
         let content = column(vec![
             text(format!("Shell: {}", active_tab.shell)).into(),
@@ -120,7 +109,6 @@ impl App {
             .into(),
             text(status_text).size(13).into(),
             scroll.into(),
-            input_row.into(),
         ])
         .spacing(8)
         .padding(12);
@@ -132,7 +120,28 @@ impl App {
     }
 
     pub fn subscription(&self) -> Subscription<Message> {
-        time::every(Duration::from_millis(30)).map(|_| Message::Tick)
+        Subscription::batch([
+            // Ticking
+            time::every(Duration::from_millis(30)).map(|_| Message::Tick),
+            // Iced events (maybe will be added?)
+            event::listen_with(|event, _status, _id| {
+                if let Event::Keyboard(keyboard::Event::KeyPressed {
+                    key,
+                    modifiers,
+                    text,
+                    ..
+                }) = event
+                {
+                    Some(Message::KeyPressed {
+                        key,
+                        modifiers,
+                        text: text.map(|s| s.to_string()),
+                    })
+                } else {
+                    None
+                }
+            }),
+        ])
     }
 }
 

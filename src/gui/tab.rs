@@ -1,5 +1,6 @@
 use crate::gui::session::{LaunchSpec, Session, SessionError};
 use crate::gui::terminal::{DEFAULT_COLUMNS, DEFAULT_LINES, TerminalEngine, TerminalSize};
+use iced::keyboard::{Key, Modifiers, key::Named};
 use std::fmt::{Display, Formatter};
 use std::io::Write;
 use std::sync::{Arc, Mutex};
@@ -8,7 +9,6 @@ pub struct TerminalTab {
     pub title: String,
     pub shell: ShellKind,
     pub session: TerminalSession,
-    pub input: String,
     engine: TerminalEngine,
 }
 
@@ -49,7 +49,6 @@ impl TerminalTab {
             title: shell.to_string(),
             shell,
             session,
-            input: String::new(),
             engine: TerminalEngine::new(size, 10_000, writer),
         }
     }
@@ -75,6 +74,84 @@ impl TerminalTab {
 
     pub fn size(&self) -> TerminalSize {
         self.engine.size()
+    }
+
+    pub fn handle_key(&mut self, key: &Key, modifiers: Modifiers, text: Option<&str>) {
+        if let TerminalSession::Active(session) = &self.session
+            && let Some(bytes) = self.key_to_bytes(key, modifiers, text)
+            && let Err(err) = session.send_bytes(&bytes)
+        {
+            // TODO: changed it now just logging
+            eprintln!("Failed to send key to session: {err}")
+        }
+    }
+
+    fn key_to_bytes(&self, key: &Key, modifiers: Modifiers, text: Option<&str>) -> Option<Vec<u8>> {
+        match key {
+            Key::Named(named) => match named {
+                Named::Enter => Some(b"\r".to_vec()),
+                Named::Backspace => Some(b"\x7f".to_vec()),
+                Named::Tab => {
+                    if modifiers.shift() {
+                        Some(b"\x1b[Z".to_vec()) // Shift+Tab
+                    } else {
+                        Some(b"\t".to_vec())
+                    }
+                }
+                Named::Escape => Some(b"\x1b".to_vec()),
+                Named::ArrowUp => Some(b"\x1b[A".to_vec()),
+                Named::ArrowDown => Some(b"\x1b[B".to_vec()),
+                Named::ArrowRight => Some(b"\x1b[C".to_vec()),
+                Named::ArrowLeft => Some(b"\x1b[D".to_vec()),
+                Named::Home => Some(b"\x1b[H".to_vec()),
+                Named::End => Some(b"\x1b[F".to_vec()),
+                Named::Delete => Some(b"\x1b[3~".to_vec()),
+                Named::PageUp => Some(b"\x1b[5~".to_vec()),
+                Named::PageDown => Some(b"\x1b[6~".to_vec()),
+                Named::Insert => Some(b"\x1b[2~".to_vec()),
+                Named::F1 => Some(b"\x1bOP".to_vec()),
+                Named::F2 => Some(b"\x1bOQ".to_vec()),
+                Named::F3 => Some(b"\x1bOR".to_vec()),
+                Named::F4 => Some(b"\x1bOS".to_vec()),
+                Named::F5 => Some(b"\x1b[15~".to_vec()),
+                Named::F6 => Some(b"\x1b[17~".to_vec()),
+                Named::F7 => Some(b"\x1b[18~".to_vec()),
+                Named::F8 => Some(b"\x1b[19~".to_vec()),
+                Named::F9 => Some(b"\x1b[20~".to_vec()),
+                Named::F10 => Some(b"\x1b[21~".to_vec()),
+                Named::F11 => Some(b"\x1b[23~".to_vec()),
+                Named::F12 => Some(b"\x1b[24~".to_vec()),
+                Named::Space => {
+                    if modifiers.control() {
+                        Some(vec![0]) // Ctrl+Space = NUL
+                    } else {
+                        Some(b" ".to_vec())
+                    }
+                }
+                // TODO: add some specific key?
+                _ => None,
+            },
+
+            // Control + Alphabet actions
+            Key::Character(c) if modifiers.control() => {
+                // Ctrl+A..Z -> 0x01..0x1A
+                c.chars().next().and_then(|ch| {
+                    let upper = ch.to_ascii_uppercase();
+                    if upper.is_ascii_alphabetic() {
+                        Some(vec![(upper as u8) - b'A' + 1])
+                    } else {
+                        None
+                    }
+                })
+            }
+
+            // Plane char input actions
+            Key::Character(_) => {
+                // Regular character input
+                text.map(|t| t.as_bytes().to_vec())
+            }
+            _ => None,
+        }
     }
 }
 

@@ -96,14 +96,13 @@ impl Session {
         })
     }
 
-    pub fn send_line(&self, line: &str) -> Result<(), SessionError> {
+    pub fn send_bytes(&self, bytes: &[u8]) -> Result<(), SessionError> {
         let mut guard = self
             .writer
             .lock()
             .map_err(|err| SessionError::Io(format!("writer lock failed: {err}")))?;
         guard
-            .write_all(line.as_bytes())
-            .and_then(|_| guard.write_all(b"\n"))
+            .write_all(bytes)
             .and_then(|_| guard.flush())
             .map_err(|err| SessionError::Io(format!("write failed: {err}")))
     }
