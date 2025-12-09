@@ -1,5 +1,5 @@
-use crate::gui::session::{LaunchSpec, Session, SessionError};
-use crate::gui::terminal::{TerminalEngine, TerminalSize};
+use crate::session::{LaunchSpec, Session, SessionError};
+use crate::terminal::{TerminalEngine, TerminalSize};
 use iced::keyboard::{Key, Modifiers, key::Named};
 use std::fmt::{Display, Formatter};
 use std::io::Write;

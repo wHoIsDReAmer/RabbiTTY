@@ -1,4 +1,6 @@
 mod gui;
+mod session;
+mod terminal;
 
 use iced::Size;
 
