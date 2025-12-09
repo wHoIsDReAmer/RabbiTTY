@@ -6,7 +6,6 @@ use iced::widget::{center, column, container, mouse_area, scrollable, stack, tex
 use iced::{Element, Event, Length, Size, Subscription, Task, event, time, window};
 use std::time::Duration;
 
-// 셀당 픽셀 크기 (모노스페이스 폰트 기준 대략적인 값)
 const CELL_WIDTH: f32 = 9.0;
 const CELL_HEIGHT: f32 = 18.0;
 
@@ -80,12 +79,12 @@ impl App {
                 self.show_shell_picker = false;
             }
             Message::Tick => {
-                // 현재 탭의 출력 가져오기
+                // Get current tab outputs
                 if let Some(tab) = self.tabs.get_mut(self.active_tab) {
                     tab.pull_output();
                 }
 
-                // 죽은 탭들 제거
+                // Remove died tabs
                 let mut i = 0;
                 while i < self.tabs.len() {
                     if !self.tabs[i].is_alive() {
@@ -129,14 +128,15 @@ impl App {
             }
             Message::WindowResized(size) => {
                 self.window_size = size;
-                // 터미널 영역 계산 (탭바, 상태바, 패딩 등 제외)
+
+                // Terminal area calculation (subtract tab bar, status bar, padding, etc.)
                 let terminal_height = (size.height - 80.0).max(100.0);
                 let terminal_width = (size.width - 20.0).max(100.0);
 
                 let cols = (terminal_width / CELL_WIDTH) as usize;
                 let rows = (terminal_height / CELL_HEIGHT) as usize;
 
-                // 모든 탭 리사이즈
+                // Resize all tabs
                 for tab in &mut self.tabs {
                     tab.resize(cols.max(10), rows.max(5));
                 }

@@ -41,7 +41,7 @@ pub fn tab_bar<'a>(
     #[cfg(target_os = "macos")]
     let left_padding = 80.0;
     #[cfg(not(target_os = "macos"))]
-    let left_padding = 8.0;
+    let left_padding = 0.0;
 
     let padding = iced::Padding::new(0.0).left(left_padding);
 
@@ -203,12 +203,8 @@ fn browser_tab<'a>(title: &'a str, index: usize, is_active: bool) -> Element<'a,
             button::Style {
                 background: Some(Background::Color(bg_color)),
                 text_color,
-                border: Border {
-                    radius: 8.0.into(),
-                    width: 0.0,
-                    color: Color::TRANSPARENT,
-                },
                 shadow: iced::Shadow::default(),
+                ..Default::default()
             }
         });
 

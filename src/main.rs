@@ -31,20 +31,16 @@ fn main() -> iced::Result {
                 fullsize_content_view: true,
             },
 
-            #[cfg(target_os = "windows")]
-            decorations: false,
-
             ..Default::default()
         })
         .run_with(|| {
             let app = App::new();
 
-            // Apply Windows-specific styling (rounded corners, etc.)
             #[cfg(target_os = "windows")]
             let init_task: iced::Task<gui::app::Message> = window::get_latest()
                 .and_then(|id| {
                     window::run_with_handle(id, |handle| {
-                        platform::apply_windows_style(handle);
+                        platform::apply_style(handle);
                     })
                 })
                 .discard();
