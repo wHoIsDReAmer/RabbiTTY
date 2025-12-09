@@ -60,8 +60,6 @@ impl App {
                 }
             }
             Message::Exit => {
-                // Graceful shutdown
-                self.tabs.clear();
                 return window::get_latest().and_then(window::close);
             }
             _ => {}
@@ -91,7 +89,12 @@ impl App {
 
         let tab_row = row(tab_buttons).spacing(8).padding(8);
 
-        let active_tab = &self.tabs[self.active_tab];
+        let active_tab = if let Some(tab) = self.tabs.get(self.active_tab) {
+            tab
+        } else {
+            return column(vec![text("No tabs").into()]).into();
+        };
+
         let status_text = active_tab.status_text();
         let rendered = active_tab.rendered_text();
         let dims = active_tab.size();
