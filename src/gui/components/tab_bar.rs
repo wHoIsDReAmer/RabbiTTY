@@ -18,7 +18,7 @@ pub fn tab_bar<'a>(
 
     let add_btn = button(text("+").size(14))
         .on_press(on_add)
-        .padding([4, 10])
+        .padding([4, 7])
         .style(
             move |_theme: &Theme, status: button::Status| button::Style {
                 background: Some(Background::Color(Color::TRANSPARENT)),
@@ -37,13 +37,26 @@ pub fn tab_bar<'a>(
 
     tab_elements.push(add_btn.into());
 
-    container(row(tab_elements).spacing(2).padding([8, 8]))
-        .style(move |_theme: &Theme| container::Style {
-            background: Some(Background::Color(palette.surface)),
-            ..Default::default()
-        })
-        .width(Length::Fill)
-        .into()
+    // macOS: 좌측에 트래픽 라이트(닫기/최소화/확대) 공간 확보
+    #[cfg(target_os = "macos")]
+    let left_padding = 80.0;
+    #[cfg(not(target_os = "macos"))]
+    let left_padding = 8.0;
+
+    let padding = iced::Padding::new(6.0).left(left_padding).right(8.0);
+
+    container(
+        row(tab_elements)
+            .spacing(2)
+            .align_y(iced::Alignment::Center),
+    )
+    .style(move |_theme: &Theme| container::Style {
+        background: Some(Background::Color(palette.surface)),
+        ..Default::default()
+    })
+    .padding(padding)
+    .width(Length::Fill)
+    .into()
 }
 
 fn browser_tab<'a>(title: &'a str, index: usize, is_active: bool) -> Element<'a, Message> {
