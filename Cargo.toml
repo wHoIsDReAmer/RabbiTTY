@@ -36,3 +36,10 @@ futures = "0.3.31"
 # Terminal
 alacritty_terminal = "0.25.1"
 portable-pty = "0.9"
+
+# Windows-specific (DWM API for rounded corners and shadow)
+[target.'cfg(target_os = "windows")'.dependencies]
+windows = { version = "0.58", features = [
+    "Win32_Graphics_Dwm",
+    "Win32_Foundation",
+] }

@@ -1,4 +1,4 @@
-use crate::gui::components::{button_primary, button_secondary, panel, tab_bar};
+use crate::gui::components::{button_secondary, panel, tab_bar};
 use crate::gui::tab::{ShellKind, TerminalTab};
 use iced::keyboard::{self, Key, Modifiers};
 use iced::widget::text::LineHeight;
@@ -24,6 +24,9 @@ pub enum Message {
         text: Option<String>,
     },
     WindowResized(Size),
+    WindowMinimize,
+    WindowMaximize,
+    WindowDrag,
     Exit,
 }
 
@@ -114,6 +117,15 @@ impl App {
             }
             Message::Exit => {
                 return window::get_latest().and_then(window::close);
+            }
+            Message::WindowMinimize => {
+                return window::get_latest().and_then(|id| window::minimize(id, true));
+            }
+            Message::WindowMaximize => {
+                return window::get_latest().and_then(window::toggle_maximize);
+            }
+            Message::WindowDrag => {
+                return window::get_latest().and_then(window::drag);
             }
             Message::WindowResized(size) => {
                 self.window_size = size;

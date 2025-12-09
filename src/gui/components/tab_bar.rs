@@ -1,6 +1,6 @@
 use crate::gui::app::Message;
 use crate::gui::theme::Palette;
-use iced::widget::{button, container, row, text};
+use iced::widget::{button, container, mouse_area, row, text};
 use iced::{Background, Border, Color, Element, Length, Theme};
 
 pub fn tab_bar<'a>(
@@ -37,26 +37,119 @@ pub fn tab_bar<'a>(
 
     tab_elements.push(add_btn.into());
 
-    // macOS: 좌측에 트래픽 라이트(닫기/최소화/확대) 공간 확보
+    // macOS: left control buttons
     #[cfg(target_os = "macos")]
     let left_padding = 80.0;
     #[cfg(not(target_os = "macos"))]
     let left_padding = 8.0;
 
-    let padding = iced::Padding::new(6.0).left(left_padding).right(8.0);
+    let padding = iced::Padding::new(0.0).left(left_padding);
 
-    container(
+    // Windows: right control buttons
+    #[cfg(target_os = "windows")]
+    let window_controls = {
+        let minimize_btn = button(text("─").size(12))
+            .on_press(Message::WindowMinimize)
+            .padding([6, 12])
+            .style(
+                move |_theme: &Theme, status: button::Status| button::Style {
+                    background: match status {
+                        button::Status::Hovered => Some(Background::Color(Color {
+                            a: 0.2,
+                            ..palette.text
+                        })),
+                        _ => Some(Background::Color(Color::TRANSPARENT)),
+                    },
+                    text_color: palette.text_secondary,
+                    border: Border {
+                        radius: 0.0.into(),
+                        width: 0.0,
+                        color: Color::TRANSPARENT,
+                    },
+                    shadow: iced::Shadow::default(),
+                },
+            );
+
+        let maximize_btn = button(text("□").size(12))
+            .on_press(Message::WindowMaximize)
+            .padding([6, 12])
+            .style(
+                move |_theme: &Theme, status: button::Status| button::Style {
+                    background: match status {
+                        button::Status::Hovered => Some(Background::Color(Color {
+                            a: 0.2,
+                            ..palette.text
+                        })),
+                        _ => Some(Background::Color(Color::TRANSPARENT)),
+                    },
+                    text_color: palette.text_secondary,
+                    border: Border {
+                        radius: 0.0.into(),
+                        width: 0.0,
+                        color: Color::TRANSPARENT,
+                    },
+                    shadow: iced::Shadow::default(),
+                },
+            );
+
+        let close_btn = button(text("✕").size(12))
+            .on_press(Message::Exit)
+            .padding([6, 12])
+            .style(
+                move |_theme: &Theme, status: button::Status| button::Style {
+                    background: match status {
+                        button::Status::Hovered => {
+                            Some(Background::Color(Color::from_rgb(0.9, 0.2, 0.2)))
+                        }
+                        _ => Some(Background::Color(Color::TRANSPARENT)),
+                    },
+                    text_color: match status {
+                        button::Status::Hovered => Color::WHITE,
+                        _ => palette.text_secondary,
+                    },
+                    border: Border {
+                        radius: 0.0.into(),
+                        width: 0.0,
+                        color: Color::TRANSPARENT,
+                    },
+                    shadow: iced::Shadow::default(),
+                },
+            );
+
+        row![minimize_btn, maximize_btn, close_btn].spacing(0)
+    };
+
+    #[cfg(target_os = "windows")]
+    let content = {
+        let spacer = iced::widget::horizontal_space();
         row(tab_elements)
+            .push(spacer)
+            .push(window_controls)
             .spacing(2)
-            .align_y(iced::Alignment::Center),
-    )
-    .style(move |_theme: &Theme| container::Style {
-        background: Some(Background::Color(palette.surface)),
-        ..Default::default()
-    })
-    .padding(padding)
-    .width(Length::Fill)
-    .into()
+            .align_y(iced::Alignment::Center)
+    };
+
+    #[cfg(not(target_os = "windows"))]
+    let content = row(tab_elements)
+        .spacing(2)
+        .align_y(iced::Alignment::Center);
+
+    let tab_bar_container = container(content)
+        .style(move |_theme: &Theme| container::Style {
+            background: Some(Background::Color(palette.surface)),
+            ..Default::default()
+        })
+        .padding(padding)
+        .width(Length::Fill);
+
+    // Windows: Enable window dragging by clicking on the tab bar background
+    #[cfg(target_os = "windows")]
+    return mouse_area(tab_bar_container)
+        .on_press(Message::WindowDrag)
+        .into();
+
+    #[cfg(not(target_os = "windows"))]
+    tab_bar_container.into()
 }
 
 fn browser_tab<'a>(title: &'a str, index: usize, is_active: bool) -> Element<'a, Message> {
