@@ -74,10 +74,16 @@ impl TerminalEngine {
         self.processor.advance(&mut self.term, bytes);
     }
 
+    pub fn resize(&mut self, new_size: TerminalSize) {
+        self.size = new_size;
+        self.term.resize(new_size);
+    }
+
     pub fn render_lines(&self) -> Vec<String> {
         let RenderableContent {
             display_iter,
             display_offset,
+            cursor,
             ..
         } = self.term.renderable_content();
 
@@ -93,10 +99,38 @@ impl TerminalEngine {
             }
         }
 
-        // Trim trailing spaces to keep the UI compact.
-        for line in &mut lines {
-            while line.ends_with(' ') {
-                line.pop();
+        // Add block ascii to cursor position
+        let cursor_col = cursor.point.column.0;
+        let cursor_line = cursor.point.line.0 as usize;
+        if cursor_line < lines.len() {
+            let line = &mut lines[cursor_line];
+
+            while line.chars().count() < cursor_col {
+                line.push(' ');
+            }
+
+            let mut new_line = String::with_capacity(line.len() + 1);
+            for (i, c) in line.chars().enumerate() {
+                if i == cursor_col {
+                    new_line.push('█'); // Cursor block
+                } else {
+                    new_line.push(c);
+                }
+            }
+
+            if line.chars().count() <= cursor_col {
+                new_line.push('█');
+            }
+
+            *line = new_line;
+        }
+
+        // Trim trailing spaces (but keep cursor)
+        for (i, line) in lines.iter_mut().enumerate() {
+            if i != cursor_line {
+                while line.ends_with(' ') {
+                    line.pop();
+                }
             }
         }
 

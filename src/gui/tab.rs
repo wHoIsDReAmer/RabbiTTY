@@ -1,5 +1,5 @@
 use crate::gui::session::{LaunchSpec, Session, SessionError};
-use crate::gui::terminal::{DEFAULT_COLUMNS, DEFAULT_LINES, TerminalEngine, TerminalSize};
+use crate::gui::terminal::{TerminalEngine, TerminalSize};
 use iced::keyboard::{Key, Modifiers, key::Named};
 use std::fmt::{Display, Formatter};
 use std::io::Write;
@@ -18,12 +18,12 @@ pub enum TerminalSession {
 }
 
 impl TerminalTab {
-    pub fn from_shell(shell: ShellKind) -> Self {
-        Self::launch(shell)
+    pub fn from_shell(shell: ShellKind, columns: usize, lines: usize) -> Self {
+        Self::launch(shell, columns, lines)
     }
 
-    fn launch(shell: ShellKind) -> Self {
-        let size = TerminalSize::new(DEFAULT_COLUMNS, DEFAULT_LINES);
+    fn launch(shell: ShellKind, columns: usize, lines: usize) -> Self {
+        let size = TerminalSize::new(columns, lines);
         let (session, writer) = match Session::spawn(shell.launch_spec(size)) {
             Ok(session) => {
                 let writer = session.writer();
@@ -66,6 +66,22 @@ impl TerminalTab {
 
     pub fn size(&self) -> TerminalSize {
         self.engine.size()
+    }
+
+    pub fn is_alive(&mut self) -> bool {
+        match &mut self.session {
+            TerminalSession::Active(session) => session.is_alive(),
+            TerminalSession::Failed(_) => false,
+        }
+    }
+
+    pub fn resize(&mut self, columns: usize, lines: usize) {
+        let new_size = TerminalSize::new(columns, lines);
+        self.engine.resize(new_size);
+
+        if let TerminalSession::Active(session) = &self.session {
+            let _ = session.resize(lines as u16, columns as u16);
+        }
     }
 
     pub fn handle_key(&mut self, key: &Key, modifiers: Modifiers, text: Option<&str>) {

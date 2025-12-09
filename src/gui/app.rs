@@ -3,8 +3,12 @@ use crate::gui::tab::{ShellKind, TerminalTab};
 use iced::keyboard::{self, Key, Modifiers};
 use iced::widget::text::LineHeight;
 use iced::widget::{center, column, container, mouse_area, scrollable, stack, text};
-use iced::{Element, Event, Length, Subscription, Task, event, time, window};
+use iced::{Element, Event, Length, Size, Subscription, Task, event, time, window};
 use std::time::Duration;
+
+// 셀당 픽셀 크기 (모노스페이스 폰트 기준 대략적인 값)
+const CELL_WIDTH: f32 = 9.0;
+const CELL_HEIGHT: f32 = 18.0;
 
 #[derive(Debug, Clone)]
 pub enum Message {
@@ -19,6 +23,7 @@ pub enum Message {
         modifiers: Modifiers,
         text: Option<String>,
     },
+    WindowResized(Size),
     Exit,
 }
 
@@ -26,6 +31,7 @@ pub struct App {
     tabs: Vec<TerminalTab>,
     active_tab: usize,
     show_shell_picker: bool,
+    window_size: Size,
 }
 
 impl App {
@@ -35,6 +41,7 @@ impl App {
             tabs,
             active_tab: 0,
             show_shell_picker: false,
+            window_size: Size::new(800.0, 600.0),
         }
     }
 
@@ -59,14 +66,33 @@ impl App {
                 self.show_shell_picker = false;
             }
             Message::CreateTab(shell) => {
-                let new_tab = TerminalTab::from_shell(shell);
+                let terminal_height = (self.window_size.height - 80.0).max(100.0);
+                let terminal_width = (self.window_size.width - 20.0).max(100.0);
+                let cols = (terminal_width / CELL_WIDTH) as usize;
+                let rows = (terminal_height / CELL_HEIGHT) as usize;
+
+                let new_tab = TerminalTab::from_shell(shell, cols.max(10), rows.max(5));
                 self.tabs.push(new_tab);
                 self.active_tab = self.tabs.len() - 1;
                 self.show_shell_picker = false;
             }
             Message::Tick => {
+                // 현재 탭의 출력 가져오기
                 if let Some(tab) = self.tabs.get_mut(self.active_tab) {
                     tab.pull_output();
+                }
+
+                // 죽은 탭들 제거
+                let mut i = 0;
+                while i < self.tabs.len() {
+                    if !self.tabs[i].is_alive() {
+                        self.tabs.remove(i);
+                        if self.active_tab >= self.tabs.len() && !self.tabs.is_empty() {
+                            self.active_tab = self.tabs.len() - 1;
+                        }
+                    } else {
+                        i += 1;
+                    }
                 }
             }
             Message::KeyPressed {
@@ -88,6 +114,20 @@ impl App {
             }
             Message::Exit => {
                 return window::get_latest().and_then(window::close);
+            }
+            Message::WindowResized(size) => {
+                self.window_size = size;
+                // 터미널 영역 계산 (탭바, 상태바, 패딩 등 제외)
+                let terminal_height = (size.height - 80.0).max(100.0);
+                let terminal_width = (size.width - 20.0).max(100.0);
+
+                let cols = (terminal_width / CELL_WIDTH) as usize;
+                let rows = (terminal_height / CELL_HEIGHT) as usize;
+
+                // 모든 탭 리사이즈
+                for tab in &mut self.tabs {
+                    tab.resize(cols.max(10), rows.max(5));
+                }
             }
             _ => {}
         }
@@ -218,6 +258,7 @@ impl App {
             // Iced events (maybe will be added?)
             event::listen_with(|event, _status, _id| match event {
                 Event::Window(window::Event::CloseRequested) => Some(Message::Exit),
+                Event::Window(window::Event::Resized(size)) => Some(Message::WindowResized(size)),
                 Event::Keyboard(keyboard::Event::KeyPressed {
                     key,
                     modifiers,

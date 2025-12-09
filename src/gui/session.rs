@@ -118,6 +118,36 @@ impl Session {
     pub fn writer(&self) -> Arc<Mutex<Box<dyn Write + Send>>> {
         Arc::clone(&self.writer)
     }
+
+    /// 세션(자식 프로세스)이 아직 살아있는지 확인
+    pub fn is_alive(&mut self) -> bool {
+        if let Some(ref mut child) = self.child {
+            // try_wait: None이면 아직 실행 중, Some이면 종료됨
+            match child.try_wait() {
+                Ok(Some(_exit_status)) => false, // 종료됨
+                Ok(None) => true,                // 아직 실행 중
+                Err(_) => false,                 // 에러 = 죽은 것으로 간주
+            }
+        } else {
+            false
+        }
+    }
+
+    /// PTY 크기 조정
+    pub fn resize(&self, rows: u16, cols: u16) -> Result<(), SessionError> {
+        if let Some(ref master) = self.master {
+            master
+                .resize(PtySize {
+                    rows,
+                    cols,
+                    pixel_width: 0,
+                    pixel_height: 0,
+                })
+                .map_err(|err| SessionError::Io(format!("resize failed: {err}")))
+        } else {
+            Err(SessionError::Io("no master pty".into()))
+        }
+    }
 }
 
 impl Drop for Session {
