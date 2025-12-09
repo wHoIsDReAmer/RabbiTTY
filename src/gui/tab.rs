@@ -18,16 +18,8 @@ pub enum TerminalSession {
 }
 
 impl TerminalTab {
-    pub fn zsh() -> Self {
-        Self::launch(ShellKind::Zsh)
-    }
-
-    pub fn cmd() -> Self {
-        Self::launch(ShellKind::Cmd)
-    }
-
-    pub fn powershell() -> Self {
-        Self::launch(ShellKind::PowerShell)
+    pub fn from_shell(shell: ShellKind) -> Self {
+        Self::launch(shell)
     }
 
     fn launch(shell: ShellKind) -> Self {
@@ -81,7 +73,6 @@ impl TerminalTab {
             && let Some(bytes) = self.key_to_bytes(key, modifiers, text)
             && let Err(err) = session.send_bytes(&bytes)
         {
-            // TODO: changed it now just logging
             eprintln!("Failed to send key to session: {err}")
         }
     }
@@ -93,7 +84,7 @@ impl TerminalTab {
                 Named::Backspace => Some(b"\x7f".to_vec()),
                 Named::Tab => {
                     if modifiers.shift() {
-                        Some(b"\x1b[Z".to_vec()) // Shift+Tab
+                        Some(b"\x1b[Z".to_vec())
                     } else {
                         Some(b"\t".to_vec())
                     }
@@ -123,33 +114,24 @@ impl TerminalTab {
                 Named::F12 => Some(b"\x1b[24~".to_vec()),
                 Named::Space => {
                     if modifiers.control() {
-                        Some(vec![0]) // Ctrl+Space = NUL
+                        Some(vec![0])
                     } else {
                         Some(b" ".to_vec())
                     }
                 }
-                // TODO: add some specific key?
                 _ => None,
             },
 
-            // Control + Alphabet actions
-            Key::Character(c) if modifiers.control() => {
-                // Ctrl+A..Z -> 0x01..0x1A
-                c.chars().next().and_then(|ch| {
-                    let upper = ch.to_ascii_uppercase();
-                    if upper.is_ascii_alphabetic() {
-                        Some(vec![(upper as u8) - b'A' + 1])
-                    } else {
-                        None
-                    }
-                })
-            }
+            Key::Character(c) if modifiers.control() => c.chars().next().and_then(|ch| {
+                let upper = ch.to_ascii_uppercase();
+                if upper.is_ascii_alphabetic() {
+                    Some(vec![(upper as u8) - b'A' + 1])
+                } else {
+                    None
+                }
+            }),
 
-            // Plane char input actions
-            Key::Character(_) => {
-                // Regular character input
-                text.map(|t| t.as_bytes().to_vec())
-            }
+            Key::Character(_) => text.map(|t| t.as_bytes().to_vec()),
             _ => None,
         }
     }

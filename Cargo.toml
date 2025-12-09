@@ -14,11 +14,23 @@ strip = false
 
 [dependencies]
 # GUI & Rendering
-iced = { version = "0.13.1", default-features = false, features = ["wgpu", "tokio", "canvas", "advanced", "image"] }
+iced = { version = "0.13.1", default-features = false, features = [
+    "wgpu",
+    "tokio",
+    "canvas",
+    "advanced",
+    "image",
+] }
 wgpu = "27.0.1"
 
 # Async
-tokio = { version = "1.48", default-features = false, features = ["rt-multi-thread", "macros", "net", "sync", "time"] }
+tokio = { version = "1.48", default-features = false, features = [
+    "rt-multi-thread",
+    "macros",
+    "net",
+    "sync",
+    "time",
+] }
 futures = "0.3.31"
 
 # Terminal

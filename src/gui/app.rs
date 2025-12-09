@@ -1,15 +1,18 @@
-use crate::gui::components::{button_primary, button_secondary, panel};
-use crate::gui::render::RenderConfig;
-use crate::gui::tab::TerminalTab;
+use crate::gui::components::{button_primary, button_secondary, panel, tab_bar};
+use crate::gui::tab::{ShellKind, TerminalTab};
 use iced::keyboard::{self, Key, Modifiers};
 use iced::widget::text::LineHeight;
-use iced::widget::{column, row, scrollable, text};
+use iced::widget::{center, column, container, mouse_area, scrollable, stack, text};
 use iced::{Element, Event, Length, Subscription, Task, event, time, window};
 use std::time::Duration;
 
 #[derive(Debug, Clone)]
 pub enum Message {
     TabSelected(usize),
+    CloseTab(usize),
+    OpenShellPicker,
+    CloseShellPicker,
+    CreateTab(ShellKind),
     Tick,
     KeyPressed {
         key: Key,
@@ -22,21 +25,16 @@ pub enum Message {
 pub struct App {
     tabs: Vec<TerminalTab>,
     active_tab: usize,
-    render: RenderConfig,
+    show_shell_picker: bool,
 }
 
 impl App {
     pub fn new() -> Self {
-        let render = RenderConfig::default();
-        let tabs = vec![
-            TerminalTab::zsh(),
-            TerminalTab::cmd(),
-            TerminalTab::powershell(),
-        ];
+        let tabs = vec![];
         Self {
             tabs,
             active_tab: 0,
-            render,
+            show_shell_picker: false,
         }
     }
 
@@ -44,6 +42,27 @@ impl App {
         match message {
             Message::TabSelected(index) if index < self.tabs.len() => {
                 self.active_tab = index;
+            }
+            Message::CloseTab(index) => {
+                if index < self.tabs.len() {
+                    self.tabs.remove(index);
+
+                    if self.active_tab >= self.tabs.len() && !self.tabs.is_empty() {
+                        self.active_tab = self.tabs.len() - 1;
+                    }
+                }
+            }
+            Message::OpenShellPicker => {
+                self.show_shell_picker = true;
+            }
+            Message::CloseShellPicker => {
+                self.show_shell_picker = false;
+            }
+            Message::CreateTab(shell) => {
+                let new_tab = TerminalTab::from_shell(shell);
+                self.tabs.push(new_tab);
+                self.active_tab = self.tabs.len() - 1;
+                self.show_shell_picker = false;
             }
             Message::Tick => {
                 if let Some(tab) = self.tabs.get_mut(self.active_tab) {
@@ -55,6 +74,14 @@ impl App {
                 modifiers,
                 text,
             } => {
+                // If popup is opened
+                if self.show_shell_picker {
+                    if matches!(key, Key::Named(iced::keyboard::key::Named::Escape)) {
+                        self.show_shell_picker = false;
+                    }
+                    return Task::none();
+                }
+
                 if let Some(tab) = self.tabs.get_mut(self.active_tab) {
                     tab.handle_key(&key, modifiers, text.as_deref());
                 }
@@ -69,63 +96,119 @@ impl App {
     }
 
     pub fn view(&self) -> Element<'_, Message> {
-        let tab_buttons: Vec<Element<Message>> = self
+        let tabs_iter = self
             .tabs
             .iter()
             .enumerate()
-            .map(|(index, tab)| {
-                let label = tab.title.as_str();
-                if index == self.active_tab {
-                    button_primary(label)
-                        .on_press(Message::TabSelected(index))
-                        .into()
-                } else {
-                    button_secondary(label)
-                        .on_press(Message::TabSelected(index))
-                        .into()
-                }
-            })
-            .collect();
+            .map(|(i, tab)| (tab.title.as_str(), i, i == self.active_tab));
+        let tab_row = tab_bar(tabs_iter, Message::OpenShellPicker);
 
-        let tab_row = row(tab_buttons).spacing(8).padding(8);
+        // Main contents
+        let main_content: Element<Message> =
+            if let Some(active_tab) = self.tabs.get(self.active_tab) {
+                let status_text = active_tab.status_text();
+                let rendered = active_tab.rendered_text();
+                let dims = active_tab.size();
 
-        let active_tab = if let Some(tab) = self.tabs.get(self.active_tab) {
-            tab
-        } else {
-            return column(vec![text("No tabs").into()]).into();
-        };
+                let scroll = scrollable(
+                    text(rendered)
+                        .size(15)
+                        .line_height(LineHeight::Relative(1.2))
+                        .font(iced::font::Font::MONOSPACE),
+                )
+                .height(Length::Fill)
+                .width(Length::Fill);
 
-        let status_text = active_tab.status_text();
-        let rendered = active_tab.rendered_text();
-        let dims = active_tab.size();
+                column(vec![
+                    text(format!(
+                        "{}  |  {}x{}  |  {}",
+                        active_tab.shell, dims.columns, dims.lines, status_text
+                    ))
+                    .size(12)
+                    .into(),
+                    scroll.into(),
+                ])
+                .spacing(4)
+                .padding(8)
+                .into()
+            } else {
+                column(vec![
+                    text("No tabs open").size(20).into(),
+                    text("Click + to create a new tab").size(14).into(),
+                ])
+                .spacing(8)
+                .padding(20)
+                .into()
+            };
 
-        let scroll = scrollable(
-            text(rendered)
-                .size(15)
-                .line_height(LineHeight::Relative(1.2))
-                .font(iced::font::Font::MONOSPACE),
-        )
-        .height(Length::Fill)
-        .width(Length::Fill);
-
-        let content = column(vec![
-            text(format!("Shell: {}", active_tab.shell)).into(),
-            text(format!("Renderer backend: {:?}", self.render.backend)).into(),
-            text(format!(
-                "Grid: {} cols x {} lines",
-                dims.columns, dims.lines
-            ))
-            .into(),
-            text(status_text).size(13).into(),
-            scroll.into(),
-        ])
-        .spacing(8)
-        .padding(12);
-
-        panel(column(vec![tab_row.into(), content.into()]).height(Length::Fill))
+        // Base layout
+        let base_layout = panel(column(vec![tab_row, main_content]).height(Length::Fill))
             .width(Length::Fill)
-            .height(Length::Fill)
-            .into()
+            .height(Length::Fill);
+
+        // Popup
+        if self.show_shell_picker {
+            // Transparent backdrop (click to close)
+            let backdrop = mouse_area(
+                container(text(""))
+                    .width(Length::Fill)
+                    .height(Length::Fill)
+                    .style(|_theme: &iced::Theme| container::Style {
+                        background: Some(iced::Background::Color(iced::Color {
+                            r: 0.0,
+                            g: 0.0,
+                            b: 0.0,
+                            a: 0.4,
+                        })),
+                        ..Default::default()
+                    }),
+            )
+            .on_press(Message::CloseShellPicker);
+
+            // Popup card
+            let popup_card = container(
+                column(vec![
+                    button_primary("zsh")
+                        .on_press(Message::CreateTab(ShellKind::Zsh))
+                        .width(Length::Fill)
+                        .into(),
+                    button_secondary("cmd")
+                        .on_press(Message::CreateTab(ShellKind::Cmd))
+                        .width(Length::Fill)
+                        .into(),
+                    button_secondary("PowerShell")
+                        .on_press(Message::CreateTab(ShellKind::PowerShell))
+                        .width(Length::Fill)
+                        .into(),
+                    button_secondary("Cancel")
+                        .on_press(Message::CloseShellPicker)
+                        .width(Length::Fill)
+                        .into(),
+                ])
+                .spacing(10)
+                .padding(20)
+                .width(Length::Fixed(220.0)),
+            )
+            .style(|_theme: &iced::Theme| container::Style {
+                background: Some(iced::Background::Color(iced::color!(0x31, 0x32, 0x44))),
+                border: iced::Border {
+                    radius: 12.0.into(),
+                    width: 1.0,
+                    color: iced::color!(0x45, 0x47, 0x5a),
+                },
+                ..Default::default()
+            });
+
+            // Make popup centered
+            let centered_popup = center(popup_card).width(Length::Fill).height(Length::Fill);
+
+            stack![base_layout, backdrop, centered_popup,]
+                .width(Length::Fill)
+                .height(Length::Fill)
+                .into()
+        } else {
+            base_layout.into()
+        }
     }
 
     pub fn subscription(&self) -> Subscription<Message> {
