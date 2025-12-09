@@ -208,6 +208,7 @@ impl App {
             // Popup card
             let popup_card = container(
                 column(vec![
+                    #[cfg(target_family = "unix")]
                     button_primary("zsh")
                         .on_press(Message::CreateTab(ShellKind::Zsh))
                         .width(Length::Fill)

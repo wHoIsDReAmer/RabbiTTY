@@ -155,6 +155,7 @@ impl TerminalTab {
 
 #[derive(Debug, Clone, Copy)]
 pub enum ShellKind {
+    #[cfg(target_family = "unix")]
     Zsh,
     Cmd,
     PowerShell,
@@ -163,6 +164,7 @@ pub enum ShellKind {
 impl ShellKind {
     fn launch_spec(self, size: TerminalSize) -> LaunchSpec<'static> {
         let (program, args): (&str, &[&str]) = match self {
+            #[cfg(target_family = "unix")]
             ShellKind::Zsh => ("zsh", &["-i"]),
             ShellKind::Cmd => ("cmd", &["/Q", "/K"]),
             ShellKind::PowerShell => ("powershell", &["-NoLogo", "-ExecutionPolicy", "Bypass"]),
@@ -180,6 +182,7 @@ impl ShellKind {
 impl Display for ShellKind {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match self {
+            #[cfg(target_family = "unix")]
             ShellKind::Zsh => write!(f, "zsh"),
             ShellKind::Cmd => write!(f, "cmd"),
             ShellKind::PowerShell => write!(f, "powershell"),
