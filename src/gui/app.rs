@@ -225,10 +225,12 @@ impl App {
                         .on_press(Message::CreateTab(ShellKind::Zsh))
                         .width(Length::Fill)
                         .into(),
+                    #[cfg(target_family = "windows")]
                     button_secondary("cmd")
                         .on_press(Message::CreateTab(ShellKind::Cmd))
                         .width(Length::Fill)
                         .into(),
+                    #[cfg(target_family = "windows")]
                     button_secondary("PowerShell")
                         .on_press(Message::CreateTab(ShellKind::PowerShell))
                         .width(Length::Fill)

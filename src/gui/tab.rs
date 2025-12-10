@@ -157,7 +157,9 @@ impl TerminalTab {
 pub enum ShellKind {
     #[cfg(target_family = "unix")]
     Zsh,
+    #[cfg(target_family = "windows")]
     Cmd,
+    #[cfg(target_family = "windows")]
     PowerShell,
 }
 
@@ -166,7 +168,9 @@ impl ShellKind {
         let (program, args): (&str, &[&str]) = match self {
             #[cfg(target_family = "unix")]
             ShellKind::Zsh => ("zsh", &["-i"]),
+            #[cfg(target_family = "windows")]
             ShellKind::Cmd => ("cmd", &["/Q", "/K"]),
+            #[cfg(target_family = "windows")]
             ShellKind::PowerShell => ("powershell", &["-NoLogo", "-ExecutionPolicy", "Bypass"]),
         };
 
@@ -184,7 +188,9 @@ impl Display for ShellKind {
         match self {
             #[cfg(target_family = "unix")]
             ShellKind::Zsh => write!(f, "zsh"),
+            #[cfg(target_family = "windows")]
             ShellKind::Cmd => write!(f, "cmd"),
+            #[cfg(target_family = "windows")]
             ShellKind::PowerShell => write!(f, "powershell"),
         }
     }
