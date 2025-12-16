@@ -2517,6 +2517,7 @@ name = "rabitty"
 version = "0.0.1"
 dependencies = [
  "alacritty_terminal",
+ "bytemuck",
  "futures",
  "iced",
  "portable-pty",

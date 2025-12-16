@@ -3,9 +3,9 @@ mod platform;
 mod session;
 mod terminal;
 
-use iced::Size;
 use iced::font;
 use iced::window;
+use iced::{Color, Size};
 
 use crate::gui::App;
 
@@ -14,6 +14,11 @@ const DEJAVU_SANS: &[u8] = include_bytes!("../fonts/DejaVuSans.ttf");
 
 fn main() -> iced::Result {
     iced::application("Rabbitty", App::update, App::view)
+        .theme(|_state| iced::Theme::Dark)
+        .style(|_, _| iced::application::Appearance {
+            background_color: Color::from_rgb8(16, 16, 20),
+            text_color: Color::WHITE,
+        })
         .subscription(App::subscription)
         .font(DEJAVU_SANS)
         .default_font(iced::Font {

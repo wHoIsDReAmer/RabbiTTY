@@ -22,6 +22,7 @@ iced = { version = "0.13.1", default-features = false, features = [
     "image",
 ] }
 wgpu = "27.0.1"
+bytemuck = { version = "1.24", features = ["derive"] }
 
 # Async
 tokio = { version = "1.48", default-features = false, features = [

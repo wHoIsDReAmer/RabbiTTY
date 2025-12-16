@@ -14,6 +14,16 @@ pub struct TerminalSize {
     pub lines: usize,
 }
 
+#[derive(Debug, Clone, Copy)]
+pub struct CellVisual {
+    pub ch: char,
+    pub col: usize,
+    pub row: usize,
+    pub fg: [f32; 4],
+    pub bg: [f32; 4],
+    pub underline: bool,
+}
+
 impl TerminalSize {
     pub const fn new(columns: usize, lines: usize) -> Self {
         Self { columns, lines }
@@ -135,6 +145,62 @@ impl TerminalEngine {
         }
 
         lines
+    }
+
+    pub fn render_cells(&self) -> Vec<CellVisual> {
+        let RenderableContent {
+            display_iter,
+            display_offset,
+            cursor,
+            ..
+        } = self.term.renderable_content();
+
+        // Fill all background black
+        let mut cells = vec![
+            CellVisual {
+                ch: ' ',
+                col: 0,
+                row: 0,
+                fg: [0.85, 0.88, 0.93, 1.0],
+                bg: [0.10, 0.10, 0.12, 1.0],
+                underline: false,
+            };
+            self.size.lines * self.size.columns
+        ];
+
+        let idx = |row: usize, col: usize, cols: usize| row * cols + col;
+
+        for indexed in display_iter {
+            if let Some(point) = point_to_viewport(display_offset, indexed.point) {
+                let col = point.column.0;
+                let row = point.line;
+                if row < self.size.lines && col < self.size.columns {
+                    let slot = &mut cells[idx(row, col, self.size.columns)];
+                    slot.ch = indexed.cell.c;
+                    slot.col = col;
+                    slot.row = row;
+                    slot.fg = [0.85, 0.88, 0.93, 1.0];
+                    slot.bg = [0.10, 0.10, 0.12, 1.0];
+                    slot.underline = false;
+                }
+            }
+        }
+
+        // Cursor block overlay
+        let cursor_col = cursor.point.column.0;
+        let cursor_line = cursor.point.line.0 as usize;
+        if cursor_line < self.size.lines && cursor_col < self.size.columns {
+            cells[idx(cursor_line, cursor_col, self.size.columns)] = CellVisual {
+                ch: ' ',
+                col: cursor_col,
+                row: cursor_line,
+                fg: [0.0, 0.0, 0.0, 1.0],
+                bg: [0.9, 0.9, 0.9, 1.0],
+                underline: false,
+            };
+        }
+
+        cells
     }
 }
 
