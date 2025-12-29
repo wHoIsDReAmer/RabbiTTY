@@ -155,18 +155,19 @@ impl TerminalEngine {
             ..
         } = self.term.renderable_content();
 
-        // Fill all background black
-        let mut cells = vec![
-            CellVisual {
-                ch: ' ',
-                col: 0,
-                row: 0,
-                fg: [0.85, 0.88, 0.93, 1.0],
-                bg: [0.10, 0.10, 0.12, 1.0],
-                underline: false,
-            };
-            self.size.lines * self.size.columns
-        ];
+        let mut cells = Vec::with_capacity(self.size.lines * self.size.columns);
+        for row in 0..self.size.lines {
+            for col in 0..self.size.columns {
+                cells.push(CellVisual {
+                    ch: ' ',
+                    col,
+                    row,
+                    fg: [0.85, 0.88, 0.93, 1.0],
+                    bg: [0.10, 0.10, 0.12, 1.0],
+                    underline: false,
+                });
+            }
+        }
 
         let idx = |row: usize, col: usize, cols: usize| row * cols + col;
 

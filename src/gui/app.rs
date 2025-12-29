@@ -1,4 +1,4 @@
-use crate::gui::components::{button_secondary, panel, tab_bar};
+use crate::gui::components::{button_primary, button_secondary, panel, tab_bar};
 use crate::gui::render::TerminalProgram;
 use crate::gui::tab::{ShellKind, TerminalTab};
 use iced::keyboard::{self, Key, Modifiers};
@@ -161,13 +161,11 @@ impl App {
                 let status_text = active_tab.status_text();
                 let dims = active_tab.size();
                 let cells = active_tab.render_cells();
-                let rendered = active_tab.rendered_text();
-
-                let shader = TerminalProgram {
-                    cells,
-                    cell_size: [CELL_WIDTH, CELL_HEIGHT],
-                }
-                .widget();
+                let grid_size = dims;
+                let terminal_stack = TerminalProgram { cells, grid_size }
+                    .widget()
+                    .width(Length::Fill)
+                    .height(Length::Fill);
 
                 column(vec![
                     text(format!(
@@ -176,7 +174,7 @@ impl App {
                     ))
                     .size(12)
                     .into(),
-                    shader.into(),
+                    terminal_stack.into(),
                 ])
                 .spacing(4)
                 .padding(8)

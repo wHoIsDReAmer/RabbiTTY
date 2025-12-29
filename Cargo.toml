@@ -23,6 +23,7 @@ iced = { version = "0.13.1", default-features = false, features = [
 ] }
 wgpu = "27.0.1"
 bytemuck = { version = "1.24", features = ["derive"] }
+ab_glyph = "0.2"
 
 # Async
 tokio = { version = "1.48", default-features = false, features = [

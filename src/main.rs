@@ -4,7 +4,6 @@ mod session;
 mod terminal;
 
 use iced::font;
-use iced::window;
 use iced::{Color, Size};
 
 use crate::gui::App;
