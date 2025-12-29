@@ -145,7 +145,7 @@ fn align_to(value: u32, alignment: u32) -> u32 {
     if alignment == 0 {
         return value;
     }
-    ((value + alignment - 1) / alignment) * alignment
+    value.div_ceil(alignment) * alignment
 }
 
 impl TextPipelineData {
@@ -538,7 +538,7 @@ impl TextPipelineData {
 
         let mut pixels = vec![0u8; (width * height) as usize];
         outlined.draw(|x, y, v| {
-            let idx = (y as u32 * width + x as u32) as usize;
+            let idx = (y * width + x) as usize;
             if let Some(slot) = pixels.get_mut(idx) {
                 *slot = (v * 255.0) as u8;
             }
