@@ -5,9 +5,6 @@ use alacritty_terminal::vte::ansi::Processor;
 use std::io::Write;
 use std::sync::{Arc, Mutex};
 
-pub const DEFAULT_COLUMNS: usize = 120;
-pub const DEFAULT_LINES: usize = 40;
-
 #[derive(Debug, Clone, Copy)]
 pub struct TerminalSize {
     pub columns: usize,
@@ -87,64 +84,6 @@ impl TerminalEngine {
     pub fn resize(&mut self, new_size: TerminalSize) {
         self.size = new_size;
         self.term.resize(new_size);
-    }
-
-    pub fn render_lines(&self) -> Vec<String> {
-        let RenderableContent {
-            display_iter,
-            display_offset,
-            cursor,
-            ..
-        } = self.term.renderable_content();
-
-        let mut lines = vec![String::with_capacity(self.size.columns); self.size.lines];
-
-        for indexed in display_iter {
-            if let Some(point) = point_to_viewport(display_offset, indexed.point) {
-                let line = &mut lines[point.line];
-                line.push(indexed.cell.c);
-                if let Some(zerowidth) = indexed.cell.zerowidth() {
-                    zerowidth.iter().for_each(|c| line.push(*c));
-                }
-            }
-        }
-
-        // Add block ascii to cursor position
-        let cursor_col = cursor.point.column.0;
-        let cursor_line = cursor.point.line.0 as usize;
-        if cursor_line < lines.len() {
-            let line = &mut lines[cursor_line];
-
-            while line.chars().count() < cursor_col {
-                line.push(' ');
-            }
-
-            let mut new_line = String::with_capacity(line.len() + 1);
-            for (i, c) in line.chars().enumerate() {
-                if i == cursor_col {
-                    new_line.push('█'); // Cursor block
-                } else {
-                    new_line.push(c);
-                }
-            }
-
-            if line.chars().count() <= cursor_col {
-                new_line.push('█');
-            }
-
-            *line = new_line;
-        }
-
-        // Trim trailing spaces (but keep cursor)
-        for (i, line) in lines.iter_mut().enumerate() {
-            if i != cursor_line {
-                while line.ends_with(' ') {
-                    line.pop();
-                }
-            }
-        }
-
-        lines
     }
 
     pub fn render_cells(&self) -> Vec<CellVisual> {

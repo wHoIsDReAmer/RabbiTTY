@@ -60,10 +60,6 @@ impl TerminalTab {
         }
     }
 
-    pub fn rendered_text(&self) -> String {
-        self.engine.render_lines().join("\n")
-    }
-
     pub fn render_cells(&self) -> Vec<CellVisual> {
         self.engine.render_cells()
     }

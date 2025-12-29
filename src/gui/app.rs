@@ -23,8 +23,11 @@ pub enum Message {
         text: Option<String>,
     },
     WindowResized(Size),
+    #[cfg(target_os = "windows")]
     WindowMinimize,
+    #[cfg(target_os = "windows")]
     WindowMaximize,
+    #[cfg(target_os = "windows")]
     WindowDrag,
     Exit,
 }
@@ -117,12 +120,15 @@ impl App {
             Message::Exit => {
                 return window::get_latest().and_then(window::close);
             }
+            #[cfg(target_os = "windows")]
             Message::WindowMinimize => {
                 return window::get_latest().and_then(|id| window::minimize(id, true));
             }
+            #[cfg(target_os = "windows")]
             Message::WindowMaximize => {
                 return window::get_latest().and_then(window::toggle_maximize);
             }
+            #[cfg(target_os = "windows")]
             Message::WindowDrag => {
                 return window::get_latest().and_then(window::drag);
             }
