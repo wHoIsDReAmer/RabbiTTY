@@ -1,6 +1,7 @@
 use alacritty_terminal::event::{Event, EventListener, WindowSize};
 use alacritty_terminal::grid::Dimensions;
 use alacritty_terminal::term::{Config as TermConfig, RenderableContent, Term, point_to_viewport};
+use alacritty_terminal::vte::ansi::CursorShape;
 use alacritty_terminal::vte::ansi::Processor;
 use std::io::Write;
 use std::sync::{Arc, Mutex};
@@ -90,7 +91,7 @@ impl TerminalEngine {
         let RenderableContent {
             display_iter,
             display_offset,
-            cursor: _cursor,
+            cursor,
             ..
         } = self.term.renderable_content();
 
@@ -122,6 +123,31 @@ impl TerminalEngine {
                     slot.fg = [0.85, 0.88, 0.93, 1.0];
                     slot.bg = [0.0, 0.0, 0.0, 0.0];
                     slot.underline = false;
+                }
+            }
+        }
+
+        if cursor.shape != CursorShape::Hidden {
+            let cursor_col = cursor.point.column.0;
+            let cursor_line = cursor.point.line.0 as usize;
+            if cursor_line < self.size.lines && cursor_col < self.size.columns {
+                let slot = &mut cells[idx(cursor_line, cursor_col, self.size.columns)];
+                let fg = slot.fg;
+                let bg = slot.bg;
+                if bg[3] > 0.0 {
+                    slot.fg = bg;
+                    slot.bg = fg;
+                } else {
+                    let luma = 0.2126 * fg[0] + 0.7152 * fg[1] + 0.0722 * fg[2];
+                    let cursor_fg = if luma > 0.5 {
+                        [0.0, 0.0, 0.0, 1.0]
+                    } else {
+                        [1.0, 1.0, 1.0, 1.0]
+                    };
+                    let mut cursor_bg = fg;
+                    cursor_bg[3] = 1.0;
+                    slot.fg = cursor_fg;
+                    slot.bg = cursor_bg;
                 }
             }
         }
