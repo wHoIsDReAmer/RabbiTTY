@@ -4,7 +4,7 @@ use bytemuck::{Pod, Zeroable};
 use iced::widget::shader::wgpu;
 use std::collections::HashMap;
 
-const DEJAVU_SANS: &[u8] = include_bytes!("../../../fonts/DejaVuSans.ttf");
+const DEJAVU_SANS_MONO: &[u8] = include_bytes!("../../../fonts/DejaVuSansMono.ttf");
 const FONT_SCALE_FACTOR: f32 = 0.85;
 const ATLAS_INITIAL_SIZE: u32 = 2048;
 const ATLAS_MAX_SIZE: u32 = 4096;
@@ -34,7 +34,6 @@ struct GlyphInfo {
     uv_max: [f32; 2],
     size: [f32; 2],
     bearing: [f32; 2],
-    advance: f32,
 }
 
 #[derive(Debug)]
@@ -134,6 +133,8 @@ pub(super) struct TextPipelineData {
     ascent: f32,
     descent: f32,
     line_height: f32,
+    line_min_y: f32,
+    cell_advance: f32,
     glyphs: HashMap<char, GlyphInfo>,
     instance_buffer: wgpu::Buffer,
     instance_capacity: usize,
@@ -213,8 +214,8 @@ impl TextPipelineData {
             address_mode_u: wgpu::AddressMode::ClampToEdge,
             address_mode_v: wgpu::AddressMode::ClampToEdge,
             address_mode_w: wgpu::AddressMode::ClampToEdge,
-            mag_filter: wgpu::FilterMode::Linear,
-            min_filter: wgpu::FilterMode::Linear,
+            mag_filter: wgpu::FilterMode::Nearest,
+            min_filter: wgpu::FilterMode::Nearest,
             mipmap_filter: wgpu::FilterMode::Nearest,
             ..Default::default()
         });
@@ -293,7 +294,7 @@ impl TextPipelineData {
             multiview: None,
         });
 
-        let font = FontArc::try_from_slice(DEJAVU_SANS).expect("font load failed");
+        let font = FontArc::try_from_slice(DEJAVU_SANS_MONO).expect("font load failed");
         let scale = PxScale::from(1.0);
 
         let instance_buffer = device.create_buffer(&wgpu::BufferDescriptor {
@@ -317,6 +318,8 @@ impl TextPipelineData {
             ascent: 0.0,
             descent: 0.0,
             line_height: 0.0,
+            line_min_y: 0.0,
+            cell_advance: 0.0,
             glyphs: HashMap::new(),
             instance_buffer,
             instance_capacity: 64,
@@ -342,11 +345,24 @@ impl TextPipelineData {
         cells: &[CellVisual],
         cell_size: [f32; 2],
     ) {
-        let font_px = (cell_size[1] * FONT_SCALE_FACTOR).max(1.0);
-        self.ensure_font_size(font_px);
-        let baseline_offset = ((cell_size[1] - self.line_height).max(0.0) * 0.5) + self.ascent;
         let cell_width = cell_size[0];
         let cell_height = cell_size[1];
+
+        let mut font_px = (cell_height * FONT_SCALE_FACTOR).max(1.0);
+        self.ensure_font_size(font_px);
+        if cell_width > 0.0 && self.cell_advance > cell_width {
+            let scale = cell_width / self.cell_advance;
+            font_px = (font_px * scale).max(1.0);
+            self.ensure_font_size(font_px);
+        }
+        if cell_height > 0.0 && self.line_height > cell_height {
+            let scale = cell_height / self.line_height;
+            font_px = (font_px * scale).max(1.0);
+            self.ensure_font_size(font_px);
+        }
+
+        let top_margin = (cell_height - self.line_height).max(0.0) * 0.5;
+        let offset_x = (cell_width - self.cell_advance).max(0.0) * 0.5;
 
         let mut glyph_instances = Vec::with_capacity(cells.len());
         for cell in cells {
@@ -364,10 +380,12 @@ impl TextPipelineData {
 
             let cell_x = cell.col as f32 * cell_width;
             let cell_y = cell.row as f32 * cell_height;
-            let offset_x = (cell_width - info.advance).max(0.0) * 0.5;
             let origin_x = cell_x + offset_x;
-            let origin_y = cell_y + baseline_offset - self.ascent;
-            let pos = [origin_x + info.bearing[0], origin_y + info.bearing[1]];
+            let origin_y = cell_y + top_margin - self.line_min_y;
+            let pos = [
+                (origin_x + info.bearing[0]).round(),
+                (origin_y + info.bearing[1]).round(),
+            ];
 
             glyph_instances.push(GlyphInstance {
                 pos,
@@ -434,7 +452,44 @@ impl TextPipelineData {
         let scaled = self.font.as_scaled(self.scale);
         self.ascent = scaled.ascent();
         self.descent = scaled.descent();
-        self.line_height = self.ascent - self.descent;
+        let mut min_y = 0.0;
+        let mut max_y = 0.0;
+        let mut has_bounds = false;
+        for code in 32u8..=126u8 {
+            let ch = code as char;
+            let glyph_id = self.font.glyph_id(ch);
+            let glyph = glyph_id.with_scale_and_position(self.scale, point(0.0, self.ascent));
+            if let Some(outlined) = self.font.outline_glyph(glyph) {
+                let bounds = outlined.px_bounds();
+                if !has_bounds {
+                    min_y = bounds.min.y;
+                    max_y = bounds.max.y;
+                    has_bounds = true;
+                } else {
+                    min_y = min_y.min(bounds.min.y);
+                    max_y = max_y.max(bounds.max.y);
+                }
+            }
+        }
+        if has_bounds {
+            self.line_min_y = min_y;
+            self.line_height = (max_y - min_y).max(1.0);
+        } else {
+            self.line_min_y = 0.0;
+            self.line_height = scaled.height();
+        }
+        let mut advance = 0.0;
+        for ch in ['M', 'W', '0', ' '].into_iter() {
+            let candidate = scaled.h_advance(self.font.glyph_id(ch));
+            if candidate > 0.0 {
+                advance = candidate;
+                break;
+            }
+        }
+        if advance <= 0.0 {
+            advance = (self.line_height * 0.6).max(1.0);
+        }
+        self.cell_advance = advance;
         self.glyphs.clear();
         self.atlas.packer.reset(self.atlas.size);
     }
@@ -497,9 +552,7 @@ impl TextPipelineData {
         }
 
         let glyph_id = self.font.glyph_id(ch);
-        let scaled = self.font.as_scaled(self.scale);
         let glyph = glyph_id.with_scale_and_position(self.scale, point(0.0, self.ascent));
-        let advance = scaled.h_advance(glyph_id);
 
         let outlined = match self.font.outline_glyph(glyph) {
             Some(outlined) => outlined,
@@ -509,7 +562,6 @@ impl TextPipelineData {
                     uv_max: [0.0, 0.0],
                     size: [0.0, 0.0],
                     bearing: [0.0, 0.0],
-                    advance,
                 };
                 self.glyphs.insert(ch, info);
                 return Some(info);
@@ -526,7 +578,6 @@ impl TextPipelineData {
                 uv_max: [0.0, 0.0],
                 size: [0.0, 0.0],
                 bearing: [0.0, 0.0],
-                advance,
             };
             self.glyphs.insert(ch, info);
             return Some(info);
@@ -591,7 +642,6 @@ impl TextPipelineData {
             uv_max,
             size: [width as f32, height as f32],
             bearing: [bounds.min.x, bounds.min.y],
-            advance,
         };
 
         self.glyphs.insert(ch, info);

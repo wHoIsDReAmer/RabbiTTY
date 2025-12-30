@@ -63,8 +63,13 @@ impl Primitive for TerminalPrimitive {
         format: wgpu::TextureFormat,
         storage: &mut Storage,
         _bounds: &Rectangle,
-        _viewport: &Viewport,
+        viewport: &Viewport,
     ) {
+        let scale = (viewport.scale_factor() as f32).max(1.0);
+        let cell_size = [self.cell_size[0] * scale, self.cell_size[1] * scale];
+        let viewport = [self.viewport[0] * scale, self.viewport[1] * scale];
+        let offset = [self.offset[0] * scale, self.offset[1] * scale];
+
         // Recreate pipelines if needed
         let needs_bg = storage
             .get::<BackgroundPipeline>()
@@ -91,7 +96,7 @@ impl Primitive for TerminalPrimitive {
                 .get_mut::<BackgroundPipeline>()
                 .expect("pipeline just stored or existed");
 
-            pipeline.update_uniforms(queue, self.cell_size, self.viewport, self.offset);
+            pipeline.update_uniforms(queue, cell_size, viewport, offset);
             pipeline.prepare_instances(device, queue, &self.cells);
         }
 
@@ -100,8 +105,8 @@ impl Primitive for TerminalPrimitive {
                 .get_mut::<TextPipelineData>()
                 .expect("text pipeline just stored or existed");
 
-            text_pipeline.update_uniforms(queue, self.viewport, self.offset);
-            text_pipeline.prepare_instances(device, queue, &self.cells, self.cell_size);
+            text_pipeline.update_uniforms(queue, viewport, offset);
+            text_pipeline.prepare_instances(device, queue, &self.cells, cell_size);
         }
     }
 
