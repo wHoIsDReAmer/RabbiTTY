@@ -1,17 +1,25 @@
 use alacritty_terminal::event::{Event, EventListener, WindowSize};
 use alacritty_terminal::grid::Dimensions;
 use alacritty_terminal::term::{Config as TermConfig, RenderableContent, Term, point_to_viewport};
+use alacritty_terminal::vte::ansi::CursorShape;
 use alacritty_terminal::vte::ansi::Processor;
 use std::io::Write;
 use std::sync::{Arc, Mutex};
-
-pub const DEFAULT_COLUMNS: usize = 120;
-pub const DEFAULT_LINES: usize = 40;
 
 #[derive(Debug, Clone, Copy)]
 pub struct TerminalSize {
     pub columns: usize,
     pub lines: usize,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct CellVisual {
+    pub ch: char,
+    pub col: usize,
+    pub row: usize,
+    pub fg: [f32; 4],
+    pub bg: [f32; 4],
+    pub underline: bool,
 }
 
 impl TerminalSize {
@@ -79,7 +87,7 @@ impl TerminalEngine {
         self.term.resize(new_size);
     }
 
-    pub fn render_lines(&self) -> Vec<String> {
+    pub fn render_cells(&self) -> Vec<CellVisual> {
         let RenderableContent {
             display_iter,
             display_offset,
@@ -87,54 +95,66 @@ impl TerminalEngine {
             ..
         } = self.term.renderable_content();
 
-        let mut lines = vec![String::with_capacity(self.size.columns); self.size.lines];
+        let mut cells = Vec::with_capacity(self.size.lines * self.size.columns);
+        for row in 0..self.size.lines {
+            for col in 0..self.size.columns {
+                cells.push(CellVisual {
+                    ch: ' ',
+                    col,
+                    row,
+                    fg: [0.85, 0.88, 0.93, 1.0],
+                    bg: [0.0, 0.0, 0.0, 0.0],
+                    underline: false,
+                });
+            }
+        }
+
+        let idx = |row: usize, col: usize, cols: usize| row * cols + col;
 
         for indexed in display_iter {
             if let Some(point) = point_to_viewport(display_offset, indexed.point) {
-                let line = &mut lines[point.line];
-                line.push(indexed.cell.c);
-                if let Some(zerowidth) = indexed.cell.zerowidth() {
-                    zerowidth.iter().for_each(|c| line.push(*c));
+                let col = point.column.0;
+                let row = point.line;
+                if row < self.size.lines && col < self.size.columns {
+                    let slot = &mut cells[idx(row, col, self.size.columns)];
+                    slot.ch = indexed.cell.c;
+                    slot.col = col;
+                    slot.row = row;
+                    slot.fg = [0.85, 0.88, 0.93, 1.0];
+                    slot.bg = [0.0, 0.0, 0.0, 0.0];
+                    slot.underline = false;
                 }
             }
         }
 
-        // Add block ascii to cursor position
-        let cursor_col = cursor.point.column.0;
-        let cursor_line = cursor.point.line.0 as usize;
-        if cursor_line < lines.len() {
-            let line = &mut lines[cursor_line];
+        if cursor.shape != CursorShape::Hidden {
+            let cursor_col = cursor.point.column.0;
+            let cursor_line = cursor.point.line.0 as usize;
 
-            while line.chars().count() < cursor_col {
-                line.push(' ');
-            }
+            if cursor_line < self.size.lines && cursor_col < self.size.columns {
+                let slot = &mut cells[idx(cursor_line, cursor_col, self.size.columns)];
+                let fg = slot.fg;
+                let bg = slot.bg;
 
-            let mut new_line = String::with_capacity(line.len() + 1);
-            for (i, c) in line.chars().enumerate() {
-                if i == cursor_col {
-                    new_line.push('█'); // Cursor block
+                if bg[3] > 0.0 {
+                    slot.fg = bg;
+                    slot.bg = fg;
                 } else {
-                    new_line.push(c);
-                }
-            }
-
-            if line.chars().count() <= cursor_col {
-                new_line.push('█');
-            }
-
-            *line = new_line;
-        }
-
-        // Trim trailing spaces (but keep cursor)
-        for (i, line) in lines.iter_mut().enumerate() {
-            if i != cursor_line {
-                while line.ends_with(' ') {
-                    line.pop();
+                    let luma = 0.2126 * fg[0] + 0.7152 * fg[1] + 0.0722 * fg[2];
+                    let cursor_fg = if luma > 0.5 {
+                        [0.0, 0.0, 0.0, 1.0]
+                    } else {
+                        [1.0, 1.0, 1.0, 1.0]
+                    };
+                    let mut cursor_bg = fg;
+                    cursor_bg[3] = 1.0;
+                    slot.fg = cursor_fg;
+                    slot.bg = cursor_bg;
                 }
             }
         }
 
-        lines
+        cells
     }
 }
 

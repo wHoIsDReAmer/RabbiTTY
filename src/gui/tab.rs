@@ -1,5 +1,5 @@
 use crate::session::{LaunchSpec, Session, SessionError};
-use crate::terminal::{TerminalEngine, TerminalSize};
+use crate::terminal::{CellVisual, TerminalEngine, TerminalSize};
 use iced::keyboard::{Key, Modifiers, key::Named};
 use std::fmt::{Display, Formatter};
 use std::io::Write;
@@ -60,8 +60,8 @@ impl TerminalTab {
         }
     }
 
-    pub fn rendered_text(&self) -> String {
-        self.engine.render_lines().join("\n")
+    pub fn render_cells(&self) -> Vec<CellVisual> {
+        self.engine.render_cells()
     }
 
     pub fn size(&self) -> TerminalSize {

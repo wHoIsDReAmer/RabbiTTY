@@ -1,8 +1,8 @@
-use crate::gui::components::{button_secondary, panel, tab_bar};
+use crate::gui::components::{button_primary, button_secondary, panel, tab_bar};
+use crate::gui::render::TerminalProgram;
 use crate::gui::tab::{ShellKind, TerminalTab};
 use iced::keyboard::{self, Key, Modifiers};
-use iced::widget::text::LineHeight;
-use iced::widget::{center, column, container, mouse_area, scrollable, stack, text};
+use iced::widget::{center, column, container, mouse_area, stack, text};
 use iced::{Element, Event, Length, Size, Subscription, Task, event, time, window};
 use std::time::Duration;
 
@@ -23,8 +23,11 @@ pub enum Message {
         text: Option<String>,
     },
     WindowResized(Size),
+    #[cfg(target_os = "windows")]
     WindowMinimize,
+    #[cfg(target_os = "windows")]
     WindowMaximize,
+    #[cfg(target_os = "windows")]
     WindowDrag,
     Exit,
 }
@@ -115,16 +118,19 @@ impl App {
                 }
             }
             Message::Exit => {
-                return window::get_latest().and_then(window::close);
+                return window::latest().and_then(window::close);
             }
+            #[cfg(target_os = "windows")]
             Message::WindowMinimize => {
-                return window::get_latest().and_then(|id| window::minimize(id, true));
+                return window::latest().and_then(|id| window::minimize(id, true));
             }
+            #[cfg(target_os = "windows")]
             Message::WindowMaximize => {
-                return window::get_latest().and_then(window::toggle_maximize);
+                return window::latest().and_then(window::toggle_maximize);
             }
+            #[cfg(target_os = "windows")]
             Message::WindowDrag => {
-                return window::get_latest().and_then(window::drag);
+                return window::latest().and_then(window::drag);
             }
             Message::WindowResized(size) => {
                 self.window_size = size;
@@ -159,17 +165,13 @@ impl App {
         let main_content: Element<Message> =
             if let Some(active_tab) = self.tabs.get(self.active_tab) {
                 let status_text = active_tab.status_text();
-                let rendered = active_tab.rendered_text();
                 let dims = active_tab.size();
-
-                let scroll = scrollable(
-                    text(rendered)
-                        .size(15)
-                        .line_height(LineHeight::Relative(1.2))
-                        .font(iced::font::Font::MONOSPACE),
-                )
-                .height(Length::Fill)
-                .width(Length::Fill);
+                let cells = active_tab.render_cells();
+                let grid_size = dims;
+                let terminal_stack = TerminalProgram { cells, grid_size }
+                    .widget()
+                    .width(Length::Fill)
+                    .height(Length::Fill);
 
                 column(vec![
                     text(format!(
@@ -178,7 +180,7 @@ impl App {
                     ))
                     .size(12)
                     .into(),
-                    scroll.into(),
+                    terminal_stack.into(),
                 ])
                 .spacing(4)
                 .padding(8)

@@ -14,6 +14,7 @@ pub fn primary(text: &str) -> button::Button<'_, crate::gui::app::Message> {
                 color: Color::TRANSPARENT,
             },
             shadow: iced::Shadow::default(),
+            snap: true,
         };
 
         match status {
@@ -56,6 +57,7 @@ pub fn secondary(text: &str) -> button::Button<'_, crate::gui::app::Message> {
                 },
             },
             shadow: iced::Shadow::default(),
+            snap: true,
         };
 
         match status {

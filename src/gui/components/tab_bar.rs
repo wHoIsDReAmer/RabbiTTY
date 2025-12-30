@@ -1,6 +1,8 @@
 use crate::gui::app::Message;
 use crate::gui::theme::Palette;
-use iced::widget::{button, container, mouse_area, row, text};
+#[cfg(target_os = "windows")]
+use iced::widget::mouse_area;
+use iced::widget::{button, container, row, text};
 use iced::{Background, Border, Color, Element, Length, Theme};
 
 pub fn tab_bar<'a>(
@@ -32,6 +34,7 @@ pub fn tab_bar<'a>(
                     color: Color::TRANSPARENT,
                 },
                 shadow: iced::Shadow::default(),
+                snap: true,
             },
         );
 
@@ -67,6 +70,7 @@ pub fn tab_bar<'a>(
                         color: Color::TRANSPARENT,
                     },
                     shadow: iced::Shadow::default(),
+                    snap: true,
                 },
             );
 
@@ -89,6 +93,7 @@ pub fn tab_bar<'a>(
                         color: Color::TRANSPARENT,
                     },
                     shadow: iced::Shadow::default(),
+                    snap: true,
                 },
             );
 
@@ -113,6 +118,7 @@ pub fn tab_bar<'a>(
                         color: Color::TRANSPARENT,
                     },
                     shadow: iced::Shadow::default(),
+                    snap: true,
                 },
             );
 
@@ -176,6 +182,7 @@ fn browser_tab<'a>(title: &'a str, index: usize, is_active: bool) -> Element<'a,
                     color: Color::TRANSPARENT,
                 },
                 shadow: iced::Shadow::default(),
+                snap: true,
             },
         );
 
