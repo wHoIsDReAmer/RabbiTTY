@@ -1,5 +1,7 @@
 use crate::config::AppConfig;
-use crate::gui::components::{button_primary, button_secondary, panel, tab_bar};
+#[cfg(target_family = "unix")]
+use crate::gui::components::button_primary;
+use crate::gui::components::{button_secondary, panel, tab_bar};
 use crate::gui::render::TerminalProgram;
 use crate::gui::tab::{ShellKind, TerminalTab};
 use iced::keyboard::{self, Key, Modifiers};
