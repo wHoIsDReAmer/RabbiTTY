@@ -90,7 +90,7 @@ impl TerminalEngine {
         let RenderableContent {
             display_iter,
             display_offset,
-            cursor,
+            cursor: _cursor,
             ..
         } = self.term.renderable_content();
 
@@ -102,7 +102,7 @@ impl TerminalEngine {
                     col,
                     row,
                     fg: [0.85, 0.88, 0.93, 1.0],
-                    bg: [0.10, 0.10, 0.12, 1.0],
+                    bg: [0.0, 0.0, 0.0, 0.0],
                     underline: false,
                 });
             }
@@ -120,24 +120,10 @@ impl TerminalEngine {
                     slot.col = col;
                     slot.row = row;
                     slot.fg = [0.85, 0.88, 0.93, 1.0];
-                    slot.bg = [0.10, 0.10, 0.12, 1.0];
+                    slot.bg = [0.0, 0.0, 0.0, 0.0];
                     slot.underline = false;
                 }
             }
-        }
-
-        // Cursor block overlay
-        let cursor_col = cursor.point.column.0;
-        let cursor_line = cursor.point.line.0 as usize;
-        if cursor_line < self.size.lines && cursor_col < self.size.columns {
-            cells[idx(cursor_line, cursor_col, self.size.columns)] = CellVisual {
-                ch: ' ',
-                col: cursor_col,
-                row: cursor_line,
-                fg: [0.0, 0.0, 0.0, 1.0],
-                bg: [0.9, 0.9, 0.9, 1.0],
-                underline: false,
-            };
         }
 
         cells

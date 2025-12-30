@@ -42,7 +42,8 @@ impl ShaderProgram<crate::gui::app::Message> for TerminalProgram {
             cells: self.cells.clone(),
             cell_size,
             viewport: [bounds.width, bounds.height],
-            offset: [bounds.x, bounds.y],
+            offset: [0.0, 0.0],
+            // offset: [bounds.x, bounds.y],
         }
     }
 }
