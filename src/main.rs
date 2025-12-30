@@ -4,6 +4,8 @@ mod session;
 mod terminal;
 
 use iced::font;
+#[cfg(target_os = "windows")]
+use iced::window::raw_window_handle::HasWindowHandle;
 use iced::{Color, Size};
 
 use crate::gui::App;
@@ -19,8 +21,10 @@ fn main() -> iced::Result {
             #[cfg(target_os = "windows")]
             let init_task: iced::Task<gui::app::Message> = iced::window::latest()
                 .and_then(|id| {
-                    iced::window::run_with_handle(id, |handle| {
-                        platform::apply_style(handle);
+                    iced::window::run(id, |window| {
+                        if let Ok(handle) = window.window_handle() {
+                            platform::apply_style(handle);
+                        }
                     })
                 })
                 .discard();

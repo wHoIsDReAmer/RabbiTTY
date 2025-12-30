@@ -25,9 +25,14 @@ struct NcCalcSizeParams {
 
 // Hit test return values
 const HTCLIENT: isize = 1;
+const HTLEFT: isize = 10;
+const HTRIGHT: isize = 11;
 const HTTOP: isize = 12;
 const HTTOPLEFT: isize = 13;
 const HTTOPRIGHT: isize = 14;
+const HTBOTTOM: isize = 15;
+const HTBOTTOMLEFT: isize = 16;
+const HTBOTTOMRIGHT: isize = 17;
 
 /// Subclass procedure to handle WM_NCCALCSIZE and WM_NCHITTEST
 unsafe extern "system" fn subclass_proc(
@@ -68,20 +73,34 @@ unsafe extern "system" fn subclass_proc(
             let mut rect = std::mem::zeroed();
             let _ = GetClientRect(hwnd, &mut rect);
 
-            // Check if cursor is in the top resize area
-            if pt.y >= 0 && pt.y < RESIZE_BORDER {
-                // Top left corner
-                if pt.x >= 0 && pt.x < RESIZE_BORDER {
-                    return LRESULT(HTTOPLEFT);
-                }
+            let left = pt.x >= 0 && pt.x < RESIZE_BORDER;
+            let right = pt.x >= rect.right - RESIZE_BORDER && pt.x < rect.right;
+            let top = pt.y >= 0 && pt.y < RESIZE_BORDER;
+            let bottom = pt.y >= rect.bottom - RESIZE_BORDER && pt.y < rect.bottom;
 
-                // Top right corner
-                if pt.x >= rect.right - RESIZE_BORDER && pt.x < rect.right {
-                    return LRESULT(HTTOPRIGHT);
-                }
-
-                // Top edge
+            if top && left {
+                return LRESULT(HTTOPLEFT);
+            }
+            if top && right {
+                return LRESULT(HTTOPRIGHT);
+            }
+            if bottom && left {
+                return LRESULT(HTBOTTOMLEFT);
+            }
+            if bottom && right {
+                return LRESULT(HTBOTTOMRIGHT);
+            }
+            if top {
                 return LRESULT(HTTOP);
+            }
+            if bottom {
+                return LRESULT(HTBOTTOM);
+            }
+            if left {
+                return LRESULT(HTLEFT);
+            }
+            if right {
+                return LRESULT(HTRIGHT);
             }
         }
 

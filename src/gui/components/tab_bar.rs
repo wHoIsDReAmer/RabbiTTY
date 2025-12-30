@@ -2,7 +2,7 @@ use crate::gui::app::Message;
 use crate::gui::theme::Palette;
 #[cfg(target_os = "windows")]
 use iced::widget::mouse_area;
-use iced::widget::{button, container, row, text};
+use iced::widget::{Space, button, container, row, text};
 use iced::{Background, Border, Color, Element, Length, Theme};
 
 pub fn tab_bar<'a>(
@@ -127,7 +127,7 @@ pub fn tab_bar<'a>(
 
     #[cfg(target_os = "windows")]
     let content = {
-        let spacer = iced::widget::horizontal_space();
+        let spacer = Space::new().width(Length::Fill).height(Length::Shrink);
         row(tab_elements)
             .push(spacer)
             .push(window_controls)
