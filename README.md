@@ -1,5 +1,9 @@
 # Rabbitty
 
+<p align="center">
+  <img src="logo.png" alt="Rabbitty logo" />
+</p>
+
 > Warn: This is a work-in-progress project.
 
 Rabbitty is a terminal emulator chasing `foot`-like memory thrift and cross-platform speed, with feature-ful and polish.
