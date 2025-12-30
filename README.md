@@ -1,7 +1,7 @@
 # Rabbitty
 
 <p align="center">
-  <img src="logo.png" alt="Rabbitty logo" />
+  <img src="assets/logo.png" alt="Rabbitty logo" />
 </p>
 
 > Warn: This is a work-in-progress project.
