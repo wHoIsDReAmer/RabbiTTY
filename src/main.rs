@@ -1,3 +1,4 @@
+mod config;
 mod gui;
 mod platform;
 mod session;
@@ -6,15 +7,19 @@ mod terminal;
 use iced::font;
 use iced::{Color, Size};
 
+use crate::config::AppConfig;
 use crate::gui::App;
 
 // Embed DejaVu Sans font for better Unicode support (Box Drawing characters)
 const DEJAVU_SANS: &[u8] = include_bytes!("../fonts/DejaVuSans.ttf");
 
 fn main() -> iced::Result {
+    let app_config = AppConfig::load();
+    let boot_config = app_config.clone();
+
     iced::application(
-        || {
-            let app = App::new();
+        move || {
+            let app = App::new(boot_config.clone());
 
             #[cfg(target_os = "windows")]
             let init_task: iced::Task<gui::app::Message> = iced::window::latest()
@@ -47,7 +52,7 @@ fn main() -> iced::Result {
     })
     .window(iced::window::Settings {
         exit_on_close_request: false,
-        size: Size::new(600.0, 350.0),
+        size: Size::new(app_config.ui.window_width, app_config.ui.window_height),
 
         #[cfg(target_os = "macos")]
         platform_specific: iced::window::settings::PlatformSpecific {

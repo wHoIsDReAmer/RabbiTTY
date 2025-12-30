@@ -1,3 +1,4 @@
+use crate::config::AppConfig;
 use crate::gui::components::{button_primary, button_secondary, panel, tab_bar};
 use crate::gui::render::TerminalProgram;
 use crate::gui::tab::{ShellKind, TerminalTab};
@@ -5,9 +6,6 @@ use iced::keyboard::{self, Key, Modifiers};
 use iced::widget::{center, column, container, mouse_area, stack, text};
 use iced::{Element, Event, Length, Size, Subscription, Task, event, time, window};
 use std::time::Duration;
-
-const CELL_WIDTH: f32 = 9.0;
-const CELL_HEIGHT: f32 = 18.0;
 
 #[derive(Debug, Clone)]
 pub enum Message {
@@ -37,17 +35,29 @@ pub struct App {
     active_tab: usize,
     show_shell_picker: bool,
     window_size: Size,
+    config: AppConfig,
 }
 
 impl App {
-    pub fn new() -> Self {
+    pub fn new(config: AppConfig) -> Self {
         let tabs = vec![];
         Self {
             tabs,
             active_tab: 0,
             show_shell_picker: false,
-            window_size: Size::new(800.0, 600.0),
+            window_size: Size::new(config.ui.window_width, config.ui.window_height),
+            config,
         }
+    }
+
+    fn grid_for_size(&self, size: Size) -> (usize, usize) {
+        let terminal_height = (size.height - 80.0).max(100.0);
+        let terminal_width = (size.width - 20.0).max(100.0);
+        let cell_width = self.config.terminal.cell_width.max(1.0);
+        let cell_height = self.config.terminal.cell_height.max(1.0);
+        let cols = (terminal_width / cell_width) as usize;
+        let rows = (terminal_height / cell_height) as usize;
+        (cols.max(10), rows.max(5))
     }
 
     pub fn update(&mut self, message: Message) -> Task<Message> {
@@ -71,12 +81,8 @@ impl App {
                 self.show_shell_picker = false;
             }
             Message::CreateTab(shell) => {
-                let terminal_height = (self.window_size.height - 80.0).max(100.0);
-                let terminal_width = (self.window_size.width - 20.0).max(100.0);
-                let cols = (terminal_width / CELL_WIDTH) as usize;
-                let rows = (terminal_height / CELL_HEIGHT) as usize;
-
-                let new_tab = TerminalTab::from_shell(shell, cols.max(10), rows.max(5));
+                let (cols, rows) = self.grid_for_size(self.window_size);
+                let new_tab = TerminalTab::from_shell(shell, cols, rows);
                 self.tabs.push(new_tab);
                 self.active_tab = self.tabs.len() - 1;
                 self.show_shell_picker = false;
@@ -134,17 +140,10 @@ impl App {
             }
             Message::WindowResized(size) => {
                 self.window_size = size;
+                let (cols, rows) = self.grid_for_size(size);
 
-                // Terminal area calculation (subtract tab bar, status bar, padding, etc.)
-                let terminal_height = (size.height - 80.0).max(100.0);
-                let terminal_width = (size.width - 20.0).max(100.0);
-
-                let cols = (terminal_width / CELL_WIDTH) as usize;
-                let rows = (terminal_height / CELL_HEIGHT) as usize;
-
-                // Resize all tabs
                 for tab in &mut self.tabs {
-                    tab.resize(cols.max(10), rows.max(5));
+                    tab.resize(cols, rows);
                 }
             }
             _ => {}
@@ -294,6 +293,6 @@ impl App {
 
 impl Default for App {
     fn default() -> Self {
-        Self::new()
+        Self::new(AppConfig::default())
     }
 }
