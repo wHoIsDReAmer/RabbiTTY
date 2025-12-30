@@ -1,8 +1,9 @@
 # Rabbitty
 
-<p align="center">
-  <img src="assets/logo.png" alt="Rabbitty logo" />
-</p>
+<div align="center">
+  <img src="assets/logo.png" alt="Rabbitty logo" width="200" />
+  <p>Fast, lean, cross-platform terminal emulator.</p>
+</div>
 
 > Warn: This is a work-in-progress project.
 
