@@ -34,6 +34,7 @@ pub fn tab_bar<'a>(
                     color: Color::TRANSPARENT,
                 },
                 shadow: iced::Shadow::default(),
+                snap: true,
             },
         );
 
@@ -69,6 +70,7 @@ pub fn tab_bar<'a>(
                         color: Color::TRANSPARENT,
                     },
                     shadow: iced::Shadow::default(),
+                    snap: true,
                 },
             );
 
@@ -91,6 +93,7 @@ pub fn tab_bar<'a>(
                         color: Color::TRANSPARENT,
                     },
                     shadow: iced::Shadow::default(),
+                    snap: true,
                 },
             );
 
@@ -115,6 +118,7 @@ pub fn tab_bar<'a>(
                         color: Color::TRANSPARENT,
                     },
                     shadow: iced::Shadow::default(),
+                    snap: true,
                 },
             );
 
@@ -178,6 +182,7 @@ fn browser_tab<'a>(title: &'a str, index: usize, is_active: bool) -> Element<'a,
                     color: Color::TRANSPARENT,
                 },
                 shadow: iced::Shadow::default(),
+                snap: true,
             },
         );
 

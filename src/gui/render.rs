@@ -1,9 +1,8 @@
 use crate::terminal::{CellVisual, TerminalSize};
 use iced::mouse;
+use iced::wgpu;
 use iced::widget::shader::Program as ShaderProgram;
-use iced::widget::shader::Viewport;
-use iced::widget::shader::wgpu;
-use iced::widget::shader::{Primitive, Shader, Storage};
+use iced::widget::shader::{Pipeline, Primitive, Shader, Viewport};
 use iced::{Length, Rectangle};
 
 mod bg;
@@ -49,6 +48,21 @@ impl ShaderProgram<crate::gui::app::Message> for TerminalProgram {
 }
 
 #[derive(Debug)]
+pub struct TerminalPipeline {
+    bg: BackgroundPipeline,
+    text: TextPipelineData,
+}
+
+impl Pipeline for TerminalPipeline {
+    fn new(device: &wgpu::Device, _queue: &wgpu::Queue, format: wgpu::TextureFormat) -> Self {
+        Self {
+            bg: BackgroundPipeline::new(device, format),
+            text: TextPipelineData::new(device, format),
+        }
+    }
+}
+
+#[derive(Debug)]
 pub struct TerminalPrimitive {
     cells: Vec<CellVisual>,
     cell_size: [f32; 2],
@@ -57,78 +71,51 @@ pub struct TerminalPrimitive {
 }
 
 impl Primitive for TerminalPrimitive {
+    type Pipeline = TerminalPipeline;
+
     fn prepare(
         &self,
+        pipeline: &mut Self::Pipeline,
         device: &wgpu::Device,
         queue: &wgpu::Queue,
-        format: wgpu::TextureFormat,
-        storage: &mut Storage,
         _bounds: &Rectangle,
         viewport: &Viewport,
     ) {
-        let scale = (viewport.scale_factor() as f32).max(1.0);
+        let scale = viewport.scale_factor().max(1.0);
         let cell_size = [self.cell_size[0] * scale, self.cell_size[1] * scale];
         let viewport = [self.viewport[0] * scale, self.viewport[1] * scale];
         let offset = [self.offset[0] * scale, self.offset[1] * scale];
 
-        // Recreate pipelines if needed
-        let needs_bg = storage
-            .get::<BackgroundPipeline>()
-            .map(|p| p.format() != format)
-            .unwrap_or(true);
-
-        if needs_bg {
-            let pipeline = BackgroundPipeline::new(device, format);
-            storage.store(pipeline);
-        }
-
-        let needs_text = storage
-            .get::<TextPipelineData>()
-            .map(|p| p.format() != format)
-            .unwrap_or(true);
-
-        if needs_text {
-            let text_pipeline = TextPipelineData::new(device, format);
-            storage.store(text_pipeline);
+        {
+            pipeline
+                .bg
+                .update_uniforms(queue, cell_size, viewport, offset);
+            pipeline.bg.prepare_instances(device, queue, &self.cells);
         }
 
         {
-            let pipeline = storage
-                .get_mut::<BackgroundPipeline>()
-                .expect("pipeline just stored or existed");
-
-            pipeline.update_uniforms(queue, cell_size, viewport, offset);
-            pipeline.prepare_instances(device, queue, &self.cells);
-        }
-
-        {
-            let text_pipeline = storage
-                .get_mut::<TextPipelineData>()
-                .expect("text pipeline just stored or existed");
-
-            text_pipeline.update_uniforms(queue, viewport, offset);
-            text_pipeline.prepare_instances(device, queue, &self.cells, cell_size);
+            pipeline.text.update_uniforms(queue, viewport, offset);
+            pipeline
+                .text
+                .prepare_instances(device, queue, &self.cells, cell_size);
         }
     }
 
     fn render(
         &self,
+        pipeline: &Self::Pipeline,
         encoder: &mut wgpu::CommandEncoder,
-        storage: &Storage,
         target: &wgpu::TextureView,
         clip_bounds: &Rectangle<u32>,
     ) {
-        let pipeline = storage
-            .get::<BackgroundPipeline>()
-            .expect("pipeline prepared before render");
-        let text_pipeline = storage
-            .get::<TextPipelineData>()
-            .expect("text pipeline prepared before render");
+        let bg_pipeline = &pipeline.bg;
+        let text_pipeline = &pipeline.text;
 
         let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
             label: Some("terminal.render_pass"),
             color_attachments: &[Some(wgpu::RenderPassColorAttachment {
                 view: target,
+                depth_slice: None,
                 resolve_target: None,
                 ops: wgpu::Operations {
                     // Load existing attachment to avoid wiping other UI layers
@@ -156,10 +143,10 @@ impl Primitive for TerminalPrimitive {
             clip_bounds.height,
         );
 
-        pass.set_pipeline(pipeline.pipeline());
-        pass.set_bind_group(0, pipeline.uniform_bind_group(), &[]);
-        pass.set_vertex_buffer(0, pipeline.quad_buffer().slice(..));
-        pass.set_vertex_buffer(1, pipeline.instance_buffer().slice(..));
+        pass.set_pipeline(bg_pipeline.pipeline());
+        pass.set_bind_group(0, bg_pipeline.uniform_bind_group(), &[]);
+        pass.set_vertex_buffer(0, bg_pipeline.quad_buffer().slice(..));
+        pass.set_vertex_buffer(1, bg_pipeline.instance_buffer().slice(..));
 
         let instance_count = self.cells.len().max(1) as u32;
         pass.draw(0..6, 0..instance_count);
@@ -168,7 +155,7 @@ impl Primitive for TerminalPrimitive {
             pass.set_pipeline(text_pipeline.pipeline());
             pass.set_bind_group(0, text_pipeline.empty_bind_group(), &[]);
             pass.set_bind_group(1, text_pipeline.uniform_bind_group(), &[]);
-            pass.set_vertex_buffer(0, pipeline.quad_buffer().slice(..));
+            pass.set_vertex_buffer(0, bg_pipeline.quad_buffer().slice(..));
             pass.set_vertex_buffer(1, text_pipeline.instance_buffer().slice(..));
             pass.draw(0..6, 0..text_pipeline.instance_len() as u32);
         }

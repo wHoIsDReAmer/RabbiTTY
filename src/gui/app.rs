@@ -118,19 +118,19 @@ impl App {
                 }
             }
             Message::Exit => {
-                return window::get_latest().and_then(window::close);
+                return window::latest().and_then(window::close);
             }
             #[cfg(target_os = "windows")]
             Message::WindowMinimize => {
-                return window::get_latest().and_then(|id| window::minimize(id, true));
+                return window::latest().and_then(|id| window::minimize(id, true));
             }
             #[cfg(target_os = "windows")]
             Message::WindowMaximize => {
-                return window::get_latest().and_then(window::toggle_maximize);
+                return window::latest().and_then(window::toggle_maximize);
             }
             #[cfg(target_os = "windows")]
             Message::WindowDrag => {
-                return window::get_latest().and_then(window::drag);
+                return window::latest().and_then(window::drag);
             }
             Message::WindowResized(size) => {
                 self.window_size = size;

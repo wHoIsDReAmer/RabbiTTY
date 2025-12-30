@@ -130,10 +130,12 @@ impl TerminalEngine {
         if cursor.shape != CursorShape::Hidden {
             let cursor_col = cursor.point.column.0;
             let cursor_line = cursor.point.line.0 as usize;
+
             if cursor_line < self.size.lines && cursor_col < self.size.columns {
                 let slot = &mut cells[idx(cursor_line, cursor_col, self.size.columns)];
                 let fg = slot.fg;
                 let bg = slot.bg;
+
                 if bg[3] > 0.0 {
                     slot.fg = bg;
                     slot.bg = fg;

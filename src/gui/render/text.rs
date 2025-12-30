@@ -1,7 +1,7 @@
 use crate::terminal::CellVisual;
 use ab_glyph::{Font, FontArc, PxScale, ScaleFont, point};
 use bytemuck::{Pod, Zeroable};
-use iced::widget::shader::wgpu;
+use iced::wgpu;
 use std::collections::HashMap;
 
 const DEJAVU_SANS_MONO: &[u8] = include_bytes!("../../../fonts/DejaVuSansMono.ttf");
@@ -139,7 +139,6 @@ pub(super) struct TextPipelineData {
     instance_buffer: wgpu::Buffer,
     instance_capacity: usize,
     instance_len: usize,
-    format: wgpu::TextureFormat,
 }
 
 fn align_to(value: u32, alignment: u32) -> u32 {
@@ -251,7 +250,8 @@ impl TextPipelineData {
             layout: Some(&pipeline_layout),
             vertex: wgpu::VertexState {
                 module: &module,
-                entry_point: "text_vs_main",
+                entry_point: Some("text_vs_main"),
+                compilation_options: wgpu::PipelineCompilationOptions::default(),
                 buffers: &[
                     wgpu::VertexBufferLayout {
                         array_stride: std::mem::size_of::<[f32; 2]>() as u64,
@@ -273,7 +273,8 @@ impl TextPipelineData {
             },
             fragment: Some(wgpu::FragmentState {
                 module: &module,
-                entry_point: "text_fs_main",
+                entry_point: Some("text_fs_main"),
+                compilation_options: wgpu::PipelineCompilationOptions::default(),
                 targets: &[Some(wgpu::ColorTargetState {
                     format,
                     blend: Some(wgpu::BlendState::ALPHA_BLENDING),
@@ -292,6 +293,7 @@ impl TextPipelineData {
             depth_stencil: None,
             multisample: wgpu::MultisampleState::default(),
             multiview: None,
+            cache: None,
         });
 
         let font = FontArc::try_from_slice(DEJAVU_SANS_MONO).expect("font load failed");
@@ -324,7 +326,6 @@ impl TextPipelineData {
             instance_buffer,
             instance_capacity: 64,
             instance_len: 0,
-            format,
         }
     }
 
@@ -436,10 +437,6 @@ impl TextPipelineData {
 
     pub(super) fn instance_len(&self) -> usize {
         self.instance_len
-    }
-
-    pub(super) fn format(&self) -> wgpu::TextureFormat {
-        self.format
     }
 
     fn ensure_font_size(&mut self, font_px: f32) {
@@ -607,7 +604,7 @@ impl TextPipelineData {
         }
 
         queue.write_texture(
-            wgpu::ImageCopyTexture {
+            wgpu::TexelCopyTextureInfo {
                 texture: &self.atlas.texture,
                 mip_level: 0,
                 origin: wgpu::Origin3d {
@@ -618,7 +615,7 @@ impl TextPipelineData {
                 aspect: wgpu::TextureAspect::All,
             },
             &padded,
-            wgpu::ImageDataLayout {
+            wgpu::TexelCopyBufferLayout {
                 offset: 0,
                 bytes_per_row: Some(padded_bytes_per_row),
                 rows_per_image: Some(height),

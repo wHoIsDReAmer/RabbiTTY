@@ -1,6 +1,6 @@
 use crate::terminal::CellVisual;
 use bytemuck::{Pod, Zeroable};
-use iced::widget::shader::wgpu::{self, util::DeviceExt};
+use iced::wgpu::{self, util::DeviceExt};
 
 #[derive(Debug, Copy, Clone, Pod, Zeroable)]
 #[repr(C)]
@@ -25,7 +25,6 @@ pub(super) struct BackgroundPipeline {
     quad_buffer: wgpu::Buffer,
     instance_buffer: wgpu::Buffer,
     instance_capacity: usize,
-    format: wgpu::TextureFormat,
 }
 
 impl BackgroundPipeline {
@@ -98,7 +97,8 @@ impl BackgroundPipeline {
             layout: Some(&pipeline_layout),
             vertex: wgpu::VertexState {
                 module: &module,
-                entry_point: "vs_main",
+                entry_point: Some("vs_main"),
+                compilation_options: wgpu::PipelineCompilationOptions::default(),
                 buffers: &[
                     wgpu::VertexBufferLayout {
                         array_stride: std::mem::size_of::<[f32; 2]>() as u64,
@@ -117,7 +117,8 @@ impl BackgroundPipeline {
             },
             fragment: Some(wgpu::FragmentState {
                 module: &module,
-                entry_point: "fs_main",
+                entry_point: Some("fs_main"),
+                compilation_options: wgpu::PipelineCompilationOptions::default(),
                 targets: &[Some(wgpu::ColorTargetState {
                     format,
                     blend: Some(wgpu::BlendState::ALPHA_BLENDING),
@@ -136,6 +137,7 @@ impl BackgroundPipeline {
             depth_stencil: None,
             multisample: wgpu::MultisampleState::default(),
             multiview: None,
+            cache: None,
         });
 
         Self {
@@ -145,12 +147,7 @@ impl BackgroundPipeline {
             quad_buffer,
             instance_buffer,
             instance_capacity: 64,
-            format,
         }
-    }
-
-    pub(super) fn format(&self) -> wgpu::TextureFormat {
-        self.format
     }
 
     pub(super) fn update_uniforms(

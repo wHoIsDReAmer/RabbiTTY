@@ -14,14 +14,14 @@ strip = false
 
 [dependencies]
 # GUI & Rendering
-iced = { version = "0.13.1", default-features = false, features = [
+iced = { version = "0.14.0", default-features = false, features = [
     "wgpu",
     "tokio",
     "canvas",
     "advanced",
     "image",
 ] }
-wgpu = "27.0.1"
+wgpu = "28.0.0"
 bytemuck = { version = "1.24", features = ["derive"] }
 ab_glyph = "0.2"
 
@@ -41,7 +41,7 @@ portable-pty = "0.9"
 
 # Windows-specific (custom titlebar with resize border)
 [target.'cfg(target_os = "windows")'.dependencies]
-windows = { version = "0.58", features = [
+windows = { version = "0.62", features = [
     "Win32_Foundation",
     "Win32_UI_WindowsAndMessaging",
     "Win32_UI_Shell",
