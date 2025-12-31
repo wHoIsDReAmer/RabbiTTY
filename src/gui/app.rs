@@ -74,7 +74,10 @@ impl App {
     }
 
     fn theme_background_color(&self) -> iced::Color {
-        theme_color(self.config.theme.background, 1.0)
+        theme_color(
+            self.config.theme.background,
+            self.config.theme.background_opacity,
+        )
     }
 
     fn theme_text_color(&self) -> iced::Color {
@@ -186,7 +189,10 @@ impl App {
             .iter()
             .enumerate()
             .map(|(i, tab)| (tab.title.as_str(), i, i == self.active_tab));
-        let tab_row = tab_bar(tabs_iter, Message::OpenShellPicker);
+        let ui_alpha = self.config.theme.background_opacity;
+        let bar_alpha = (ui_alpha * 0.9).clamp(0.0, 1.0);
+        let tab_alpha = (ui_alpha * 0.6).clamp(0.0, 1.0);
+        let tab_row = tab_bar(tabs_iter, Message::OpenShellPicker, bar_alpha, tab_alpha);
 
         // Main contents
         let main_content: Element<Message> =
@@ -295,7 +301,7 @@ impl App {
         {
             Duration::from_millis(550)
         } else {
-            Duration::from_millis(20)
+            Duration::from_millis(1)
         };
         Subscription::batch([
             // Ticking
