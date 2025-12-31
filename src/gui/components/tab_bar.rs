@@ -1,8 +1,8 @@
 use crate::gui::app::Message;
 use crate::gui::theme::Palette;
 #[cfg(target_os = "windows")]
-use iced::widget::mouse_area;
-use iced::widget::{Space, button, container, row, text};
+use iced::widget::{Space, mouse_area};
+use iced::widget::{button, container, row, text};
 use iced::{Background, Border, Color, Element, Length, Theme};
 
 pub fn tab_bar<'a>(
