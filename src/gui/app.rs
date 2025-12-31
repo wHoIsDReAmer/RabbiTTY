@@ -63,10 +63,7 @@ impl App {
     }
 
     pub fn window_style(&self) -> iced::theme::Style {
-        let mut background_color = self.theme_background_color();
-        if self.use_transparent_background() {
-            background_color.a = 0.0;
-        }
+        let background_color = self.theme_background_color();
 
         iced::theme::Style {
             background_color,
@@ -74,15 +71,8 @@ impl App {
         }
     }
 
-    fn use_transparent_background(&self) -> bool {
-        self.tabs.get(self.active_tab).is_some()
-    }
-
     fn theme_background_color(&self) -> iced::Color {
-        theme_color(
-            self.config.theme.background,
-            self.config.theme.background_opacity,
-        )
+        theme_color(self.config.theme.background, 1.0)
     }
 
     fn theme_text_color(&self) -> iced::Color {
@@ -213,7 +203,7 @@ impl App {
             };
 
         // Base layout
-        let panel_background = None;
+        let panel_background = Some(self.theme_background_color());
         let base_layout = panel(
             column(vec![tab_row, main_content]).height(Length::Fill),
             panel_background,
