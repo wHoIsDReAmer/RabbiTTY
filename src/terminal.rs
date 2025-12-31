@@ -292,15 +292,24 @@ impl TerminalEngine {
 
     pub fn render_cells(&self) -> Arc<Vec<CellVisual>> {
         if self.cache_dirty.get() || self.cache_size.get() != self.size {
-            let cells = self.build_cells();
-            *self.cells_cache.borrow_mut() = Arc::new(cells);
+            let mut cache = self.cells_cache.borrow_mut();
+            if let Some(cells) = Arc::get_mut(&mut cache) {
+                self.build_cells_into(cells);
+            } else {
+                let mut cells =
+                    Vec::with_capacity(self.size.lines.saturating_mul(self.size.columns));
+                self.build_cells_into(&mut cells);
+                *cache = Arc::new(cells);
+            }
             self.cache_dirty.set(false);
             self.cache_size.set(self.size);
         }
         self.cells_cache.borrow().clone()
     }
 
-    fn build_cells(&self) -> Vec<CellVisual> {
+    fn build_cells_into(&self, cells: &mut Vec<CellVisual>) {
+        cells.clear();
+
         let RenderableContent {
             display_iter,
             display_offset,
@@ -311,7 +320,6 @@ impl TerminalEngine {
 
         let default_fg = rgb_to_rgba(self.theme.foreground, 1.0);
         let default_bg = rgb_to_rgba(self.theme.background, self.theme.background_opacity);
-        let mut cells = Vec::with_capacity(self.size.lines * self.size.columns);
         for row in 0..self.size.lines {
             for col in 0..self.size.columns {
                 cells.push(CellVisual {
@@ -395,8 +403,6 @@ impl TerminalEngine {
                 }
             }
         }
-
-        cells
     }
 }
 
