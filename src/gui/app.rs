@@ -1,28 +1,34 @@
 use crate::config::AppConfig;
-use crate::gui::components::{button_primary, button_secondary, panel, tab_bar};
+#[cfg(target_family = "unix")]
+use crate::gui::components::button_primary;
+use crate::gui::components::{button_secondary, panel, tab_bar};
 use crate::gui::render::TerminalProgram;
 use crate::gui::tab::{ShellKind, TerminalTab};
+use crate::session::OutputEvent;
 use crate::terminal::TerminalTheme;
+use iced::futures::StreamExt;
+use iced::futures::channel::mpsc;
+use iced::futures::sink::SinkExt;
 use iced::keyboard::{self, Key, Modifiers};
+use iced::stream;
 use iced::widget::{center, column, container, mouse_area, stack, text};
-use iced::{Element, Event, Length, Size, Subscription, Task, event, time, window};
-use std::time::{Duration, Instant};
+use iced::{Element, Event, Length, Size, Subscription, Task, event, window};
 
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub enum Message {
     TabSelected(usize),
     CloseTab(usize),
     OpenShellPicker,
     CloseShellPicker,
     CreateTab(ShellKind),
-    Tick,
+    PtySenderReady(mpsc::Sender<OutputEvent>),
+    PtyOutput(OutputEvent),
     KeyPressed {
         key: Key,
         modifiers: Modifiers,
         text: Option<String>,
     },
     WindowResized(Size),
-    WindowActivity,
     #[cfg(target_os = "windows")]
     WindowMinimize,
     #[cfg(target_os = "windows")]
@@ -37,8 +43,9 @@ pub struct App {
     active_tab: usize,
     show_shell_picker: bool,
     window_size: Size,
-    window_activity_at: Option<Instant>,
     config: AppConfig,
+    pty_sender: Option<mpsc::Sender<OutputEvent>>,
+    next_tab_id: u64,
 }
 
 impl App {
@@ -49,8 +56,9 @@ impl App {
             active_tab: 0,
             show_shell_picker: false,
             window_size: Size::new(config.ui.window_width, config.ui.window_height),
-            window_activity_at: None,
             config,
+            pty_sender: None,
+            next_tab_id: 1,
         }
     }
 
@@ -105,32 +113,37 @@ impl App {
                 self.show_shell_picker = false;
             }
             Message::CreateTab(shell) => {
+                let Some(sender) = self.pty_sender.clone() else {
+                    eprintln!("PTY output channel not ready");
+                    return Task::none();
+                };
                 let (cols, rows) = self.grid_for_size(self.window_size);
                 let theme = TerminalTheme::from_config(&self.config);
-                let new_tab = TerminalTab::from_shell(shell, cols, rows, theme);
+                let tab_id = self.next_tab_id;
+                self.next_tab_id = self.next_tab_id.wrapping_add(1);
+                let new_tab = TerminalTab::from_shell(shell, cols, rows, theme, tab_id, sender);
                 self.tabs.push(new_tab);
                 self.active_tab = self.tabs.len() - 1;
                 self.show_shell_picker = false;
             }
-            Message::Tick => {
-                // Get current tab outputs
-                if let Some(tab) = self.tabs.get_mut(self.active_tab) {
-                    tab.pull_output();
+            Message::PtySenderReady(sender) => {
+                self.pty_sender = Some(sender);
+            }
+            Message::PtyOutput(event) => match event {
+                OutputEvent::Data { tab_id, bytes } => {
+                    if let Some(tab) = self.tabs.iter_mut().find(|t| t.id == tab_id) {
+                        tab.feed_bytes(&bytes);
+                    }
                 }
-
-                // Remove died tabs
-                let mut i = 0;
-                while i < self.tabs.len() {
-                    if !self.tabs[i].is_alive() {
-                        self.tabs.remove(i);
+                OutputEvent::Closed { tab_id } => {
+                    if let Some(index) = self.tabs.iter().position(|t| t.id == tab_id) {
+                        self.tabs.remove(index);
                         if self.active_tab >= self.tabs.len() && !self.tabs.is_empty() {
                             self.active_tab = self.tabs.len() - 1;
                         }
-                    } else {
-                        i += 1;
                     }
                 }
-            }
+            },
             Message::KeyPressed {
                 key,
                 modifiers,
@@ -166,16 +179,11 @@ impl App {
 
             Message::WindowResized(size) => {
                 self.window_size = size;
-                self.window_activity_at = Some(Instant::now());
                 let (cols, rows) = self.grid_for_size(size);
 
                 for tab in &mut self.tabs {
                     tab.resize(cols, rows);
                 }
-            }
-
-            Message::WindowActivity => {
-                self.window_activity_at = Some(Instant::now());
             }
             _ => {}
         }
@@ -295,23 +303,22 @@ impl App {
     }
 
     pub fn subscription(&self) -> Subscription<Message> {
-        let tick_interval = if self
-            .window_activity_at
-            .is_some_and(|last| last.elapsed() < Duration::from_millis(250))
-        {
-            Duration::from_millis(550)
-        } else {
-            Duration::from_millis(1)
-        };
         Subscription::batch([
-            // Ticking
-            time::every(tick_interval).map(|_| Message::Tick),
-            // Iced events (maybe will be added?)
+            Subscription::run(|| {
+                stream::channel(100, async |mut output| {
+                    let (sender, mut receiver) = mpsc::channel(100);
+                    let _ = output.send(Message::PtySenderReady(sender)).await;
+
+                    while let Some(event) = receiver.next().await {
+                        if output.send(Message::PtyOutput(event)).await.is_err() {
+                            break;
+                        }
+                    }
+                })
+            }),
             event::listen_with(|event, _status, _id| match event {
                 Event::Window(window::Event::CloseRequested) => Some(Message::Exit),
                 Event::Window(window::Event::Resized(size)) => Some(Message::WindowResized(size)),
-                Event::Window(window::Event::Moved(_)) => Some(Message::WindowActivity),
-                Event::Window(window::Event::Rescaled(_)) => Some(Message::WindowActivity),
                 Event::Keyboard(keyboard::Event::KeyPressed {
                     key,
                     modifiers,

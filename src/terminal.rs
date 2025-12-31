@@ -6,10 +6,11 @@ use alacritty_terminal::term::color::Colors;
 use alacritty_terminal::term::{Config as TermConfig, RenderableContent, Term, point_to_viewport};
 use alacritty_terminal::vte::ansi::Processor;
 use alacritty_terminal::vte::ansi::{Color as AnsiColor, CursorShape, NamedColor, Rgb};
+use std::cell::{Cell, RefCell};
 use std::io::Write;
 use std::sync::{Arc, Mutex, OnceLock};
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub struct TerminalSize {
     pub columns: usize,
     pub lines: usize,
@@ -238,6 +239,9 @@ pub struct TerminalEngine {
     processor: Processor,
     size: TerminalSize,
     theme: TerminalTheme,
+    cells_cache: RefCell<Arc<Vec<CellVisual>>>,
+    cache_dirty: Cell<bool>,
+    cache_size: Cell<TerminalSize>,
 }
 
 impl TerminalEngine {
@@ -265,6 +269,9 @@ impl TerminalEngine {
             processor: Processor::new(),
             size,
             theme,
+            cells_cache: RefCell::new(Arc::new(Vec::new())),
+            cache_dirty: Cell::new(true),
+            cache_size: Cell::new(size),
         }
     }
 
@@ -274,14 +281,26 @@ impl TerminalEngine {
 
     pub fn feed_bytes(&mut self, bytes: &[u8]) {
         self.processor.advance(&mut self.term, bytes);
+        self.cache_dirty.set(true);
     }
 
     pub fn resize(&mut self, new_size: TerminalSize) {
         self.size = new_size;
         self.term.resize(new_size);
+        self.cache_dirty.set(true);
     }
 
-    pub fn render_cells(&self) -> Vec<CellVisual> {
+    pub fn render_cells(&self) -> Arc<Vec<CellVisual>> {
+        if self.cache_dirty.get() || self.cache_size.get() != self.size {
+            let cells = self.build_cells();
+            *self.cells_cache.borrow_mut() = Arc::new(cells);
+            self.cache_dirty.set(false);
+            self.cache_size.set(self.size);
+        }
+        self.cells_cache.borrow().clone()
+    }
+
+    fn build_cells(&self) -> Vec<CellVisual> {
         let RenderableContent {
             display_iter,
             display_offset,

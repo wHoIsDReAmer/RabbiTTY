@@ -6,6 +6,7 @@ use iced::wgpu::util::DeviceExt;
 use iced::widget::shader::Program as ShaderProgram;
 use iced::widget::shader::{Pipeline, Primitive, Shader, Viewport};
 use iced::{Length, Rectangle};
+use std::sync::Arc;
 
 mod bg;
 mod text;
@@ -15,7 +16,7 @@ use text::TextPipelineData;
 /// Iced shader wrapper for terminal rendering.
 #[derive(Debug, Clone)]
 pub struct TerminalProgram {
-    pub cells: Vec<CellVisual>,
+    pub cells: Arc<Vec<CellVisual>>,
     pub grid_size: TerminalSize,
 }
 
@@ -45,7 +46,7 @@ impl ShaderProgram<crate::gui::app::Message> for TerminalProgram {
             .unwrap_or([0.0, 0.0, 0.0, 0.0]);
 
         TerminalPrimitive {
-            cells: self.cells.clone(),
+            cells: Arc::clone(&self.cells),
             cell_size,
             viewport: [bounds.width, bounds.height],
             offset: [0.0, 0.0],
@@ -299,7 +300,7 @@ impl CompositePipeline {
 
 #[derive(Debug)]
 pub struct TerminalPrimitive {
-    cells: Vec<CellVisual>,
+    cells: Arc<Vec<CellVisual>>,
     cell_size: [f32; 2],
     viewport: [f32; 2],
     offset: [f32; 2],
@@ -332,14 +333,16 @@ impl Primitive for TerminalPrimitive {
             pipeline
                 .bg
                 .update_uniforms(queue, cell_size, viewport, offset);
-            pipeline.bg.prepare_instances(device, queue, &self.cells);
+            pipeline
+                .bg
+                .prepare_instances(device, queue, self.cells.as_slice());
         }
 
         {
             pipeline.text.update_uniforms(queue, viewport, offset);
             pipeline
                 .text
-                .prepare_instances(device, queue, &self.cells, cell_size);
+                .prepare_instances(device, queue, self.cells.as_slice(), cell_size);
         }
     }
 

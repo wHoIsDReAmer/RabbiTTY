@@ -1,11 +1,13 @@
-use crate::session::{LaunchSpec, Session, SessionError};
+use crate::session::{LaunchSpec, OutputEvent, Session, SessionError};
 use crate::terminal::{CellVisual, TerminalEngine, TerminalSize, TerminalTheme};
+use iced::futures::channel::mpsc;
 use iced::keyboard::{Key, Modifiers, key::Named};
 use std::fmt::{Display, Formatter};
 use std::io::Write;
 use std::sync::{Arc, Mutex};
 
 pub struct TerminalTab {
+    pub id: u64,
     pub title: String,
     pub shell: ShellKind,
     pub session: TerminalSession,
@@ -23,13 +25,22 @@ impl TerminalTab {
         columns: usize,
         lines: usize,
         theme: TerminalTheme,
+        id: u64,
+        output_tx: mpsc::Sender<OutputEvent>,
     ) -> Self {
-        Self::launch(shell, columns, lines, theme)
+        Self::launch(shell, columns, lines, theme, id, output_tx)
     }
 
-    fn launch(shell: ShellKind, columns: usize, lines: usize, theme: TerminalTheme) -> Self {
+    fn launch(
+        shell: ShellKind,
+        columns: usize,
+        lines: usize,
+        theme: TerminalTheme,
+        id: u64,
+        output_tx: mpsc::Sender<OutputEvent>,
+    ) -> Self {
         let size = TerminalSize::new(columns, lines);
-        let (session, writer) = match Session::spawn(shell.launch_spec(size)) {
+        let (session, writer) = match Session::spawn(shell.launch_spec(size), id, output_tx) {
             Ok(session) => {
                 let writer = session.writer();
                 (TerminalSession::Active(session), writer)
@@ -43,6 +54,7 @@ impl TerminalTab {
         };
 
         Self {
+            id,
             title: shell.to_string(),
             shell,
             session,
@@ -50,12 +62,8 @@ impl TerminalTab {
         }
     }
 
-    pub fn pull_output(&mut self) {
-        if let TerminalSession::Active(session) = &self.session {
-            for chunk in session.drain_output() {
-                self.engine.feed_bytes(&chunk);
-            }
-        }
+    pub fn feed_bytes(&mut self, bytes: &[u8]) {
+        self.engine.feed_bytes(bytes);
     }
 
     pub fn status_text(&self) -> String {
@@ -65,7 +73,7 @@ impl TerminalTab {
         }
     }
 
-    pub fn render_cells(&self) -> Vec<CellVisual> {
+    pub fn render_cells(&self) -> std::sync::Arc<Vec<CellVisual>> {
         self.engine.render_cells()
     }
 
