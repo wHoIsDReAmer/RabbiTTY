@@ -1,5 +1,5 @@
 use crate::session::{LaunchSpec, Session, SessionError};
-use crate::terminal::{CellVisual, TerminalEngine, TerminalSize};
+use crate::terminal::{CellVisual, TerminalEngine, TerminalSize, TerminalTheme};
 use iced::keyboard::{Key, Modifiers, key::Named};
 use std::fmt::{Display, Formatter};
 use std::io::Write;
@@ -18,11 +18,16 @@ pub enum TerminalSession {
 }
 
 impl TerminalTab {
-    pub fn from_shell(shell: ShellKind, columns: usize, lines: usize) -> Self {
-        Self::launch(shell, columns, lines)
+    pub fn from_shell(
+        shell: ShellKind,
+        columns: usize,
+        lines: usize,
+        theme: TerminalTheme,
+    ) -> Self {
+        Self::launch(shell, columns, lines, theme)
     }
 
-    fn launch(shell: ShellKind, columns: usize, lines: usize) -> Self {
+    fn launch(shell: ShellKind, columns: usize, lines: usize, theme: TerminalTheme) -> Self {
         let size = TerminalSize::new(columns, lines);
         let (session, writer) = match Session::spawn(shell.launch_spec(size)) {
             Ok(session) => {
@@ -41,7 +46,7 @@ impl TerminalTab {
             title: shell.to_string(),
             shell,
             session,
-            engine: TerminalEngine::new(size, 10_000, writer),
+            engine: TerminalEngine::new(size, 10_000, writer, theme),
         }
     }
 

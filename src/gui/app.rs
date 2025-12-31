@@ -3,6 +3,7 @@ use crate::config::AppConfig;
 use crate::gui::components::{button_primary, button_secondary, panel, tab_bar};
 use crate::gui::render::TerminalProgram;
 use crate::gui::tab::{ShellKind, TerminalTab};
+use crate::terminal::TerminalTheme;
 use iced::keyboard::{self, Key, Modifiers};
 use iced::widget::{center, column, container, mouse_area, stack, text};
 use iced::{Element, Event, Length, Size, Subscription, Task, event, time, window};
@@ -61,6 +62,33 @@ impl App {
         (cols.max(10), rows.max(5))
     }
 
+    pub fn window_style(&self) -> iced::theme::Style {
+        let mut background_color = self.theme_background_color();
+        if self.use_transparent_background() {
+            background_color.a = 0.0;
+        }
+
+        iced::theme::Style {
+            background_color,
+            text_color: self.theme_text_color(),
+        }
+    }
+
+    fn use_transparent_background(&self) -> bool {
+        self.tabs.get(self.active_tab).is_some()
+    }
+
+    fn theme_background_color(&self) -> iced::Color {
+        theme_color(
+            self.config.theme.background,
+            self.config.theme.background_opacity,
+        )
+    }
+
+    fn theme_text_color(&self) -> iced::Color {
+        theme_color(self.config.theme.foreground, 1.0)
+    }
+
     pub fn update(&mut self, message: Message) -> Task<Message> {
         match message {
             Message::TabSelected(index) if index < self.tabs.len() => {
@@ -83,7 +111,8 @@ impl App {
             }
             Message::CreateTab(shell) => {
                 let (cols, rows) = self.grid_for_size(self.window_size);
-                let new_tab = TerminalTab::from_shell(shell, cols, rows);
+                let theme = TerminalTheme::from_config(&self.config);
+                let new_tab = TerminalTab::from_shell(shell, cols, rows, theme);
                 self.tabs.push(new_tab);
                 self.active_tab = self.tabs.len() - 1;
                 self.show_shell_picker = false;
@@ -164,7 +193,6 @@ impl App {
         // Main contents
         let main_content: Element<Message> =
             if let Some(active_tab) = self.tabs.get(self.active_tab) {
-                let status_text = active_tab.status_text();
                 let dims = active_tab.size();
                 let cells = active_tab.render_cells();
                 let grid_size = dims;
@@ -173,18 +201,7 @@ impl App {
                     .width(Length::Fill)
                     .height(Length::Fill);
 
-                column(vec![
-                    text(format!(
-                        "{}  |  {}x{}  |  {}",
-                        active_tab.shell, dims.columns, dims.lines, status_text
-                    ))
-                    .size(12)
-                    .into(),
-                    terminal_stack.into(),
-                ])
-                .spacing(4)
-                .padding(8)
-                .into()
+                terminal_stack.into()
             } else {
                 column(vec![
                     text("No tabs open").size(20).into(),
@@ -196,9 +213,14 @@ impl App {
             };
 
         // Base layout
-        let base_layout = panel(column(vec![tab_row, main_content]).height(Length::Fill))
-            .width(Length::Fill)
-            .height(Length::Fill);
+        let panel_background = None;
+        let base_layout = panel(
+            column(vec![tab_row, main_content]).height(Length::Fill),
+            panel_background,
+            self.theme_text_color(),
+        )
+        .width(Length::Fill)
+        .height(Length::Fill);
 
         // Popup
         if self.show_shell_picker {
@@ -295,5 +317,14 @@ impl App {
 impl Default for App {
     fn default() -> Self {
         Self::new(AppConfig::default())
+    }
+}
+
+fn theme_color(rgb: [u8; 3], alpha: f32) -> iced::Color {
+    iced::Color {
+        r: f32::from(rgb[0]) / 255.0,
+        g: f32::from(rgb[1]) / 255.0,
+        b: f32::from(rgb[2]) / 255.0,
+        a: alpha,
     }
 }

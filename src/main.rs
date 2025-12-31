@@ -4,10 +4,10 @@ mod platform;
 mod session;
 mod terminal;
 
+use iced::Size;
 use iced::font;
 #[cfg(target_os = "windows")]
 use iced::window::raw_window_handle::HasWindowHandle;
-use iced::{Color, Size};
 
 use crate::config::AppConfig;
 use crate::gui::App;
@@ -44,10 +44,7 @@ fn main() -> iced::Result {
     )
     .title("Rabbitty")
     .theme(iced::Theme::Dark)
-    .style(|_, _| iced::theme::Style {
-        background_color: Color::from_rgb8(16, 16, 20),
-        text_color: Color::WHITE,
-    })
+    .style(|state, _| state.window_style())
     .subscription(App::subscription)
     .font(DEJAVU_SANS)
     .default_font(iced::Font {
@@ -57,6 +54,7 @@ fn main() -> iced::Result {
     .window(iced::window::Settings {
         exit_on_close_request: false,
         size: Size::new(app_config.ui.window_width, app_config.ui.window_height),
+        transparent: true,
 
         #[cfg(target_os = "macos")]
         platform_specific: iced::window::settings::PlatformSpecific {

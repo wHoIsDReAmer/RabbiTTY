@@ -6,6 +6,10 @@ use std::path::{Path, PathBuf};
 pub const DEFAULT_WINDOW_WIDTH: f32 = 600.0;
 pub const DEFAULT_WINDOW_HEIGHT: f32 = 350.0;
 pub const FONT_SCALE_FACTOR: f32 = 0.85;
+pub const DEFAULT_THEME_FOREGROUND: [u8; 3] = [0xcd, 0xd6, 0xf4];
+pub const DEFAULT_THEME_BACKGROUND: [u8; 3] = [0x1e, 0x1e, 0x2e];
+pub const DEFAULT_THEME_CURSOR: [u8; 3] = [0x89, 0xb4, 0xfa];
+pub const DEFAULT_THEME_BG_OPACITY: f32 = 1.0;
 const DEFAULT_FONT_PX: f32 = 14.0;
 const DEJAVU_SANS_MONO: &[u8] = include_bytes!("../fonts/DejaVuSansMono.ttf");
 
@@ -13,6 +17,7 @@ const DEJAVU_SANS_MONO: &[u8] = include_bytes!("../fonts/DejaVuSansMono.ttf");
 pub struct AppConfig {
     pub ui: UiConfig,
     pub terminal: TerminalConfig,
+    pub theme: ThemeConfig,
 }
 
 #[derive(Debug, Clone)]
@@ -27,10 +32,19 @@ pub struct TerminalConfig {
     pub cell_height: f32,
 }
 
+#[derive(Debug, Clone)]
+pub struct ThemeConfig {
+    pub foreground: [u8; 3],
+    pub background: [u8; 3],
+    pub cursor: [u8; 3],
+    pub background_opacity: f32,
+}
+
 #[derive(Debug, Deserialize)]
 struct FileConfig {
     ui: Option<UiFileConfig>,
     terminal: Option<TerminalFileConfig>,
+    theme: Option<ThemeFileConfig>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -45,6 +59,14 @@ struct TerminalFileConfig {
     cell_height: Option<f32>,
 }
 
+#[derive(Debug, Deserialize)]
+struct ThemeFileConfig {
+    foreground: Option<String>,
+    background: Option<String>,
+    cursor: Option<String>,
+    background_opacity: Option<f32>,
+}
+
 impl Default for AppConfig {
     fn default() -> Self {
         let (cell_width, cell_height) = default_cell_metrics();
@@ -56,6 +78,12 @@ impl Default for AppConfig {
             terminal: TerminalConfig {
                 cell_width,
                 cell_height,
+            },
+            theme: ThemeConfig {
+                foreground: DEFAULT_THEME_FOREGROUND,
+                background: DEFAULT_THEME_BACKGROUND,
+                cursor: DEFAULT_THEME_CURSOR,
+                background_opacity: DEFAULT_THEME_BG_OPACITY,
             },
         }
     }
@@ -99,6 +127,22 @@ impl AppConfig {
             self.terminal.cell_width = cell_width;
             self.terminal.cell_height = cell_height;
         }
+
+        if let Some(theme) = file.theme {
+            if let Some(foreground) = theme.foreground.as_deref().and_then(parse_hex_color) {
+                self.theme.foreground = foreground;
+            }
+            if let Some(background) = theme.background.as_deref().and_then(parse_hex_color) {
+                self.theme.background = background;
+            }
+            if let Some(cursor) = theme.cursor.as_deref().and_then(parse_hex_color) {
+                self.theme.cursor = cursor;
+            }
+            if let Some(opacity) = theme.background_opacity {
+                self.theme.background_opacity =
+                    sanitize_opacity(opacity, self.theme.background_opacity);
+            }
+        }
     }
 }
 
@@ -108,6 +152,27 @@ fn sanitize_positive(value: f32, fallback: f32) -> f32 {
     } else {
         fallback
     }
+}
+
+fn sanitize_opacity(value: f32, fallback: f32) -> f32 {
+    if value.is_finite() && (0.0..=1.0).contains(&value) {
+        value
+    } else {
+        fallback
+    }
+}
+
+fn parse_hex_color(value: &str) -> Option<[u8; 3]> {
+    let value = value.trim();
+    let value = value.strip_prefix('#').unwrap_or(value);
+    let value = value.strip_prefix("0x").unwrap_or(value);
+    if value.len() != 6 {
+        return None;
+    }
+    let r = u8::from_str_radix(&value[0..2], 16).ok()?;
+    let g = u8::from_str_radix(&value[2..4], 16).ok()?;
+    let b = u8::from_str_radix(&value[4..6], 16).ok()?;
+    Some([r, g, b])
 }
 
 fn config_path() -> Option<PathBuf> {
@@ -129,11 +194,21 @@ fn ensure_config_file(path: &Path) -> std::io::Result<()> {
 fn default_config_toml() -> String {
     let (cell_width, cell_height) = default_cell_metrics();
     format!(
-        "[ui]\nwindow_width = {width}\nwindow_height = {height}\n\n[terminal]\ncell_width = {cell_width:.1}\ncell_height = {cell_height:.1}\n",
+        "[ui]\nwindow_width = {width}\nwindow_height = {height}\n\n[terminal]\ncell_width = {cell_width:.1}\ncell_height = {cell_height:.1}\n\n[theme]\nforeground = \"#{fg:02x}{fg_g:02x}{fg_b:02x}\"\nbackground = \"#{bg:02x}{bg_g:02x}{bg_b:02x}\"\ncursor = \"#{cur:02x}{cur_g:02x}{cur_b:02x}\"\nbackground_opacity = {opacity:.2}\n",
         width = DEFAULT_WINDOW_WIDTH as u32,
         height = DEFAULT_WINDOW_HEIGHT as u32,
         cell_width = cell_width,
-        cell_height = cell_height
+        cell_height = cell_height,
+        fg = DEFAULT_THEME_FOREGROUND[0],
+        fg_g = DEFAULT_THEME_FOREGROUND[1],
+        fg_b = DEFAULT_THEME_FOREGROUND[2],
+        bg = DEFAULT_THEME_BACKGROUND[0],
+        bg_g = DEFAULT_THEME_BACKGROUND[1],
+        bg_b = DEFAULT_THEME_BACKGROUND[2],
+        cur = DEFAULT_THEME_CURSOR[0],
+        cur_g = DEFAULT_THEME_CURSOR[1],
+        cur_b = DEFAULT_THEME_CURSOR[2],
+        opacity = DEFAULT_THEME_BG_OPACITY
     )
 }
 
