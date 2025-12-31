@@ -1,5 +1,4 @@
 use crate::config::AppConfig;
-#[cfg(target_family = "unix")]
 use crate::gui::components::{button_primary, button_secondary, panel, tab_bar};
 use crate::gui::render::TerminalProgram;
 use crate::gui::tab::{ShellKind, TerminalTab};
