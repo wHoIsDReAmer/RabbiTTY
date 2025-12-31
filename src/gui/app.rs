@@ -6,7 +6,7 @@ use crate::terminal::TerminalTheme;
 use iced::keyboard::{self, Key, Modifiers};
 use iced::widget::{center, column, container, mouse_area, stack, text};
 use iced::{Element, Event, Length, Size, Subscription, Task, event, time, window};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 #[derive(Debug, Clone)]
 pub enum Message {
@@ -22,6 +22,7 @@ pub enum Message {
         text: Option<String>,
     },
     WindowResized(Size),
+    WindowActivity,
     #[cfg(target_os = "windows")]
     WindowMinimize,
     #[cfg(target_os = "windows")]
@@ -36,6 +37,7 @@ pub struct App {
     active_tab: usize,
     show_shell_picker: bool,
     window_size: Size,
+    window_activity_at: Option<Instant>,
     config: AppConfig,
 }
 
@@ -47,6 +49,7 @@ impl App {
             active_tab: 0,
             show_shell_picker: false,
             window_size: Size::new(config.ui.window_width, config.ui.window_height),
+            window_activity_at: None,
             config,
         }
     }
@@ -157,13 +160,19 @@ impl App {
             Message::WindowDrag => {
                 return window::latest().and_then(window::drag);
             }
+
             Message::WindowResized(size) => {
                 self.window_size = size;
+                self.window_activity_at = Some(Instant::now());
                 let (cols, rows) = self.grid_for_size(size);
 
                 for tab in &mut self.tabs {
                     tab.resize(cols, rows);
                 }
+            }
+
+            Message::WindowActivity => {
+                self.window_activity_at = Some(Instant::now());
             }
             _ => {}
         }
@@ -280,13 +289,23 @@ impl App {
     }
 
     pub fn subscription(&self) -> Subscription<Message> {
+        let tick_interval = if self
+            .window_activity_at
+            .is_some_and(|last| last.elapsed() < Duration::from_millis(250))
+        {
+            Duration::from_millis(550)
+        } else {
+            Duration::from_millis(20)
+        };
         Subscription::batch([
             // Ticking
-            time::every(Duration::from_millis(30)).map(|_| Message::Tick),
+            time::every(tick_interval).map(|_| Message::Tick),
             // Iced events (maybe will be added?)
             event::listen_with(|event, _status, _id| match event {
                 Event::Window(window::Event::CloseRequested) => Some(Message::Exit),
                 Event::Window(window::Event::Resized(size)) => Some(Message::WindowResized(size)),
+                Event::Window(window::Event::Moved(_)) => Some(Message::WindowActivity),
+                Event::Window(window::Event::Rescaled(_)) => Some(Message::WindowActivity),
                 Event::Keyboard(keyboard::Event::KeyPressed {
                     key,
                     modifiers,
