@@ -1,20 +1,22 @@
 use crate::gui::app::Message;
 use crate::gui::theme::Palette;
 #[cfg(target_os = "windows")]
-use iced::widget::mouse_area;
-use iced::widget::{Space, button, container, row, text};
+use iced::widget::{Space, mouse_area};
+use iced::widget::{button, container, row, text};
 use iced::{Background, Border, Color, Element, Length, Theme};
 
 pub fn tab_bar<'a>(
     tabs: impl Iterator<Item = (&'a str, usize, bool)>, // (title, index, is_active)
     on_add: Message,
+    bar_alpha: f32,
+    tab_alpha: f32,
 ) -> Element<'a, Message> {
     let palette = Palette::DARK;
 
     let mut tab_elements: Vec<Element<Message>> = Vec::new();
 
     for (title, index, is_active) in tabs {
-        let tab_item = browser_tab(title, index, is_active);
+        let tab_item = browser_tab(title, index, is_active, tab_alpha);
         tab_elements.push(tab_item);
     }
 
@@ -140,9 +142,13 @@ pub fn tab_bar<'a>(
         .spacing(2)
         .align_y(iced::Alignment::Center);
 
+    let bar_alpha = bar_alpha.clamp(0.0, 1.0);
     let tab_bar_container = container(content)
         .style(move |_theme: &Theme| container::Style {
-            background: Some(Background::Color(palette.surface)),
+            background: Some(Background::Color(Color {
+                a: bar_alpha,
+                ..palette.surface
+            })),
             ..Default::default()
         })
         .padding(padding)
@@ -158,7 +164,12 @@ pub fn tab_bar<'a>(
     tab_bar_container.into()
 }
 
-fn browser_tab<'a>(title: &'a str, index: usize, is_active: bool) -> Element<'a, Message> {
+fn browser_tab<'a>(
+    title: &'a str,
+    index: usize,
+    is_active: bool,
+    tab_alpha: f32,
+) -> Element<'a, Message> {
     let palette = Palette::DARK;
 
     let tab_text = text(title).size(13);
@@ -190,19 +201,30 @@ fn browser_tab<'a>(title: &'a str, index: usize, is_active: bool) -> Element<'a,
         .spacing(8)
         .align_y(iced::Alignment::Center);
 
+    let inactive_alpha = tab_alpha.clamp(0.0, 1.0);
+    let hover_alpha = (inactive_alpha + 0.15).min(1.0);
     let tab_button = button(tab_content)
         .on_press(Message::TabSelected(index))
         .padding([8, 12])
         .style(move |_theme: &Theme, status: button::Status| {
             let (bg_color, text_color) = if is_active {
-                (palette.background, palette.text)
+                (
+                    Color {
+                        a: inactive_alpha,
+                        ..palette.background
+                    },
+                    palette.text,
+                )
             } else {
                 let hover_bg = match status {
                     button::Status::Hovered => Color {
-                        a: 0.3,
+                        a: hover_alpha,
                         ..palette.background
                     },
-                    _ => Color::TRANSPARENT,
+                    _ => Color {
+                        a: inactive_alpha,
+                        ..palette.background
+                    },
                 };
                 (hover_bg, palette.text_secondary)
             };

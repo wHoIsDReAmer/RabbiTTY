@@ -1,22 +1,27 @@
+mod config;
 mod gui;
 mod platform;
 mod session;
 mod terminal;
 
+use iced::Size;
 use iced::font;
 #[cfg(target_os = "windows")]
 use iced::window::raw_window_handle::HasWindowHandle;
-use iced::{Color, Size};
 
+use crate::config::AppConfig;
 use crate::gui::App;
 
 // Embed DejaVu Sans font for better Unicode support (Box Drawing characters)
 const DEJAVU_SANS: &[u8] = include_bytes!("../fonts/DejaVuSans.ttf");
 
 fn main() -> iced::Result {
+    let app_config = AppConfig::load();
+    let boot_config = app_config.clone();
+
     iced::application(
-        || {
-            let app = App::new();
+        move || {
+            let app = App::new(boot_config.clone());
 
             #[cfg(target_os = "windows")]
             let init_task: iced::Task<gui::app::Message> = iced::window::latest()
@@ -39,10 +44,7 @@ fn main() -> iced::Result {
     )
     .title("Rabbitty")
     .theme(iced::Theme::Dark)
-    .style(|_, _| iced::theme::Style {
-        background_color: Color::from_rgb8(16, 16, 20),
-        text_color: Color::WHITE,
-    })
+    .style(|state, _| state.window_style())
     .subscription(App::subscription)
     .font(DEJAVU_SANS)
     .default_font(iced::Font {
@@ -51,7 +53,8 @@ fn main() -> iced::Result {
     })
     .window(iced::window::Settings {
         exit_on_close_request: false,
-        size: Size::new(600.0, 350.0),
+        size: Size::new(app_config.ui.window_width, app_config.ui.window_height),
+        transparent: true,
 
         #[cfg(target_os = "macos")]
         platform_specific: iced::window::settings::PlatformSpecific {

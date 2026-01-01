@@ -1,3 +1,4 @@
+use crate::config::FONT_SCALE_FACTOR;
 use crate::terminal::CellVisual;
 use ab_glyph::{Font, FontArc, PxScale, ScaleFont, point};
 use bytemuck::{Pod, Zeroable};
@@ -5,7 +6,6 @@ use iced::wgpu;
 use std::collections::HashMap;
 
 const DEJAVU_SANS_MONO: &[u8] = include_bytes!("../../../fonts/DejaVuSansMono.ttf");
-const FONT_SCALE_FACTOR: f32 = 0.85;
 const ATLAS_INITIAL_SIZE: u32 = 2048;
 const ATLAS_MAX_SIZE: u32 = 4096;
 const ATLAS_PADDING: u32 = 1;

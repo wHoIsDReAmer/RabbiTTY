@@ -1,6 +1,8 @@
+use iced::futures::channel::mpsc;
+use iced::futures::executor;
+use iced::futures::sink::SinkExt;
 use portable_pty::{Child, CommandBuilder, MasterPty, PtySize, native_pty_system};
 use std::io::{ErrorKind, Read, Write};
-use std::sync::mpsc::{self, Receiver};
 use std::sync::{Arc, Mutex};
 use std::thread;
 use std::thread::JoinHandle;
@@ -15,7 +17,6 @@ pub struct LaunchSpec<'a> {
 
 pub struct Session {
     writer: Arc<Mutex<Box<dyn Write + Send>>>,
-    output_rx: Receiver<Vec<u8>>,
     child: Option<Box<dyn Child + Send>>,
     master: Option<Box<dyn MasterPty + Send>>,
     reader: Option<JoinHandle<()>>,
@@ -27,8 +28,18 @@ pub enum SessionError {
     Io(String),
 }
 
+#[derive(Debug, Clone)]
+pub enum OutputEvent {
+    Data { tab_id: u64, bytes: Vec<u8> },
+    Closed { tab_id: u64 },
+}
+
 impl Session {
-    pub fn spawn(spec: LaunchSpec<'_>) -> Result<Self, SessionError> {
+    pub fn spawn(
+        spec: LaunchSpec<'_>,
+        tab_id: u64,
+        mut output_tx: mpsc::Sender<OutputEvent>,
+    ) -> Result<Self, SessionError> {
         let pty_system = native_pty_system();
         let pair = pty_system
             .openpty(PtySize {
@@ -60,36 +71,41 @@ impl Session {
             .map_err(|err| SessionError::Spawn(format!("writer unavailable: {err}")))?;
 
         let writer = Arc::new(Mutex::new(writer));
-        let (tx, rx) = mpsc::channel();
 
         let _writer_for_reader = Arc::clone(&writer);
         let reader_handle = thread::spawn(move || {
             let mut buf = [0u8; 4096];
             loop {
                 match reader.read(&mut buf) {
-                    Ok(0) => break,
+                    Ok(0) => {
+                        let _ = executor::block_on(output_tx.send(OutputEvent::Closed { tab_id }));
+                        break;
+                    }
                     Ok(n) => {
                         let chunk = buf[..n].to_vec();
                         if chunk.is_empty() {
                             continue;
                         }
-                        if tx.send(chunk).is_err() {
-                            break;
-                        }
+                        let _ = executor::block_on(output_tx.send(OutputEvent::Data {
+                            tab_id,
+                            bytes: chunk,
+                        }));
                     }
                     Err(err) if err.kind() == ErrorKind::Interrupted => continue,
                     Err(err) if err.kind() == ErrorKind::WouldBlock => {
                         thread::sleep(Duration::from_millis(5));
                         continue;
                     }
-                    Err(_) => break,
+                    Err(_) => {
+                        let _ = executor::block_on(output_tx.send(OutputEvent::Closed { tab_id }));
+                        break;
+                    }
                 }
             }
         });
 
         Ok(Self {
             writer,
-            output_rx: rx,
             child: Some(child),
             master: Some(pair.master),
             reader: Some(reader_handle),
@@ -105,14 +121,6 @@ impl Session {
             .write_all(bytes)
             .and_then(|_| guard.flush())
             .map_err(|err| SessionError::Io(format!("write failed: {err}")))
-    }
-
-    pub fn drain_output(&self) -> Vec<Vec<u8>> {
-        let mut chunks = Vec::new();
-        while let Ok(chunk) = self.output_rx.try_recv() {
-            chunks.push(chunk);
-        }
-        chunks
     }
 
     pub fn writer(&self) -> Arc<Mutex<Box<dyn Write + Send>>> {
