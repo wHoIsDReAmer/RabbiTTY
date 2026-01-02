@@ -3,6 +3,7 @@ name = "rabitty"
 version = "0.0.1"
 edition = "2024"
 authors = ["neverprogrammer@gmail.com"]
+rust-version = "1.92"
 
 [profile.release]
 lto = true
