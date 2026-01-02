@@ -25,6 +25,7 @@ pub(super) struct BackgroundPipeline {
     quad_buffer: wgpu::Buffer,
     instance_buffer: wgpu::Buffer,
     instance_capacity: usize,
+    instances: Vec<InstanceRaw>,
 }
 
 impl BackgroundPipeline {
@@ -147,6 +148,7 @@ impl BackgroundPipeline {
             quad_buffer,
             instance_buffer,
             instance_capacity: 64,
+            instances: Vec::new(),
         }
     }
 
@@ -171,15 +173,16 @@ impl BackgroundPipeline {
         queue: &wgpu::Queue,
         cells: &[CellVisual],
     ) {
-        let instances: Vec<InstanceRaw> = cells
-            .iter()
-            .map(|cell| InstanceRaw {
-                pos: [cell.col as u32, cell.row as u32],
-                color: cell.bg,
-            })
-            .collect();
-
-        let required = instances.len().max(1);
+        self.instances.clear();
+        let needed = cells.len().saturating_sub(self.instances.capacity());
+        if needed > 0 {
+            self.instances.reserve(needed);
+        }
+        self.instances.extend(cells.iter().map(|cell| InstanceRaw {
+            pos: [cell.col as u32, cell.row as u32],
+            color: cell.bg,
+        }));
+        let required = self.instances.len().max(1);
 
         if required > self.instance_capacity {
             let new_cap = (required.next_power_of_two()).max(64);
@@ -192,8 +195,12 @@ impl BackgroundPipeline {
             self.instance_capacity = new_cap;
         }
 
-        if !instances.is_empty() {
-            queue.write_buffer(&self.instance_buffer, 0, bytemuck::cast_slice(&instances));
+        if !self.instances.is_empty() {
+            queue.write_buffer(
+                &self.instance_buffer,
+                0,
+                bytemuck::cast_slice(&self.instances),
+            );
         } else {
             queue.write_buffer(
                 &self.instance_buffer,

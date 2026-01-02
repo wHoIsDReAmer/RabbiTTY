@@ -136,6 +136,7 @@ pub(super) struct TextPipelineData {
     line_min_y: f32,
     cell_advance: f32,
     glyphs: HashMap<char, GlyphInfo>,
+    glyph_instances: Vec<GlyphInstance>,
     instance_buffer: wgpu::Buffer,
     instance_capacity: usize,
     instance_len: usize,
@@ -323,6 +324,7 @@ impl TextPipelineData {
             line_min_y: 0.0,
             cell_advance: 0.0,
             glyphs: HashMap::new(),
+            glyph_instances: Vec::new(),
             instance_buffer,
             instance_capacity: 64,
             instance_len: 0,
@@ -365,7 +367,11 @@ impl TextPipelineData {
         let top_margin = (cell_height - self.line_height).max(0.0) * 0.5;
         let offset_x = (cell_width - self.cell_advance).max(0.0) * 0.5;
 
-        let mut glyph_instances = Vec::with_capacity(cells.len());
+        self.glyph_instances.clear();
+        let needed = cells.len().saturating_sub(self.glyph_instances.capacity());
+        if needed > 0 {
+            self.glyph_instances.reserve(needed);
+        }
         for cell in cells {
             if cell.ch == ' ' {
                 continue;
@@ -388,7 +394,7 @@ impl TextPipelineData {
                 (origin_y + info.bearing[1]).round(),
             ];
 
-            glyph_instances.push(GlyphInstance {
+            self.glyph_instances.push(GlyphInstance {
                 pos,
                 size: info.size,
                 uv_min: info.uv_min,
@@ -397,7 +403,7 @@ impl TextPipelineData {
             });
         }
 
-        self.instance_len = glyph_instances.len();
+        self.instance_len = self.glyph_instances.len();
 
         if self.instance_len > self.instance_capacity {
             let new_cap = self.instance_len.next_power_of_two().max(64);
@@ -410,11 +416,11 @@ impl TextPipelineData {
             self.instance_capacity = new_cap;
         }
 
-        if !glyph_instances.is_empty() {
+        if !self.glyph_instances.is_empty() {
             queue.write_buffer(
                 &self.instance_buffer,
                 0,
-                bytemuck::cast_slice(&glyph_instances),
+                bytemuck::cast_slice(&self.glyph_instances),
             );
         }
     }
