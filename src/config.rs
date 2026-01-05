@@ -1,5 +1,5 @@
 use ab_glyph::{Font, FontArc, PxScale, ScaleFont, point};
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -40,31 +40,43 @@ pub struct ThemeConfig {
     pub background_opacity: f32,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Serialize)]
 struct FileConfig {
     ui: Option<UiFileConfig>,
     terminal: Option<TerminalFileConfig>,
     theme: Option<ThemeFileConfig>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Serialize)]
 struct UiFileConfig {
     window_width: Option<f32>,
     window_height: Option<f32>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Serialize)]
 struct TerminalFileConfig {
     cell_width: Option<f32>,
     cell_height: Option<f32>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Serialize)]
 struct ThemeFileConfig {
     foreground: Option<String>,
     background: Option<String>,
     cursor: Option<String>,
     background_opacity: Option<f32>,
+}
+
+#[derive(Debug, Default, Clone)]
+pub struct AppConfigUpdates {
+    pub window_width: Option<f32>,
+    pub window_height: Option<f32>,
+    pub cell_width: Option<f32>,
+    pub cell_height: Option<f32>,
+    pub foreground: Option<[u8; 3]>,
+    pub background: Option<[u8; 3]>,
+    pub cursor: Option<[u8; 3]>,
+    pub background_opacity: Option<f32>,
 }
 
 impl Default for AppConfig {
@@ -101,6 +113,49 @@ impl AppConfig {
             }
         }
         config
+    }
+
+    pub fn apply_updates(&mut self, updates: AppConfigUpdates) {
+        if let Some(width) = updates.window_width {
+            self.ui.window_width = sanitize_positive(width, self.ui.window_width);
+        }
+        if let Some(height) = updates.window_height {
+            self.ui.window_height = sanitize_positive(height, self.ui.window_height);
+        }
+        if let Some(width) = updates.cell_width {
+            self.terminal.cell_width = sanitize_positive(width, self.terminal.cell_width);
+        }
+        if let Some(height) = updates.cell_height {
+            self.terminal.cell_height = sanitize_positive(height, self.terminal.cell_height);
+        }
+        if let Some(foreground) = updates.foreground {
+            self.theme.foreground = foreground;
+        }
+        if let Some(background) = updates.background {
+            self.theme.background = background;
+        }
+        if let Some(cursor) = updates.cursor {
+            self.theme.cursor = cursor;
+        }
+        if let Some(opacity) = updates.background_opacity {
+            self.theme.background_opacity =
+                sanitize_opacity(opacity, self.theme.background_opacity);
+        }
+    }
+
+    pub fn save(&self) -> std::io::Result<()> {
+        let Some(path) = config_path() else {
+            return Ok(());
+        };
+
+        if let Some(parent) = path.parent() {
+            fs::create_dir_all(parent)?;
+        }
+
+        let file = FileConfig::from(self);
+        let contents = toml::to_string_pretty(&file)
+            .map_err(|err| std::io::Error::new(std::io::ErrorKind::Other, err))?;
+        fs::write(path, contents.as_bytes())
     }
 
     fn apply_file(&mut self, file: FileConfig) {
@@ -162,7 +217,7 @@ fn sanitize_opacity(value: f32, fallback: f32) -> f32 {
     }
 }
 
-fn parse_hex_color(value: &str) -> Option<[u8; 3]> {
+pub(crate) fn parse_hex_color(value: &str) -> Option<[u8; 3]> {
     let value = value.trim();
     let value = value.strip_prefix('#').unwrap_or(value);
     let value = value.strip_prefix("0x").unwrap_or(value);
@@ -173,6 +228,42 @@ fn parse_hex_color(value: &str) -> Option<[u8; 3]> {
     let g = u8::from_str_radix(&value[2..4], 16).ok()?;
     let b = u8::from_str_radix(&value[4..6], 16).ok()?;
     Some([r, g, b])
+}
+
+impl From<&AppConfig> for FileConfig {
+    fn from(config: &AppConfig) -> Self {
+        Self {
+            ui: Some(UiFileConfig {
+                window_width: Some(config.ui.window_width),
+                window_height: Some(config.ui.window_height),
+            }),
+            terminal: Some(TerminalFileConfig {
+                cell_width: Some(config.terminal.cell_width),
+                cell_height: Some(config.terminal.cell_height),
+            }),
+            theme: Some(ThemeFileConfig {
+                foreground: Some(format!(
+                    "#{:02x}{:02x}{:02x}",
+                    config.theme.foreground[0],
+                    config.theme.foreground[1],
+                    config.theme.foreground[2]
+                )),
+                background: Some(format!(
+                    "#{:02x}{:02x}{:02x}",
+                    config.theme.background[0],
+                    config.theme.background[1],
+                    config.theme.background[2]
+                )),
+                cursor: Some(format!(
+                    "#{:02x}{:02x}{:02x}",
+                    config.theme.cursor[0],
+                    config.theme.cursor[1],
+                    config.theme.cursor[2]
+                )),
+                background_opacity: Some(config.theme.background_opacity),
+            }),
+        }
+    }
 }
 
 fn config_path() -> Option<PathBuf> {

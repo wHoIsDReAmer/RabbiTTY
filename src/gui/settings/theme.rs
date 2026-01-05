@@ -1,17 +1,25 @@
 use crate::config::AppConfig;
 use crate::gui::app::Message;
-use crate::gui::settings::{format_rgb, section, setting_row};
+use crate::gui::settings::{SettingsDraft, SettingsField, input_row, section};
 use crate::gui::theme::SPACING_NORMAL;
 use iced::widget::column;
 use iced::{Element, Length};
 
-pub fn view(config: &AppConfig) -> Element<'_, Message> {
+pub fn view<'a>(_config: &'a AppConfig, draft: &'a SettingsDraft) -> Element<'a, Message> {
     let colors_section = section(
         "Colors",
         column(vec![
-            setting_row("Foreground", format_rgb(config.theme.foreground)),
-            setting_row("Background", format_rgb(config.theme.background)),
-            setting_row("Cursor", format_rgb(config.theme.cursor)),
+            input_row(
+                "Foreground",
+                &draft.foreground,
+                SettingsField::ThemeForeground,
+            ),
+            input_row(
+                "Background",
+                &draft.background,
+                SettingsField::ThemeBackground,
+            ),
+            input_row("Cursor", &draft.cursor, SettingsField::ThemeCursor),
         ])
         .spacing(SPACING_NORMAL)
         .width(Length::Fill)
@@ -20,9 +28,10 @@ pub fn view(config: &AppConfig) -> Element<'_, Message> {
 
     let opacity_section = section(
         "Opacity",
-        column(vec![setting_row(
+        column(vec![input_row(
             "Background opacity",
-            format!("{:.2}", config.theme.background_opacity),
+            &draft.background_opacity,
+            SettingsField::ThemeBackgroundOpacity,
         )])
         .spacing(SPACING_NORMAL)
         .width(Length::Fill)

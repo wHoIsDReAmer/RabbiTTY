@@ -1,9 +1,7 @@
 use crate::config::AppConfig;
-#[cfg(target_family = "unix")]
-use crate::gui::components::button_primary;
-use crate::gui::components::{button_secondary, panel, tab_bar};
+use crate::gui::components::{button_primary, button_secondary, panel, tab_bar};
 use crate::gui::render::TerminalProgram;
-use crate::gui::settings::{self, SettingsCategory};
+use crate::gui::settings::{self, SettingsCategory, SettingsDraft, SettingsField};
 use crate::gui::tab::{ShellKind, TerminalTab};
 use crate::gui::theme::{Palette, RADIUS_NORMAL, SPACING_LARGE, SPACING_NORMAL, SPACING_SMALL};
 use crate::session::OutputEvent;
@@ -27,6 +25,9 @@ pub enum Message {
     CreateTab(ShellKind),
     OpenSettingsTab,
     SelectSettingsCategory(SettingsCategory),
+    SettingsInputChanged(SettingsField, String),
+    ApplySettings,
+    SaveSettings,
     PtySenderReady(mpsc::Sender<OutputEvent>),
     PtyOutput(OutputEvent),
     KeyPressed {
@@ -51,6 +52,7 @@ pub struct App {
     window_size: Size,
     settings_open: bool,
     settings_category: SettingsCategory,
+    settings_draft: SettingsDraft,
     config: AppConfig,
     pty_sender: Option<mpsc::Sender<OutputEvent>>,
     next_tab_id: u64,
@@ -66,6 +68,7 @@ impl App {
             window_size: Size::new(config.ui.window_width, config.ui.window_height),
             settings_open: false,
             settings_category: SettingsCategory::Ui,
+            settings_draft: SettingsDraft::from_config(&config),
             config,
             pty_sender: None,
             next_tab_id: 1,
@@ -153,13 +156,28 @@ impl App {
             Message::OpenSettingsTab => {
                 self.settings_open = true;
                 self.active_tab = SETTINGS_TAB_INDEX;
+                self.settings_draft = SettingsDraft::from_config(&self.config);
             }
             Message::SelectSettingsCategory(category) => {
                 self.settings_category = category;
                 if !self.settings_open {
                     self.settings_open = true;
                     self.active_tab = SETTINGS_TAB_INDEX;
+                    self.settings_draft = SettingsDraft::from_config(&self.config);
                 }
+            }
+            Message::SettingsInputChanged(field, value) => {
+                self.settings_draft.update(field, value);
+            }
+            Message::ApplySettings => {
+                return self.apply_settings();
+            }
+            Message::SaveSettings => {
+                let task = self.apply_settings();
+                if let Err(err) = self.config.save() {
+                    eprintln!("Failed to save config: {err}");
+                }
+                return task;
             }
             Message::PtySenderReady(sender) => {
                 self.pty_sender = Some(sender);
@@ -438,10 +456,29 @@ impl App {
             ..Default::default()
         });
 
-        let content = container(settings::view_category(
+        let header = row![
+            text("Settings").size(18),
+            row![
+                button_secondary("Apply").on_press(Message::ApplySettings),
+                button_primary("Save").on_press(Message::SaveSettings),
+            ]
+            .spacing(SPACING_SMALL)
+        ]
+        .align_y(iced::Alignment::Center)
+        .spacing(SPACING_NORMAL)
+        .width(Length::Fill);
+
+        let body = settings::view_category(
             self.settings_category,
             &self.config,
-        ))
+            &self.settings_draft,
+        );
+
+        let content = container(
+            column(vec![header.into(), body])
+                .spacing(SPACING_NORMAL)
+                .width(Length::Fill),
+        )
         .width(Length::Fill)
         .height(Length::Fill)
         .padding(SPACING_LARGE);
@@ -451,6 +488,31 @@ impl App {
             .height(Length::Fill)
             .width(Length::Fill)
             .into()
+    }
+
+    fn apply_settings(&mut self) -> Task<Message> {
+        let updates = self.settings_draft.to_updates();
+        self.config.apply_updates(updates);
+        self.settings_draft = SettingsDraft::from_config(&self.config);
+
+        let new_size = Size::new(self.config.ui.window_width, self.config.ui.window_height);
+        let resize_task = if (self.window_size.width - new_size.width).abs() > f32::EPSILON
+            || (self.window_size.height - new_size.height).abs() > f32::EPSILON
+        {
+            self.window_size = new_size;
+            window::latest().and_then(move |id| window::resize(id, new_size))
+        } else {
+            Task::none()
+        };
+
+        let (cols, rows) = self.grid_for_size(self.window_size);
+        let theme = TerminalTheme::from_config(&self.config);
+        for tab in &mut self.tabs {
+            tab.resize(cols, rows);
+            tab.set_theme(theme.clone());
+        }
+
+        resize_task
     }
 
     pub fn subscription(&self) -> Subscription<Message> {
