@@ -25,9 +25,9 @@ impl Palette {
     };
 }
 
-pub const SPACING_SMALL: u16 = 4;
-pub const SPACING_NORMAL: u16 = 8;
-pub const SPACING_LARGE: u16 = 16;
+pub const SPACING_SMALL: f32 = 4.0;
+pub const SPACING_NORMAL: f32 = 8.0;
+pub const SPACING_LARGE: f32 = 16.0;
 
 pub const RADIUS_SMALL: f32 = 4.0;
 pub const RADIUS_NORMAL: f32 = 8.0;

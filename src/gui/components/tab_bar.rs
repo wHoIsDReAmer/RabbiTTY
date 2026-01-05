@@ -1,13 +1,14 @@
 use crate::gui::app::Message;
 use crate::gui::theme::Palette;
 #[cfg(target_os = "windows")]
-use iced::widget::{Space, mouse_area};
-use iced::widget::{button, container, row, text};
+use iced::widget::mouse_area;
+use iced::widget::{Space, button, container, row, text};
 use iced::{Background, Border, Color, Element, Length, Theme};
 
 pub fn tab_bar<'a>(
     tabs: impl Iterator<Item = (&'a str, usize, bool)>, // (title, index, is_active)
     on_add: Message,
+    on_settings: Message,
     bar_alpha: f32,
     tab_alpha: f32,
 ) -> Element<'a, Message> {
@@ -41,6 +42,26 @@ pub fn tab_bar<'a>(
         );
 
     tab_elements.push(add_btn.into());
+
+    let settings_btn = button(text("⚙").size(12))
+        .on_press(on_settings)
+        .padding([4, 7])
+        .style(
+            move |_theme: &Theme, status: button::Status| button::Style {
+                background: Some(Background::Color(Color::TRANSPARENT)),
+                text_color: match status {
+                    button::Status::Hovered => palette.text,
+                    _ => palette.text_secondary,
+                },
+                border: Border {
+                    radius: 6.0.into(),
+                    width: 0.0,
+                    color: Color::TRANSPARENT,
+                },
+                shadow: iced::Shadow::default(),
+                snap: true,
+            },
+        );
 
     // macOS: left control buttons
     #[cfg(target_os = "macos")]
@@ -132,6 +153,7 @@ pub fn tab_bar<'a>(
         let spacer = Space::new().width(Length::Fill).height(Length::Shrink);
         row(tab_elements)
             .push(spacer)
+            .push(settings_btn)
             .push(window_controls)
             .spacing(2)
             .align_y(iced::Alignment::Center)
@@ -139,6 +161,8 @@ pub fn tab_bar<'a>(
 
     #[cfg(not(target_os = "windows"))]
     let content = row(tab_elements)
+        .push(Space::new().width(Length::Fill).height(Length::Shrink))
+        .push(settings_btn)
         .spacing(2)
         .align_y(iced::Alignment::Center);
 

@@ -4,6 +4,7 @@ use crate::gui::components::button_primary;
 use crate::gui::components::{button_secondary, panel, tab_bar};
 use crate::gui::render::TerminalProgram;
 use crate::gui::tab::{ShellKind, TerminalTab};
+use crate::gui::theme::{SPACING_LARGE, SPACING_NORMAL};
 use crate::session::OutputEvent;
 use crate::terminal::TerminalTheme;
 use iced::futures::StreamExt;
@@ -14,6 +15,8 @@ use iced::stream;
 use iced::widget::{center, column, container, mouse_area, stack, text};
 use iced::{Element, Event, Length, Size, Subscription, Task, event, window};
 
+const SETTINGS_TAB_INDEX: usize = usize::MAX;
+
 #[derive(Clone)]
 pub enum Message {
     TabSelected(usize),
@@ -21,6 +24,7 @@ pub enum Message {
     OpenShellPicker,
     CloseShellPicker,
     CreateTab(ShellKind),
+    OpenSettingsTab,
     PtySenderReady(mpsc::Sender<OutputEvent>),
     PtyOutput(OutputEvent),
     KeyPressed {
@@ -43,6 +47,7 @@ pub struct App {
     active_tab: usize,
     show_shell_picker: bool,
     window_size: Size,
+    settings_open: bool,
     config: AppConfig,
     pty_sender: Option<mpsc::Sender<OutputEvent>>,
     next_tab_id: u64,
@@ -56,6 +61,7 @@ impl App {
             active_tab: 0,
             show_shell_picker: false,
             window_size: Size::new(config.ui.window_width, config.ui.window_height),
+            settings_open: false,
             config,
             pty_sender: None,
             next_tab_id: 1,
@@ -94,15 +100,29 @@ impl App {
 
     pub fn update(&mut self, message: Message) -> Task<Message> {
         match message {
-            Message::TabSelected(index) if index < self.tabs.len() => {
-                self.active_tab = index;
+            Message::TabSelected(index) => {
+                if index == SETTINGS_TAB_INDEX && self.settings_open {
+                    self.active_tab = SETTINGS_TAB_INDEX;
+                } else if index < self.tabs.len() {
+                    self.active_tab = index;
+                }
             }
             Message::CloseTab(index) => {
-                if index < self.tabs.len() {
+                if index == SETTINGS_TAB_INDEX {
+                    self.settings_open = false;
+                    if self.active_tab == SETTINGS_TAB_INDEX {
+                        self.active_tab = self.tabs.len().saturating_sub(1);
+                    }
+                } else if index < self.tabs.len() {
                     self.tabs.remove(index);
 
-                    if self.active_tab >= self.tabs.len() && !self.tabs.is_empty() {
-                        self.active_tab = self.tabs.len() - 1;
+                    if self.active_tab != SETTINGS_TAB_INDEX {
+                        if self.active_tab >= self.tabs.len() && !self.tabs.is_empty() {
+                            self.active_tab = self.tabs.len() - 1;
+                        }
+                        if self.tabs.is_empty() {
+                            self.active_tab = 0;
+                        }
                     }
                 }
             }
@@ -125,6 +145,10 @@ impl App {
                 self.tabs.push(new_tab);
                 self.active_tab = self.tabs.len() - 1;
                 self.show_shell_picker = false;
+            }
+            Message::OpenSettingsTab => {
+                self.settings_open = true;
+                self.active_tab = SETTINGS_TAB_INDEX;
             }
             Message::PtySenderReady(sender) => {
                 self.pty_sender = Some(sender);
@@ -149,6 +173,9 @@ impl App {
                 modifiers,
                 text,
             } => {
+                if self.active_tab == SETTINGS_TAB_INDEX {
+                    return Task::none();
+                }
                 // If popup is opened
                 if self.show_shell_picker {
                     if matches!(key, Key::Named(iced::keyboard::key::Named::Escape)) {
@@ -162,7 +189,7 @@ impl App {
                 }
             }
             Message::Exit => {
-                return window::latest().and_then(window::close);
+                return iced::exit();
             }
             #[cfg(target_os = "windows")]
             Message::WindowMinimize => {
@@ -185,44 +212,63 @@ impl App {
                     tab.resize(cols, rows);
                 }
             }
-            _ => {}
         }
 
         Task::none()
     }
 
     pub fn view(&self) -> Element<'_, Message> {
+        self.view_main()
+    }
+
+    fn view_main(&self) -> Element<'_, Message> {
         let tabs_iter = self
             .tabs
             .iter()
             .enumerate()
             .map(|(i, tab)| (tab.title.as_str(), i, i == self.active_tab));
+        let settings_iter = self
+            .settings_open
+            .then_some((
+                "Settings",
+                SETTINGS_TAB_INDEX,
+                self.active_tab == SETTINGS_TAB_INDEX,
+            ))
+            .into_iter();
+        let tabs_iter = tabs_iter.chain(settings_iter);
         let ui_alpha = self.config.theme.background_opacity;
         let bar_alpha = (ui_alpha * 0.9).clamp(0.0, 1.0);
         let tab_alpha = (ui_alpha * 0.6).clamp(0.0, 1.0);
-        let tab_row = tab_bar(tabs_iter, Message::OpenShellPicker, bar_alpha, tab_alpha);
+        let tab_row = tab_bar(
+            tabs_iter,
+            Message::OpenShellPicker,
+            Message::OpenSettingsTab,
+            bar_alpha,
+            tab_alpha,
+        );
 
         // Main contents
-        let main_content: Element<Message> =
-            if let Some(active_tab) = self.tabs.get(self.active_tab) {
-                let dims = active_tab.size();
-                let cells = active_tab.render_cells();
-                let grid_size = dims;
-                let terminal_stack = TerminalProgram { cells, grid_size }
-                    .widget()
-                    .width(Length::Fill)
-                    .height(Length::Fill);
+        let main_content: Element<Message> = if self.active_tab == SETTINGS_TAB_INDEX {
+            self.view_config()
+        } else if let Some(active_tab) = self.tabs.get(self.active_tab) {
+            let dims = active_tab.size();
+            let cells = active_tab.render_cells();
+            let grid_size = dims;
+            let terminal_stack = TerminalProgram { cells, grid_size }
+                .widget()
+                .width(Length::Fill)
+                .height(Length::Fill);
 
-                terminal_stack.into()
-            } else {
-                column(vec![
-                    text("No tabs open").size(20).into(),
-                    text("Click + to create a new tab").size(14).into(),
-                ])
-                .spacing(8)
-                .padding(20)
-                .into()
-            };
+            terminal_stack.into()
+        } else {
+            column(vec![
+                text("No tabs open").size(20).into(),
+                text("Click + to create a new tab").size(14).into(),
+            ])
+            .spacing(8)
+            .padding(20)
+            .into()
+        };
 
         // Base layout
         let panel_background = Some(self.theme_background_color());
@@ -300,6 +346,17 @@ impl App {
         } else {
             base_layout.into()
         }
+    }
+
+    fn view_config(&self) -> Element<'_, Message> {
+        column(vec![
+            text("Settings").size(20).into(),
+            text("Configuration tab").size(12).into(),
+        ])
+        .spacing(SPACING_NORMAL)
+        .padding(SPACING_LARGE)
+        .width(Length::Fill)
+        .into()
     }
 
     pub fn subscription(&self) -> Subscription<Message> {
