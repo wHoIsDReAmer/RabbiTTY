@@ -154,7 +154,7 @@ impl AppConfig {
 
         let file = FileConfig::from(self);
         let contents = toml::to_string_pretty(&file)
-            .map_err(|err| std::io::Error::new(std::io::ErrorKind::Other, err))?;
+            .map_err(std::io::Error::other)?;
         fs::write(path, contents.as_bytes())
     }
 
