@@ -77,6 +77,10 @@ impl TerminalTab {
         self.engine.render_cells()
     }
 
+    pub fn set_theme(&mut self, theme: TerminalTheme) {
+        self.engine.set_theme(theme);
+    }
+
     pub fn size(&self) -> TerminalSize {
         self.engine.size()
     }

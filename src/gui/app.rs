@@ -1,9 +1,9 @@
 use crate::config::AppConfig;
-#[cfg(target_family = "unix")]
-use crate::gui::components::button_primary;
-use crate::gui::components::{button_secondary, panel, tab_bar};
+use crate::gui::components::{button_primary, button_secondary, panel, tab_bar};
 use crate::gui::render::TerminalProgram;
+use crate::gui::settings::{self, SettingsCategory, SettingsDraft, SettingsField};
 use crate::gui::tab::{ShellKind, TerminalTab};
+use crate::gui::theme::{Palette, RADIUS_NORMAL, SPACING_LARGE, SPACING_NORMAL, SPACING_SMALL};
 use crate::session::OutputEvent;
 use crate::terminal::TerminalTheme;
 use iced::futures::StreamExt;
@@ -11,8 +11,10 @@ use iced::futures::channel::mpsc;
 use iced::futures::sink::SinkExt;
 use iced::keyboard::{self, Key, Modifiers};
 use iced::stream;
-use iced::widget::{center, column, container, mouse_area, stack, text};
-use iced::{Element, Event, Length, Size, Subscription, Task, event, window};
+use iced::widget::{button, center, column, container, mouse_area, row, stack, text};
+use iced::{Background, Border, Color, Element, Event, Length, Size, Subscription, Task, event, window};
+
+const SETTINGS_TAB_INDEX: usize = usize::MAX;
 
 #[derive(Clone)]
 pub enum Message {
@@ -21,6 +23,11 @@ pub enum Message {
     OpenShellPicker,
     CloseShellPicker,
     CreateTab(ShellKind),
+    OpenSettingsTab,
+    SelectSettingsCategory(SettingsCategory),
+    SettingsInputChanged(SettingsField, String),
+    ApplySettings,
+    SaveSettings,
     PtySenderReady(mpsc::Sender<OutputEvent>),
     PtyOutput(OutputEvent),
     KeyPressed {
@@ -43,6 +50,9 @@ pub struct App {
     active_tab: usize,
     show_shell_picker: bool,
     window_size: Size,
+    settings_open: bool,
+    settings_category: SettingsCategory,
+    settings_draft: SettingsDraft,
     config: AppConfig,
     pty_sender: Option<mpsc::Sender<OutputEvent>>,
     next_tab_id: u64,
@@ -56,6 +66,9 @@ impl App {
             active_tab: 0,
             show_shell_picker: false,
             window_size: Size::new(config.ui.window_width, config.ui.window_height),
+            settings_open: false,
+            settings_category: SettingsCategory::Ui,
+            settings_draft: SettingsDraft::from_config(&config),
             config,
             pty_sender: None,
             next_tab_id: 1,
@@ -94,15 +107,29 @@ impl App {
 
     pub fn update(&mut self, message: Message) -> Task<Message> {
         match message {
-            Message::TabSelected(index) if index < self.tabs.len() => {
-                self.active_tab = index;
+            Message::TabSelected(index) => {
+                if index == SETTINGS_TAB_INDEX && self.settings_open {
+                    self.active_tab = SETTINGS_TAB_INDEX;
+                } else if index < self.tabs.len() {
+                    self.active_tab = index;
+                }
             }
             Message::CloseTab(index) => {
-                if index < self.tabs.len() {
+                if index == SETTINGS_TAB_INDEX {
+                    self.settings_open = false;
+                    if self.active_tab == SETTINGS_TAB_INDEX {
+                        self.active_tab = self.tabs.len().saturating_sub(1);
+                    }
+                } else if index < self.tabs.len() {
                     self.tabs.remove(index);
 
-                    if self.active_tab >= self.tabs.len() && !self.tabs.is_empty() {
-                        self.active_tab = self.tabs.len() - 1;
+                    if self.active_tab != SETTINGS_TAB_INDEX {
+                        if self.active_tab >= self.tabs.len() && !self.tabs.is_empty() {
+                            self.active_tab = self.tabs.len() - 1;
+                        }
+                        if self.tabs.is_empty() {
+                            self.active_tab = 0;
+                        }
                     }
                 }
             }
@@ -125,6 +152,32 @@ impl App {
                 self.tabs.push(new_tab);
                 self.active_tab = self.tabs.len() - 1;
                 self.show_shell_picker = false;
+            }
+            Message::OpenSettingsTab => {
+                self.settings_open = true;
+                self.active_tab = SETTINGS_TAB_INDEX;
+                self.settings_draft = SettingsDraft::from_config(&self.config);
+            }
+            Message::SelectSettingsCategory(category) => {
+                self.settings_category = category;
+                if !self.settings_open {
+                    self.settings_open = true;
+                    self.active_tab = SETTINGS_TAB_INDEX;
+                    self.settings_draft = SettingsDraft::from_config(&self.config);
+                }
+            }
+            Message::SettingsInputChanged(field, value) => {
+                self.settings_draft.update(field, value);
+            }
+            Message::ApplySettings => {
+                return self.apply_settings();
+            }
+            Message::SaveSettings => {
+                let task = self.apply_settings();
+                if let Err(err) = self.config.save() {
+                    eprintln!("Failed to save config: {err}");
+                }
+                return task;
             }
             Message::PtySenderReady(sender) => {
                 self.pty_sender = Some(sender);
@@ -149,6 +202,9 @@ impl App {
                 modifiers,
                 text,
             } => {
+                if self.active_tab == SETTINGS_TAB_INDEX {
+                    return Task::none();
+                }
                 // If popup is opened
                 if self.show_shell_picker {
                     if matches!(key, Key::Named(iced::keyboard::key::Named::Escape)) {
@@ -162,7 +218,7 @@ impl App {
                 }
             }
             Message::Exit => {
-                return window::latest().and_then(window::close);
+                return iced::exit();
             }
             #[cfg(target_os = "windows")]
             Message::WindowMinimize => {
@@ -185,44 +241,63 @@ impl App {
                     tab.resize(cols, rows);
                 }
             }
-            _ => {}
         }
 
         Task::none()
     }
 
     pub fn view(&self) -> Element<'_, Message> {
+        self.view_main()
+    }
+
+    fn view_main(&self) -> Element<'_, Message> {
         let tabs_iter = self
             .tabs
             .iter()
             .enumerate()
             .map(|(i, tab)| (tab.title.as_str(), i, i == self.active_tab));
+        let settings_iter = self
+            .settings_open
+            .then_some((
+                "Settings",
+                SETTINGS_TAB_INDEX,
+                self.active_tab == SETTINGS_TAB_INDEX,
+            ))
+            .into_iter();
+        let tabs_iter = tabs_iter.chain(settings_iter);
         let ui_alpha = self.config.theme.background_opacity;
         let bar_alpha = (ui_alpha * 0.9).clamp(0.0, 1.0);
         let tab_alpha = (ui_alpha * 0.6).clamp(0.0, 1.0);
-        let tab_row = tab_bar(tabs_iter, Message::OpenShellPicker, bar_alpha, tab_alpha);
+        let tab_row = tab_bar(
+            tabs_iter,
+            Message::OpenShellPicker,
+            Message::OpenSettingsTab,
+            bar_alpha,
+            tab_alpha,
+        );
 
         // Main contents
-        let main_content: Element<Message> =
-            if let Some(active_tab) = self.tabs.get(self.active_tab) {
-                let dims = active_tab.size();
-                let cells = active_tab.render_cells();
-                let grid_size = dims;
-                let terminal_stack = TerminalProgram { cells, grid_size }
-                    .widget()
-                    .width(Length::Fill)
-                    .height(Length::Fill);
+        let main_content: Element<Message> = if self.active_tab == SETTINGS_TAB_INDEX {
+            self.view_config()
+        } else if let Some(active_tab) = self.tabs.get(self.active_tab) {
+            let dims = active_tab.size();
+            let cells = active_tab.render_cells();
+            let grid_size = dims;
+            let terminal_stack = TerminalProgram { cells, grid_size }
+                .widget()
+                .width(Length::Fill)
+                .height(Length::Fill);
 
-                terminal_stack.into()
-            } else {
-                column(vec![
-                    text("No tabs open").size(20).into(),
-                    text("Click + to create a new tab").size(14).into(),
-                ])
-                .spacing(8)
-                .padding(20)
-                .into()
-            };
+            terminal_stack.into()
+        } else {
+            column(vec![
+                text("No tabs open").size(20).into(),
+                text("Click + to create a new tab").size(14).into(),
+            ])
+            .spacing(8)
+            .padding(20)
+            .into()
+        };
 
         // Base layout
         let panel_background = Some(self.theme_background_color());
@@ -300,6 +375,144 @@ impl App {
         } else {
             base_layout.into()
         }
+    }
+
+    fn view_config(&self) -> Element<'_, Message> {
+        let palette = Palette::DARK;
+        let mut category_items: Vec<Element<Message>> = Vec::new();
+
+        for category in SettingsCategory::ALL {
+            let is_active = category == self.settings_category;
+            let label = category.label();
+            let button_style = move |_theme: &iced::Theme, status: iced::widget::button::Status| {
+                let base_bg = if is_active {
+                    Color {
+                        a: 0.35,
+                        ..palette.background
+                    }
+                } else {
+                    Color::TRANSPARENT
+                };
+                let hover_bg = if is_active {
+                    base_bg
+                } else {
+                    Color {
+                        a: 0.2,
+                        ..palette.background
+                    }
+                };
+
+                let background = match status {
+                    iced::widget::button::Status::Hovered => hover_bg,
+                    _ => base_bg,
+                };
+
+                iced::widget::button::Style {
+                    background: Some(Background::Color(background)),
+                    text_color: if is_active {
+                        palette.text
+                    } else {
+                        palette.text_secondary
+                    },
+                    border: Border {
+                        radius: RADIUS_NORMAL.into(),
+                        width: if is_active { 1.0 } else { 0.0 },
+                        color: Color {
+                            a: 0.15,
+                            ..palette.text
+                        },
+                    },
+                    shadow: iced::Shadow::default(),
+                    snap: true,
+                }
+            };
+
+            let item = button(text(label).size(13))
+                .padding([6, 10])
+                .width(Length::Fill)
+                .on_press(Message::SelectSettingsCategory(category))
+                .style(button_style);
+            category_items.push(item.into());
+        }
+
+        let sidebar = container(
+            column(category_items)
+                .spacing(SPACING_SMALL)
+                .padding(SPACING_NORMAL)
+                .width(Length::Fill),
+        )
+        .width(Length::Fixed(180.0))
+        .height(Length::Fill)
+        .style(move |_theme: &iced::Theme| container::Style {
+            background: Some(Background::Color(palette.surface)),
+            border: Border {
+                radius: RADIUS_NORMAL.into(),
+                width: 1.0,
+                color: Color {
+                    a: 0.12,
+                    ..palette.text
+                },
+            },
+            ..Default::default()
+        });
+
+        let header = row![
+            text("Settings").size(18),
+            row![
+                button_secondary("Apply").on_press(Message::ApplySettings),
+                button_primary("Save").on_press(Message::SaveSettings),
+            ]
+            .spacing(SPACING_SMALL)
+        ]
+        .align_y(iced::Alignment::Center)
+        .spacing(SPACING_NORMAL)
+        .width(Length::Fill);
+
+        let body = settings::view_category(
+            self.settings_category,
+            &self.config,
+            &self.settings_draft,
+        );
+
+        let content = container(
+            column(vec![header.into(), body])
+                .spacing(SPACING_NORMAL)
+                .width(Length::Fill),
+        )
+        .width(Length::Fill)
+        .height(Length::Fill)
+        .padding(SPACING_LARGE);
+
+        row![sidebar, content]
+            .spacing(SPACING_LARGE)
+            .height(Length::Fill)
+            .width(Length::Fill)
+            .into()
+    }
+
+    fn apply_settings(&mut self) -> Task<Message> {
+        let updates = self.settings_draft.to_updates();
+        self.config.apply_updates(updates);
+        self.settings_draft = SettingsDraft::from_config(&self.config);
+
+        let new_size = Size::new(self.config.ui.window_width, self.config.ui.window_height);
+        let resize_task = if (self.window_size.width - new_size.width).abs() > f32::EPSILON
+            || (self.window_size.height - new_size.height).abs() > f32::EPSILON
+        {
+            self.window_size = new_size;
+            window::latest().and_then(move |id| window::resize(id, new_size))
+        } else {
+            Task::none()
+        };
+
+        let (cols, rows) = self.grid_for_size(self.window_size);
+        let theme = TerminalTheme::from_config(&self.config);
+        for tab in &mut self.tabs {
+            tab.resize(cols, rows);
+            tab.set_theme(theme.clone());
+        }
+
+        resize_task
     }
 
     pub fn subscription(&self) -> Subscription<Message> {

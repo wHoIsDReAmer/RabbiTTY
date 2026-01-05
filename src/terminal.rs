@@ -307,6 +307,11 @@ impl TerminalEngine {
         self.cells_cache.borrow().clone()
     }
 
+    pub fn set_theme(&mut self, theme: TerminalTheme) {
+        self.theme = theme;
+        self.cache_dirty.set(true);
+    }
+
     fn build_cells_into(&self, cells: &mut Vec<CellVisual>) {
         cells.clear();
 
