@@ -3,8 +3,9 @@ use crate::config::AppConfig;
 use crate::gui::components::button_primary;
 use crate::gui::components::{button_secondary, panel, tab_bar};
 use crate::gui::render::TerminalProgram;
+use crate::gui::settings::{self, SettingsCategory};
 use crate::gui::tab::{ShellKind, TerminalTab};
-use crate::gui::theme::{SPACING_LARGE, SPACING_NORMAL};
+use crate::gui::theme::{Palette, RADIUS_NORMAL, SPACING_LARGE, SPACING_NORMAL, SPACING_SMALL};
 use crate::session::OutputEvent;
 use crate::terminal::TerminalTheme;
 use iced::futures::StreamExt;
@@ -12,8 +13,8 @@ use iced::futures::channel::mpsc;
 use iced::futures::sink::SinkExt;
 use iced::keyboard::{self, Key, Modifiers};
 use iced::stream;
-use iced::widget::{center, column, container, mouse_area, stack, text};
-use iced::{Element, Event, Length, Size, Subscription, Task, event, window};
+use iced::widget::{button, center, column, container, mouse_area, row, stack, text};
+use iced::{Background, Border, Color, Element, Event, Length, Size, Subscription, Task, event, window};
 
 const SETTINGS_TAB_INDEX: usize = usize::MAX;
 
@@ -25,6 +26,7 @@ pub enum Message {
     CloseShellPicker,
     CreateTab(ShellKind),
     OpenSettingsTab,
+    SelectSettingsCategory(SettingsCategory),
     PtySenderReady(mpsc::Sender<OutputEvent>),
     PtyOutput(OutputEvent),
     KeyPressed {
@@ -48,6 +50,7 @@ pub struct App {
     show_shell_picker: bool,
     window_size: Size,
     settings_open: bool,
+    settings_category: SettingsCategory,
     config: AppConfig,
     pty_sender: Option<mpsc::Sender<OutputEvent>>,
     next_tab_id: u64,
@@ -62,6 +65,7 @@ impl App {
             show_shell_picker: false,
             window_size: Size::new(config.ui.window_width, config.ui.window_height),
             settings_open: false,
+            settings_category: SettingsCategory::Ui,
             config,
             pty_sender: None,
             next_tab_id: 1,
@@ -149,6 +153,13 @@ impl App {
             Message::OpenSettingsTab => {
                 self.settings_open = true;
                 self.active_tab = SETTINGS_TAB_INDEX;
+            }
+            Message::SelectSettingsCategory(category) => {
+                self.settings_category = category;
+                if !self.settings_open {
+                    self.settings_open = true;
+                    self.active_tab = SETTINGS_TAB_INDEX;
+                }
             }
             Message::PtySenderReady(sender) => {
                 self.pty_sender = Some(sender);
@@ -349,14 +360,97 @@ impl App {
     }
 
     fn view_config(&self) -> Element<'_, Message> {
-        column(vec![
-            text("Settings").size(20).into(),
-            text("Configuration tab").size(12).into(),
-        ])
-        .spacing(SPACING_NORMAL)
-        .padding(SPACING_LARGE)
+        let palette = Palette::DARK;
+        let mut category_items: Vec<Element<Message>> = Vec::new();
+
+        for category in SettingsCategory::ALL {
+            let is_active = category == self.settings_category;
+            let label = category.label();
+            let button_style = move |_theme: &iced::Theme, status: iced::widget::button::Status| {
+                let base_bg = if is_active {
+                    Color {
+                        a: 0.35,
+                        ..palette.background
+                    }
+                } else {
+                    Color::TRANSPARENT
+                };
+                let hover_bg = if is_active {
+                    base_bg
+                } else {
+                    Color {
+                        a: 0.2,
+                        ..palette.background
+                    }
+                };
+
+                let background = match status {
+                    iced::widget::button::Status::Hovered => hover_bg,
+                    _ => base_bg,
+                };
+
+                iced::widget::button::Style {
+                    background: Some(Background::Color(background)),
+                    text_color: if is_active {
+                        palette.text
+                    } else {
+                        palette.text_secondary
+                    },
+                    border: Border {
+                        radius: RADIUS_NORMAL.into(),
+                        width: if is_active { 1.0 } else { 0.0 },
+                        color: Color {
+                            a: 0.15,
+                            ..palette.text
+                        },
+                    },
+                    shadow: iced::Shadow::default(),
+                    snap: true,
+                }
+            };
+
+            let item = button(text(label).size(13))
+                .padding([6, 10])
+                .width(Length::Fill)
+                .on_press(Message::SelectSettingsCategory(category))
+                .style(button_style);
+            category_items.push(item.into());
+        }
+
+        let sidebar = container(
+            column(category_items)
+                .spacing(SPACING_SMALL)
+                .padding(SPACING_NORMAL)
+                .width(Length::Fill),
+        )
+        .width(Length::Fixed(180.0))
+        .height(Length::Fill)
+        .style(move |_theme: &iced::Theme| container::Style {
+            background: Some(Background::Color(palette.surface)),
+            border: Border {
+                radius: RADIUS_NORMAL.into(),
+                width: 1.0,
+                color: Color {
+                    a: 0.12,
+                    ..palette.text
+                },
+            },
+            ..Default::default()
+        });
+
+        let content = container(settings::view_category(
+            self.settings_category,
+            &self.config,
+        ))
         .width(Length::Fill)
-        .into()
+        .height(Length::Fill)
+        .padding(SPACING_LARGE);
+
+        row![sidebar, content]
+            .spacing(SPACING_LARGE)
+            .height(Length::Fill)
+            .width(Length::Fill)
+            .into()
     }
 
     pub fn subscription(&self) -> Subscription<Message> {
