@@ -109,21 +109,14 @@ pub fn view_category<'a>(
 }
 
 pub fn setting_row(label: &str, value: String) -> Element<'_, Message> {
-    row![
-        text(label).size(13),
-        text(value).size(13),
-    ]
-    .spacing(SPACING_NORMAL)
-    .align_y(Alignment::Center)
-    .width(Length::Fill)
-    .into()
+    row![text(label).size(13), text(value).size(13),]
+        .spacing(SPACING_NORMAL)
+        .align_y(Alignment::Center)
+        .width(Length::Fill)
+        .into()
 }
 
-pub fn input_row<'a>(
-    label: &'a str,
-    value: &'a str,
-    field: SettingsField,
-) -> Element<'a, Message> {
+pub fn input_row<'a>(label: &'a str, value: &'a str, field: SettingsField) -> Element<'a, Message> {
     row![
         text(label).size(13),
         text_input("", value)

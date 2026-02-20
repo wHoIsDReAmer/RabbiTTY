@@ -12,7 +12,9 @@ use iced::futures::sink::SinkExt;
 use iced::keyboard::{self, Key, Modifiers};
 use iced::stream;
 use iced::widget::{button, center, column, container, mouse_area, row, stack, text};
-use iced::{Background, Border, Color, Element, Event, Length, Size, Subscription, Task, event, window};
+use iced::{
+    Background, Border, Color, Element, Event, Length, Size, Subscription, Task, event, window,
+};
 
 const SETTINGS_TAB_INDEX: usize = usize::MAX;
 
@@ -36,6 +38,7 @@ pub enum Message {
         text: Option<String>,
     },
     WindowResized(Size),
+    ApplyWindowStyle,
     #[cfg(target_os = "windows")]
     WindowMinimize,
     #[cfg(target_os = "windows")]
@@ -56,6 +59,7 @@ pub struct App {
     config: AppConfig,
     pty_sender: Option<mpsc::Sender<OutputEvent>>,
     next_tab_id: u64,
+    window_style_applied: bool,
 }
 
 impl App {
@@ -72,6 +76,7 @@ impl App {
             config,
             pty_sender: None,
             next_tab_id: 1,
+            window_style_applied: false,
         }
     }
 
@@ -219,6 +224,30 @@ impl App {
             }
             Message::Exit => {
                 return iced::exit();
+            }
+            Message::ApplyWindowStyle => {
+                if self.window_style_applied {
+                    return Task::none();
+                }
+                self.window_style_applied = true;
+
+                #[cfg(any(target_os = "windows", target_os = "macos"))]
+                {
+                    return window::latest()
+                        .and_then(|id| {
+                            window::run(id, |window| {
+                                if let Ok(handle) = window.window_handle() {
+                                    crate::platform::apply_style(handle);
+                                }
+                            })
+                        })
+                        .discard();
+                }
+
+                #[cfg(not(any(target_os = "windows", target_os = "macos")))]
+                {
+                    return Task::none();
+                }
             }
             #[cfg(target_os = "windows")]
             Message::WindowMinimize => {
@@ -468,11 +497,8 @@ impl App {
         .spacing(SPACING_NORMAL)
         .width(Length::Fill);
 
-        let body = settings::view_category(
-            self.settings_category,
-            &self.config,
-            &self.settings_draft,
-        );
+        let body =
+            settings::view_category(self.settings_category, &self.config, &self.settings_draft);
 
         let content = container(
             column(vec![header.into(), body])

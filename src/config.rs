@@ -153,8 +153,7 @@ impl AppConfig {
         }
 
         let file = FileConfig::from(self);
-        let contents = toml::to_string_pretty(&file)
-            .map_err(std::io::Error::other)?;
+        let contents = toml::to_string_pretty(&file).map_err(std::io::Error::other)?;
         fs::write(path, contents.as_bytes())
     }
 
@@ -256,9 +255,7 @@ impl From<&AppConfig> for FileConfig {
                 )),
                 cursor: Some(format!(
                     "#{:02x}{:02x}{:02x}",
-                    config.theme.cursor[0],
-                    config.theme.cursor[1],
-                    config.theme.cursor[2]
+                    config.theme.cursor[0], config.theme.cursor[1], config.theme.cursor[2]
                 )),
                 background_opacity: Some(config.theme.background_opacity),
             }),

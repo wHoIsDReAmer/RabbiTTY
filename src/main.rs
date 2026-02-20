@@ -6,8 +6,6 @@ mod terminal;
 
 use iced::Size;
 use iced::font;
-#[cfg(target_os = "windows")]
-use iced::window::raw_window_handle::HasWindowHandle;
 
 use crate::config::AppConfig;
 use crate::gui::App;
@@ -23,19 +21,12 @@ fn main() -> iced::Result {
         move || {
             let app = App::new(boot_config.clone());
 
-            #[cfg(target_os = "windows")]
-            let init_task: iced::Task<gui::app::Message> = iced::window::latest()
-                .and_then(|id| {
-                    iced::window::run(id, |window| {
-                        if let Ok(handle) = window.window_handle() {
-                            platform::apply_style(handle);
-                        }
-                    })
-                })
-                .discard();
-
-            #[cfg(not(target_os = "windows"))]
-            let init_task = iced::Task::none();
+            let init_task = iced::Task::perform(
+                async {
+                    tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+                },
+                |_| gui::app::Message::ApplyWindowStyle,
+            );
 
             (app, init_task)
         },
