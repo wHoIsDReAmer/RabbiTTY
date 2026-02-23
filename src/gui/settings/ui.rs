@@ -1,6 +1,6 @@
 use crate::config::AppConfig;
 use crate::gui::app::Message;
-use crate::gui::settings::{SettingsDraft, input_row, section, SettingsField};
+use crate::gui::settings::{SettingsDraft, SettingsField, input_row, section};
 use crate::gui::theme::SPACING_NORMAL;
 use iced::widget::column;
 use iced::{Element, Length};

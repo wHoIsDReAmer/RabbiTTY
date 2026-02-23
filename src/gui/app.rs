@@ -1,4 +1,4 @@
-use crate::config::AppConfig;
+use crate::config::{AppConfig, AppConfigUpdates};
 use crate::gui::components::{button_primary, button_secondary, panel, tab_bar};
 use crate::gui::render::TerminalProgram;
 use crate::gui::settings::{self, SettingsCategory, SettingsDraft, SettingsField};
@@ -11,8 +11,10 @@ use iced::futures::channel::mpsc;
 use iced::futures::sink::SinkExt;
 use iced::keyboard::{self, Key, Modifiers};
 use iced::stream;
-use iced::widget::{button, center, column, container, mouse_area, row, stack, text};
-use iced::{Background, Border, Color, Element, Event, Length, Size, Subscription, Task, event, window};
+use iced::widget::{button, center, column, container, mouse_area, row, scrollable, stack, text};
+use iced::{
+    Background, Border, Color, Element, Event, Length, Size, Subscription, Task, event, window,
+};
 
 const SETTINGS_TAB_INDEX: usize = usize::MAX;
 
@@ -26,8 +28,13 @@ pub enum Message {
     OpenSettingsTab,
     SelectSettingsCategory(SettingsCategory),
     SettingsInputChanged(SettingsField, String),
+    SettingsBlurToggled(bool),
     ApplySettings,
     SaveSettings,
+    #[cfg(target_os = "macos")]
+    ConfirmRestartForBlur,
+    #[cfg(target_os = "macos")]
+    CancelRestartForBlur,
     PtySenderReady(mpsc::Sender<OutputEvent>),
     PtyOutput(OutputEvent),
     KeyPressed {
@@ -36,6 +43,7 @@ pub enum Message {
         text: Option<String>,
     },
     WindowResized(Size),
+    ApplyWindowStyle,
     #[cfg(target_os = "windows")]
     WindowMinimize,
     #[cfg(target_os = "windows")]
@@ -56,6 +64,13 @@ pub struct App {
     config: AppConfig,
     pty_sender: Option<mpsc::Sender<OutputEvent>>,
     next_tab_id: u64,
+    window_style_applied: bool,
+    #[cfg(target_os = "macos")]
+    show_restart_confirm: bool,
+    #[cfg(target_os = "macos")]
+    pending_settings_updates: Option<AppConfigUpdates>,
+    #[cfg(target_os = "macos")]
+    pending_save_on_restart: bool,
 }
 
 impl App {
@@ -72,6 +87,13 @@ impl App {
             config,
             pty_sender: None,
             next_tab_id: 1,
+            window_style_applied: false,
+            #[cfg(target_os = "macos")]
+            show_restart_confirm: false,
+            #[cfg(target_os = "macos")]
+            pending_settings_updates: None,
+            #[cfg(target_os = "macos")]
+            pending_save_on_restart: false,
         }
     }
 
@@ -169,15 +191,58 @@ impl App {
             Message::SettingsInputChanged(field, value) => {
                 self.settings_draft.update(field, value);
             }
+            Message::SettingsBlurToggled(enabled) => {
+                self.settings_draft.blur_enabled = enabled;
+            }
             Message::ApplySettings => {
-                return self.apply_settings();
+                return self.apply_settings(false);
             }
             Message::SaveSettings => {
-                let task = self.apply_settings();
-                if let Err(err) = self.config.save() {
-                    eprintln!("Failed to save config: {err}");
+                return self.apply_settings(true);
+            }
+            #[cfg(target_os = "macos")]
+            Message::ConfirmRestartForBlur => {
+                if let Some(updates) = self.pending_settings_updates.take() {
+                    let _ = self.apply_updates_to_runtime(updates);
+                    if self.pending_save_on_restart
+                        && let Err(err) = self.config.save()
+                    {
+                        eprintln!("Failed to save config: {err}");
+                    }
                 }
-                return task;
+
+                let restart_spawned = match std::env::current_exe() {
+                    Ok(current_exe) => {
+                        let args: Vec<_> = std::env::args_os().skip(1).collect();
+                        match std::process::Command::new(current_exe).args(args).spawn() {
+                            Ok(_) => true,
+                            Err(err) => {
+                                eprintln!("Failed to relaunch app: {err}");
+                                false
+                            }
+                        }
+                    }
+                    Err(err) => {
+                        eprintln!("Failed to locate executable for restart: {err}");
+                        false
+                    }
+                };
+
+                self.show_restart_confirm = false;
+                self.pending_save_on_restart = false;
+
+                if restart_spawned {
+                    return iced::exit();
+                }
+
+                return Task::none();
+            }
+            #[cfg(target_os = "macos")]
+            Message::CancelRestartForBlur => {
+                self.show_restart_confirm = false;
+                self.pending_settings_updates = None;
+                self.pending_save_on_restart = false;
+                return Task::none();
             }
             Message::PtySenderReady(sender) => {
                 self.pty_sender = Some(sender);
@@ -219,6 +284,32 @@ impl App {
             }
             Message::Exit => {
                 return iced::exit();
+            }
+            Message::ApplyWindowStyle => {
+                if self.window_style_applied {
+                    return Task::none();
+                }
+                self.window_style_applied = true;
+
+                #[cfg(any(target_os = "windows", target_os = "macos"))]
+                {
+                    let theme = self.config.theme.clone();
+                    return window::latest()
+                        .and_then(move |id| {
+                            let theme = theme.clone();
+                            window::run(id, move |window| {
+                                if let Ok(handle) = window.window_handle() {
+                                    crate::platform::apply_style(handle, &theme);
+                                }
+                            })
+                        })
+                        .discard();
+                }
+
+                #[cfg(not(any(target_os = "windows", target_os = "macos")))]
+                {
+                    return Task::none();
+                }
             }
             #[cfg(target_os = "windows")]
             Message::WindowMinimize => {
@@ -308,6 +399,61 @@ impl App {
         )
         .width(Length::Fill)
         .height(Length::Fill);
+
+        #[cfg(target_os = "macos")]
+        if self.show_restart_confirm {
+            let backdrop = mouse_area(
+                container(text(""))
+                    .width(Length::Fill)
+                    .height(Length::Fill)
+                    .style(|_theme: &iced::Theme| container::Style {
+                        background: Some(iced::Background::Color(iced::Color {
+                            r: 0.0,
+                            g: 0.0,
+                            b: 0.0,
+                            a: 0.4,
+                        })),
+                        ..Default::default()
+                    }),
+            )
+            .on_press(Message::CancelRestartForBlur);
+
+            let popup_card = container(
+                column(vec![
+                    text("Blur on macOS requires restart.").size(16).into(),
+                    text("Save changes and restart now?").size(13).into(),
+                    row(vec![
+                        button_secondary("Cancel")
+                            .on_press(Message::CancelRestartForBlur)
+                            .into(),
+                        button_primary("Save & Restart")
+                            .on_press(Message::ConfirmRestartForBlur)
+                            .into(),
+                    ])
+                    .spacing(SPACING_SMALL)
+                    .into(),
+                ])
+                .spacing(SPACING_NORMAL)
+                .padding(20)
+                .width(Length::Fixed(300.0)),
+            )
+            .style(|_theme: &iced::Theme| container::Style {
+                background: Some(iced::Background::Color(iced::color!(0x31, 0x32, 0x44))),
+                border: iced::Border {
+                    radius: 12.0.into(),
+                    width: 1.0,
+                    color: iced::color!(0x45, 0x47, 0x5a),
+                },
+                ..Default::default()
+            });
+
+            let centered_popup = center(popup_card).width(Length::Fill).height(Length::Fill);
+
+            return stack![base_layout, backdrop, centered_popup,]
+                .width(Length::Fill)
+                .height(Length::Fill)
+                .into();
+        }
 
         // Popup
         if self.show_shell_picker {
@@ -468,15 +614,22 @@ impl App {
         .spacing(SPACING_NORMAL)
         .width(Length::Fill);
 
-        let body = settings::view_category(
+        let body_content = container(settings::view_category(
             self.settings_category,
             &self.config,
             &self.settings_draft,
-        );
+        ))
+        .padding([0, 12])
+        .width(Length::Fill);
+
+        let body = scrollable(body_content)
+            .height(Length::Fill)
+            .width(Length::Fill);
 
         let content = container(
-            column(vec![header.into(), body])
+            column(vec![header.into(), body.into()])
                 .spacing(SPACING_NORMAL)
+                .height(Length::Fill)
                 .width(Length::Fill),
         )
         .width(Length::Fill)
@@ -490,8 +643,29 @@ impl App {
             .into()
     }
 
-    fn apply_settings(&mut self) -> Task<Message> {
+    fn apply_settings(&mut self, save: bool) -> Task<Message> {
         let updates = self.settings_draft.to_updates();
+
+        #[cfg(target_os = "macos")]
+        if let Some(new_enabled) = updates.blur_enabled
+            && new_enabled != self.config.theme.blur_enabled
+        {
+            self.show_restart_confirm = true;
+            self.pending_settings_updates = Some(updates);
+            self.pending_save_on_restart = true;
+            return Task::none();
+        }
+
+        let resize_task = self.apply_updates_to_runtime(updates);
+
+        if save && let Err(err) = self.config.save() {
+            eprintln!("Failed to save config: {err}");
+        }
+
+        resize_task
+    }
+
+    fn apply_updates_to_runtime(&mut self, updates: AppConfigUpdates) -> Task<Message> {
         self.config.apply_updates(updates);
         self.settings_draft = SettingsDraft::from_config(&self.config);
 
