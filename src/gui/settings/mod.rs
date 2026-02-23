@@ -4,6 +4,7 @@ use crate::gui::theme::{Palette, RADIUS_NORMAL, SPACING_NORMAL, SPACING_SMALL};
 use iced::widget::{column, container, row, text, text_input, toggler};
 use iced::{Alignment, Background, Border, Color, Element, Length};
 
+pub mod shortcuts;
 pub mod terminal;
 pub mod theme;
 pub mod ui;
@@ -20,6 +21,12 @@ pub enum SettingsField {
     ThemeBackgroundOpacity,
     ThemeMacosBlurMaterial,
     ThemeMacosBlurAlpha,
+    ShortcutNewTab,
+    ShortcutCloseTab,
+    ShortcutOpenSettings,
+    ShortcutNextTab,
+    ShortcutPrevTab,
+    ShortcutQuit,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -27,16 +34,18 @@ pub enum SettingsCategory {
     Ui,
     Terminal,
     Theme,
+    Shortcuts,
 }
 
 impl SettingsCategory {
-    pub const ALL: [Self; 3] = [Self::Ui, Self::Terminal, Self::Theme];
+    pub const ALL: [Self; 4] = [Self::Ui, Self::Terminal, Self::Theme, Self::Shortcuts];
 
     pub fn label(self) -> &'static str {
         match self {
             Self::Ui => "UI",
             Self::Terminal => "Terminal",
             Self::Theme => "Theme",
+            Self::Shortcuts => "Shortcuts",
         }
     }
 }
@@ -54,6 +63,12 @@ pub struct SettingsDraft {
     pub blur_enabled: bool,
     pub macos_blur_material: String,
     pub macos_blur_alpha: String,
+    pub shortcut_new_tab: String,
+    pub shortcut_close_tab: String,
+    pub shortcut_open_settings: String,
+    pub shortcut_next_tab: String,
+    pub shortcut_prev_tab: String,
+    pub shortcut_quit: String,
 }
 
 impl SettingsDraft {
@@ -70,6 +85,12 @@ impl SettingsDraft {
             blur_enabled: config.theme.blur_enabled,
             macos_blur_material: config.theme.macos_blur_material.clone(),
             macos_blur_alpha: format!("{:.2}", config.theme.macos_blur_alpha),
+            shortcut_new_tab: config.shortcuts.new_tab.clone(),
+            shortcut_close_tab: config.shortcuts.close_tab.clone(),
+            shortcut_open_settings: config.shortcuts.open_settings.clone(),
+            shortcut_next_tab: config.shortcuts.next_tab.clone(),
+            shortcut_prev_tab: config.shortcuts.prev_tab.clone(),
+            shortcut_quit: config.shortcuts.quit.clone(),
         }
     }
 
@@ -85,6 +106,12 @@ impl SettingsDraft {
             SettingsField::ThemeBackgroundOpacity => self.background_opacity = value,
             SettingsField::ThemeMacosBlurMaterial => self.macos_blur_material = value,
             SettingsField::ThemeMacosBlurAlpha => self.macos_blur_alpha = value,
+            SettingsField::ShortcutNewTab => self.shortcut_new_tab = value,
+            SettingsField::ShortcutCloseTab => self.shortcut_close_tab = value,
+            SettingsField::ShortcutOpenSettings => self.shortcut_open_settings = value,
+            SettingsField::ShortcutNextTab => self.shortcut_next_tab = value,
+            SettingsField::ShortcutPrevTab => self.shortcut_prev_tab = value,
+            SettingsField::ShortcutQuit => self.shortcut_quit = value,
         }
     }
 
@@ -103,6 +130,24 @@ impl SettingsDraft {
             updates.macos_blur_material = Some(self.macos_blur_material.clone());
         }
         updates.macos_blur_alpha = parse_f32(&self.macos_blur_alpha);
+        if !self.shortcut_new_tab.trim().is_empty() {
+            updates.shortcut_new_tab = Some(self.shortcut_new_tab.clone());
+        }
+        if !self.shortcut_close_tab.trim().is_empty() {
+            updates.shortcut_close_tab = Some(self.shortcut_close_tab.clone());
+        }
+        if !self.shortcut_open_settings.trim().is_empty() {
+            updates.shortcut_open_settings = Some(self.shortcut_open_settings.clone());
+        }
+        if !self.shortcut_next_tab.trim().is_empty() {
+            updates.shortcut_next_tab = Some(self.shortcut_next_tab.clone());
+        }
+        if !self.shortcut_prev_tab.trim().is_empty() {
+            updates.shortcut_prev_tab = Some(self.shortcut_prev_tab.clone());
+        }
+        if !self.shortcut_quit.trim().is_empty() {
+            updates.shortcut_quit = Some(self.shortcut_quit.clone());
+        }
         updates
     }
 }
@@ -120,6 +165,7 @@ pub fn view_category<'a>(
         SettingsCategory::Ui => ui::view(config, draft),
         SettingsCategory::Terminal => terminal::view(config, draft),
         SettingsCategory::Theme => theme::view(config, draft),
+        SettingsCategory::Shortcuts => shortcuts::view(config, draft),
     }
 }
 

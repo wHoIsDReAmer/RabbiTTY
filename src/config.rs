@@ -13,6 +13,37 @@ pub const DEFAULT_THEME_BG_OPACITY: f32 = 1.0;
 pub const DEFAULT_BLUR_ENABLED: bool = true;
 pub const DEFAULT_MACOS_BLUR_MATERIAL: &str = "sidebar";
 pub const DEFAULT_MACOS_BLUR_ALPHA: f32 = 1.0;
+
+#[cfg(target_os = "macos")]
+pub const DEFAULT_SHORTCUT_NEW_TAB: &str = "Command+T";
+#[cfg(not(target_os = "macos"))]
+pub const DEFAULT_SHORTCUT_NEW_TAB: &str = "Ctrl+T";
+
+#[cfg(target_os = "macos")]
+pub const DEFAULT_SHORTCUT_CLOSE_TAB: &str = "Command+W";
+#[cfg(not(target_os = "macos"))]
+pub const DEFAULT_SHORTCUT_CLOSE_TAB: &str = "Ctrl+W";
+
+#[cfg(target_os = "macos")]
+pub const DEFAULT_SHORTCUT_OPEN_SETTINGS: &str = "Command+Comma";
+#[cfg(not(target_os = "macos"))]
+pub const DEFAULT_SHORTCUT_OPEN_SETTINGS: &str = "Ctrl+Comma";
+
+#[cfg(target_os = "macos")]
+pub const DEFAULT_SHORTCUT_NEXT_TAB: &str = "Command+PageDown";
+#[cfg(not(target_os = "macos"))]
+pub const DEFAULT_SHORTCUT_NEXT_TAB: &str = "Ctrl+PageDown";
+
+#[cfg(target_os = "macos")]
+pub const DEFAULT_SHORTCUT_PREV_TAB: &str = "Command+PageUp";
+#[cfg(not(target_os = "macos"))]
+pub const DEFAULT_SHORTCUT_PREV_TAB: &str = "Ctrl+PageUp";
+
+#[cfg(target_os = "macos")]
+pub const DEFAULT_SHORTCUT_QUIT: &str = "Command+Q";
+#[cfg(not(target_os = "macos"))]
+pub const DEFAULT_SHORTCUT_QUIT: &str = "Ctrl+Q";
+
 const DEFAULT_FONT_PX: f32 = 14.0;
 const DEJAVU_SANS_MONO: &[u8] = include_bytes!("../fonts/DejaVuSansMono.ttf");
 
@@ -21,6 +52,7 @@ pub struct AppConfig {
     pub ui: UiConfig,
     pub terminal: TerminalConfig,
     pub theme: ThemeConfig,
+    pub shortcuts: ShortcutsConfig,
 }
 
 #[derive(Debug, Clone)]
@@ -46,11 +78,22 @@ pub struct ThemeConfig {
     pub macos_blur_alpha: f32,
 }
 
+#[derive(Debug, Clone)]
+pub struct ShortcutsConfig {
+    pub new_tab: String,
+    pub close_tab: String,
+    pub open_settings: String,
+    pub next_tab: String,
+    pub prev_tab: String,
+    pub quit: String,
+}
+
 #[derive(Debug, Deserialize, Serialize)]
 struct FileConfig {
     ui: Option<UiFileConfig>,
     terminal: Option<TerminalFileConfig>,
     theme: Option<ThemeFileConfig>,
+    shortcuts: Option<ShortcutsFileConfig>,
 }
 
 #[derive(Debug, Deserialize, Serialize)]
@@ -76,6 +119,16 @@ struct ThemeFileConfig {
     macos_blur_alpha: Option<f32>,
 }
 
+#[derive(Debug, Deserialize, Serialize)]
+struct ShortcutsFileConfig {
+    new_tab: Option<String>,
+    close_tab: Option<String>,
+    open_settings: Option<String>,
+    next_tab: Option<String>,
+    prev_tab: Option<String>,
+    quit: Option<String>,
+}
+
 #[derive(Debug, Default, Clone)]
 pub struct AppConfigUpdates {
     pub window_width: Option<f32>,
@@ -89,6 +142,12 @@ pub struct AppConfigUpdates {
     pub blur_enabled: Option<bool>,
     pub macos_blur_material: Option<String>,
     pub macos_blur_alpha: Option<f32>,
+    pub shortcut_new_tab: Option<String>,
+    pub shortcut_close_tab: Option<String>,
+    pub shortcut_open_settings: Option<String>,
+    pub shortcut_next_tab: Option<String>,
+    pub shortcut_prev_tab: Option<String>,
+    pub shortcut_quit: Option<String>,
 }
 
 impl Default for AppConfig {
@@ -111,6 +170,14 @@ impl Default for AppConfig {
                 blur_enabled: DEFAULT_BLUR_ENABLED,
                 macos_blur_material: DEFAULT_MACOS_BLUR_MATERIAL.to_string(),
                 macos_blur_alpha: DEFAULT_MACOS_BLUR_ALPHA,
+            },
+            shortcuts: ShortcutsConfig {
+                new_tab: DEFAULT_SHORTCUT_NEW_TAB.to_string(),
+                close_tab: DEFAULT_SHORTCUT_CLOSE_TAB.to_string(),
+                open_settings: DEFAULT_SHORTCUT_OPEN_SETTINGS.to_string(),
+                next_tab: DEFAULT_SHORTCUT_NEXT_TAB.to_string(),
+                prev_tab: DEFAULT_SHORTCUT_PREV_TAB.to_string(),
+                quit: DEFAULT_SHORTCUT_QUIT.to_string(),
             },
         }
     }
@@ -165,6 +232,25 @@ impl AppConfig {
         }
         if let Some(alpha) = updates.macos_blur_alpha {
             self.theme.macos_blur_alpha = sanitize_opacity(alpha, self.theme.macos_blur_alpha);
+        }
+
+        if let Some(value) = updates.shortcut_new_tab {
+            self.shortcuts.new_tab = sanitize_shortcut(&value, &self.shortcuts.new_tab);
+        }
+        if let Some(value) = updates.shortcut_close_tab {
+            self.shortcuts.close_tab = sanitize_shortcut(&value, &self.shortcuts.close_tab);
+        }
+        if let Some(value) = updates.shortcut_open_settings {
+            self.shortcuts.open_settings = sanitize_shortcut(&value, &self.shortcuts.open_settings);
+        }
+        if let Some(value) = updates.shortcut_next_tab {
+            self.shortcuts.next_tab = sanitize_shortcut(&value, &self.shortcuts.next_tab);
+        }
+        if let Some(value) = updates.shortcut_prev_tab {
+            self.shortcuts.prev_tab = sanitize_shortcut(&value, &self.shortcuts.prev_tab);
+        }
+        if let Some(value) = updates.shortcut_quit {
+            self.shortcuts.quit = sanitize_shortcut(&value, &self.shortcuts.quit);
         }
     }
 
@@ -232,6 +318,28 @@ impl AppConfig {
                 self.theme.macos_blur_alpha = sanitize_opacity(alpha, self.theme.macos_blur_alpha);
             }
         }
+
+        if let Some(shortcuts) = file.shortcuts {
+            if let Some(value) = shortcuts.new_tab.as_deref() {
+                self.shortcuts.new_tab = sanitize_shortcut(value, &self.shortcuts.new_tab);
+            }
+            if let Some(value) = shortcuts.close_tab.as_deref() {
+                self.shortcuts.close_tab = sanitize_shortcut(value, &self.shortcuts.close_tab);
+            }
+            if let Some(value) = shortcuts.open_settings.as_deref() {
+                self.shortcuts.open_settings =
+                    sanitize_shortcut(value, &self.shortcuts.open_settings);
+            }
+            if let Some(value) = shortcuts.next_tab.as_deref() {
+                self.shortcuts.next_tab = sanitize_shortcut(value, &self.shortcuts.next_tab);
+            }
+            if let Some(value) = shortcuts.prev_tab.as_deref() {
+                self.shortcuts.prev_tab = sanitize_shortcut(value, &self.shortcuts.prev_tab);
+            }
+            if let Some(value) = shortcuts.quit.as_deref() {
+                self.shortcuts.quit = sanitize_shortcut(value, &self.shortcuts.quit);
+            }
+        }
     }
 }
 
@@ -270,6 +378,110 @@ fn sanitize_macos_material(value: &str, fallback: &str) -> String {
         | "underpagebackground" => normalized,
         _ => fallback.to_string(),
     }
+}
+
+fn sanitize_shortcut(value: &str, fallback: &str) -> String {
+    normalize_shortcut(value).unwrap_or_else(|| fallback.to_string())
+}
+
+fn normalize_shortcut(value: &str) -> Option<String> {
+    let mut has_ctrl = false;
+    let mut has_alt = false;
+    let mut has_shift = false;
+    let mut has_command = false;
+    let mut key: Option<String> = None;
+
+    for token in value.split('+') {
+        let token = token.trim();
+        if token.is_empty() {
+            return None;
+        }
+
+        let normalized = token.to_ascii_lowercase();
+        match normalized.as_str() {
+            "ctrl" | "control" => has_ctrl = true,
+            "alt" | "option" => has_alt = true,
+            "shift" => has_shift = true,
+            "cmd" | "command" | "meta" | "super" => has_command = true,
+            _ => {
+                if key.is_some() {
+                    return None;
+                }
+                key = normalize_shortcut_key(token);
+                key.as_ref()?;
+            }
+        }
+    }
+
+    let key = key?;
+    let mut parts: Vec<String> = Vec::new();
+    if has_command {
+        parts.push("Command".to_string());
+    }
+    if has_ctrl {
+        parts.push("Ctrl".to_string());
+    }
+    if has_alt {
+        parts.push("Alt".to_string());
+    }
+    if has_shift {
+        parts.push("Shift".to_string());
+    }
+    parts.push(key);
+
+    Some(parts.join("+"))
+}
+
+fn normalize_shortcut_key(value: &str) -> Option<String> {
+    let lower = value.trim().to_ascii_lowercase();
+    let canonical = match lower.as_str() {
+        "esc" | "escape" => "Escape",
+        "enter" | "return" => "Enter",
+        "tab" => "Tab",
+        "space" | "spacebar" => "Space",
+        "home" => "Home",
+        "end" => "End",
+        "delete" | "del" => "Delete",
+        "backspace" => "Backspace",
+        "insert" | "ins" => "Insert",
+        "pageup" | "page-up" | "pgup" => "PageUp",
+        "pagedown" | "page-down" | "pgdown" => "PageDown",
+        "up" | "arrowup" => "ArrowUp",
+        "down" | "arrowdown" => "ArrowDown",
+        "left" | "arrowleft" => "ArrowLeft",
+        "right" | "arrowright" => "ArrowRight",
+        "comma" => "Comma",
+        "period" | "dot" => "Period",
+        "f1" => "F1",
+        "f2" => "F2",
+        "f3" => "F3",
+        "f4" => "F4",
+        "f5" => "F5",
+        "f6" => "F6",
+        "f7" => "F7",
+        "f8" => "F8",
+        "f9" => "F9",
+        "f10" => "F10",
+        "f11" => "F11",
+        "f12" => "F12",
+        _ => {
+            if lower.chars().count() == 1 {
+                let ch = lower.chars().next()?;
+                if ch.is_ascii_alphanumeric() {
+                    return Some(ch.to_ascii_uppercase().to_string());
+                }
+                if matches!(
+                    ch,
+                    ',' | '.' | '[' | ']' | '/' | ';' | '\'' | '-' | '=' | '`'
+                ) {
+                    return Some(ch.to_string());
+                }
+            }
+            return None;
+        }
+    };
+
+    Some(canonical.to_string())
 }
 
 pub(crate) fn parse_hex_color(value: &str) -> Option<[u8; 3]> {
@@ -318,6 +530,14 @@ impl From<&AppConfig> for FileConfig {
                 macos_blur_material: Some(config.theme.macos_blur_material.clone()),
                 macos_blur_alpha: Some(config.theme.macos_blur_alpha),
             }),
+            shortcuts: Some(ShortcutsFileConfig {
+                new_tab: Some(config.shortcuts.new_tab.clone()),
+                close_tab: Some(config.shortcuts.close_tab.clone()),
+                open_settings: Some(config.shortcuts.open_settings.clone()),
+                next_tab: Some(config.shortcuts.next_tab.clone()),
+                prev_tab: Some(config.shortcuts.prev_tab.clone()),
+                quit: Some(config.shortcuts.quit.clone()),
+            }),
         }
     }
 }
@@ -341,7 +561,7 @@ fn ensure_config_file(path: &Path) -> std::io::Result<()> {
 fn default_config_toml() -> String {
     let (cell_width, cell_height) = default_cell_metrics();
     format!(
-        "[ui]\nwindow_width = {width}\nwindow_height = {height}\n\n[terminal]\ncell_width = {cell_width:.1}\ncell_height = {cell_height:.1}\n\n[theme]\nforeground = \"#{fg:02x}{fg_g:02x}{fg_b:02x}\"\nbackground = \"#{bg:02x}{bg_g:02x}{bg_b:02x}\"\ncursor = \"#{cur:02x}{cur_g:02x}{cur_b:02x}\"\nbackground_opacity = {opacity:.2}\nblur_enabled = {blur_enabled}\nmacos_blur_material = \"{macos_blur_material}\"\nmacos_blur_alpha = {macos_blur_alpha:.2}\n",
+        "[ui]\nwindow_width = {width}\nwindow_height = {height}\n\n[terminal]\ncell_width = {cell_width:.1}\ncell_height = {cell_height:.1}\n\n[theme]\nforeground = \"#{fg:02x}{fg_g:02x}{fg_b:02x}\"\nbackground = \"#{bg:02x}{bg_g:02x}{bg_b:02x}\"\ncursor = \"#{cur:02x}{cur_g:02x}{cur_b:02x}\"\nbackground_opacity = {opacity:.2}\nblur_enabled = {blur_enabled}\nmacos_blur_material = \"{macos_blur_material}\"\nmacos_blur_alpha = {macos_blur_alpha:.2}\n\n[shortcuts]\nnew_tab = \"{shortcut_new_tab}\"\nclose_tab = \"{shortcut_close_tab}\"\nopen_settings = \"{shortcut_open_settings}\"\nnext_tab = \"{shortcut_next_tab}\"\nprev_tab = \"{shortcut_prev_tab}\"\nquit = \"{shortcut_quit}\"\n",
         width = DEFAULT_WINDOW_WIDTH as u32,
         height = DEFAULT_WINDOW_HEIGHT as u32,
         cell_width = cell_width,
@@ -358,7 +578,13 @@ fn default_config_toml() -> String {
         opacity = DEFAULT_THEME_BG_OPACITY,
         blur_enabled = DEFAULT_BLUR_ENABLED,
         macos_blur_material = DEFAULT_MACOS_BLUR_MATERIAL,
-        macos_blur_alpha = DEFAULT_MACOS_BLUR_ALPHA
+        macos_blur_alpha = DEFAULT_MACOS_BLUR_ALPHA,
+        shortcut_new_tab = DEFAULT_SHORTCUT_NEW_TAB,
+        shortcut_close_tab = DEFAULT_SHORTCUT_CLOSE_TAB,
+        shortcut_open_settings = DEFAULT_SHORTCUT_OPEN_SETTINGS,
+        shortcut_next_tab = DEFAULT_SHORTCUT_NEXT_TAB,
+        shortcut_prev_tab = DEFAULT_SHORTCUT_PREV_TAB,
+        shortcut_quit = DEFAULT_SHORTCUT_QUIT
     )
 }
 

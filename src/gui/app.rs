@@ -1,4 +1,4 @@
-use crate::config::{AppConfig, AppConfigUpdates};
+use crate::config::{AppConfig, AppConfigUpdates, ShortcutsConfig};
 use crate::gui::components::{button_primary, button_secondary, panel, tab_bar};
 use crate::gui::render::TerminalProgram;
 use crate::gui::settings::{self, SettingsCategory, SettingsDraft, SettingsField};
@@ -9,7 +9,7 @@ use crate::terminal::TerminalTheme;
 use iced::futures::StreamExt;
 use iced::futures::channel::mpsc;
 use iced::futures::sink::SinkExt;
-use iced::keyboard::{self, Key, Modifiers};
+use iced::keyboard::{self, Key, Modifiers, key::Named};
 use iced::stream;
 use iced::widget::{button, center, column, container, mouse_area, row, scrollable, stack, text};
 use iced::{
@@ -57,6 +57,7 @@ pub struct App {
     tabs: Vec<TerminalTab>,
     active_tab: usize,
     show_shell_picker: bool,
+    shell_picker_selected: usize,
     window_size: Size,
     settings_open: bool,
     settings_category: SettingsCategory,
@@ -80,6 +81,7 @@ impl App {
             tabs,
             active_tab: 0,
             show_shell_picker: false,
+            shell_picker_selected: 0,
             window_size: Size::new(config.ui.window_width, config.ui.window_height),
             settings_open: false,
             settings_category: SettingsCategory::Ui,
@@ -157,23 +159,14 @@ impl App {
             }
             Message::OpenShellPicker => {
                 self.show_shell_picker = true;
+                self.shell_picker_selected = 0;
             }
             Message::CloseShellPicker => {
                 self.show_shell_picker = false;
+                self.shell_picker_selected = 0;
             }
             Message::CreateTab(shell) => {
-                let Some(sender) = self.pty_sender.clone() else {
-                    eprintln!("PTY output channel not ready");
-                    return Task::none();
-                };
-                let (cols, rows) = self.grid_for_size(self.window_size);
-                let theme = TerminalTheme::from_config(&self.config);
-                let tab_id = self.next_tab_id;
-                self.next_tab_id = self.next_tab_id.wrapping_add(1);
-                let new_tab = TerminalTab::from_shell(shell, cols, rows, theme, tab_id, sender);
-                self.tabs.push(new_tab);
-                self.active_tab = self.tabs.len() - 1;
-                self.show_shell_picker = false;
+                return self.create_tab(shell);
             }
             Message::OpenSettingsTab => {
                 self.settings_open = true;
@@ -267,17 +260,33 @@ impl App {
                 modifiers,
                 text,
             } => {
-                if self.active_tab == SETTINGS_TAB_INDEX {
-                    return Task::none();
-                }
-                // If popup is opened
                 if self.show_shell_picker {
-                    if matches!(key, Key::Named(iced::keyboard::key::Named::Escape)) {
-                        self.show_shell_picker = false;
+                    match key {
+                        Key::Named(Named::Escape) => {
+                            self.show_shell_picker = false;
+                            self.shell_picker_selected = 0;
+                        }
+                        Key::Named(Named::ArrowUp) => {
+                            self.shift_shell_picker_selection(-1);
+                        }
+                        Key::Named(Named::ArrowDown) => {
+                            self.shift_shell_picker_selection(1);
+                        }
+                        Key::Named(Named::Enter) => {
+                            return self.confirm_shell_picker_selection();
+                        }
+                        _ => {}
                     }
                     return Task::none();
                 }
 
+                if let Some(task) = self.handle_app_shortcut(&key, modifiers) {
+                    return task;
+                }
+
+                if self.active_tab == SETTINGS_TAB_INDEX {
+                    return Task::none();
+                }
                 if let Some(tab) = self.tabs.get_mut(self.active_tab) {
                     tab.handle_key(&key, modifiers, text.as_deref());
                 }
@@ -478,24 +487,40 @@ impl App {
             let popup_card = container(
                 column(vec![
                     #[cfg(target_family = "unix")]
-                    button_primary("zsh")
-                        .on_press(Message::CreateTab(ShellKind::Zsh))
-                        .width(Length::Fill)
-                        .into(),
+                    if self.shell_picker_selected == 0 {
+                        button_primary("zsh")
+                    } else {
+                        button_secondary("zsh")
+                    }
+                    .on_press(Message::CreateTab(ShellKind::Zsh))
+                    .width(Length::Fill)
+                    .into(),
                     #[cfg(target_family = "windows")]
-                    button_secondary("cmd")
-                        .on_press(Message::CreateTab(ShellKind::Cmd))
-                        .width(Length::Fill)
-                        .into(),
+                    if self.shell_picker_selected == 0 {
+                        button_primary("cmd")
+                    } else {
+                        button_secondary("cmd")
+                    }
+                    .on_press(Message::CreateTab(ShellKind::Cmd))
+                    .width(Length::Fill)
+                    .into(),
                     #[cfg(target_family = "windows")]
-                    button_secondary("PowerShell")
-                        .on_press(Message::CreateTab(ShellKind::PowerShell))
-                        .width(Length::Fill)
-                        .into(),
-                    button_secondary("Cancel")
-                        .on_press(Message::CloseShellPicker)
-                        .width(Length::Fill)
-                        .into(),
+                    if self.shell_picker_selected == 1 {
+                        button_primary("PowerShell")
+                    } else {
+                        button_secondary("PowerShell")
+                    }
+                    .on_press(Message::CreateTab(ShellKind::PowerShell))
+                    .width(Length::Fill)
+                    .into(),
+                    if self.shell_picker_selected == self.shell_picker_option_count() - 1 {
+                        button_primary("Cancel")
+                    } else {
+                        button_secondary("Cancel")
+                    }
+                    .on_press(Message::CloseShellPicker)
+                    .width(Length::Fill)
+                    .into(),
                 ])
                 .spacing(10)
                 .padding(20)
@@ -591,14 +616,6 @@ impl App {
         .height(Length::Fill)
         .style(move |_theme: &iced::Theme| container::Style {
             background: Some(Background::Color(palette.surface)),
-            border: Border {
-                radius: RADIUS_NORMAL.into(),
-                width: 1.0,
-                color: Color {
-                    a: 0.12,
-                    ..palette.text
-                },
-            },
             ..Default::default()
         });
 
@@ -689,6 +706,146 @@ impl App {
         resize_task
     }
 
+    fn create_tab(&mut self, shell: ShellKind) -> Task<Message> {
+        let Some(sender) = self.pty_sender.clone() else {
+            eprintln!("PTY output channel not ready");
+            return Task::none();
+        };
+
+        let (cols, rows) = self.grid_for_size(self.window_size);
+        let theme = TerminalTheme::from_config(&self.config);
+        let tab_id = self.next_tab_id;
+        self.next_tab_id = self.next_tab_id.wrapping_add(1);
+        let new_tab = TerminalTab::from_shell(shell, cols, rows, theme, tab_id, sender);
+        self.tabs.push(new_tab);
+        self.active_tab = self.tabs.len() - 1;
+        self.show_shell_picker = false;
+        self.shell_picker_selected = 0;
+        Task::none()
+    }
+
+    fn shell_picker_option_count(&self) -> usize {
+        #[cfg(target_family = "unix")]
+        {
+            2
+        }
+
+        #[cfg(target_family = "windows")]
+        {
+            3
+        }
+    }
+
+    fn shift_shell_picker_selection(&mut self, delta: isize) {
+        let count = self.shell_picker_option_count() as isize;
+        if count <= 0 {
+            return;
+        }
+
+        let next = (self.shell_picker_selected as isize + delta).rem_euclid(count) as usize;
+        self.shell_picker_selected = next;
+    }
+
+    fn confirm_shell_picker_selection(&mut self) -> Task<Message> {
+        #[cfg(target_family = "unix")]
+        {
+            match self.shell_picker_selected {
+                0 => self.create_tab(ShellKind::Zsh),
+                _ => {
+                    self.show_shell_picker = false;
+                    self.shell_picker_selected = 0;
+                    Task::none()
+                }
+            }
+        }
+
+        #[cfg(target_family = "windows")]
+        {
+            return match self.shell_picker_selected {
+                0 => self.create_tab(ShellKind::Cmd),
+                1 => self.create_tab(ShellKind::PowerShell),
+                _ => {
+                    self.show_shell_picker = false;
+                    self.shell_picker_selected = 0;
+                    Task::none()
+                }
+            };
+        }
+    }
+
+    fn handle_app_shortcut(&mut self, key: &Key, modifiers: Modifiers) -> Option<Task<Message>> {
+        let action = ShortcutAction::resolve(key, modifiers, &self.config.shortcuts)?;
+
+        match action {
+            ShortcutAction::NewTab => {
+                self.show_shell_picker = true;
+                self.shell_picker_selected = 0;
+                Some(Task::none())
+            }
+            ShortcutAction::CloseTab => {
+                self.close_active_target();
+                Some(Task::none())
+            }
+            ShortcutAction::OpenSettings => {
+                self.settings_open = true;
+                self.active_tab = SETTINGS_TAB_INDEX;
+                self.settings_draft = SettingsDraft::from_config(&self.config);
+                Some(Task::none())
+            }
+            ShortcutAction::NextTab => {
+                self.select_relative_tab(1);
+                Some(Task::none())
+            }
+            ShortcutAction::PrevTab => {
+                self.select_relative_tab(-1);
+                Some(Task::none())
+            }
+            ShortcutAction::Quit => Some(iced::exit()),
+        }
+    }
+
+    fn close_active_target(&mut self) {
+        if self.active_tab == SETTINGS_TAB_INDEX {
+            self.settings_open = false;
+            self.active_tab = self.tabs.len().saturating_sub(1);
+            return;
+        }
+
+        if self.tabs.is_empty() {
+            return;
+        }
+
+        let index = self.active_tab.min(self.tabs.len() - 1);
+        self.tabs.remove(index);
+
+        if self.active_tab >= self.tabs.len() && !self.tabs.is_empty() {
+            self.active_tab = self.tabs.len() - 1;
+        }
+        if self.tabs.is_empty() {
+            self.active_tab = 0;
+        }
+    }
+
+    fn select_relative_tab(&mut self, step: isize) {
+        let mut visible_tabs: Vec<usize> = (0..self.tabs.len()).collect();
+        if self.settings_open {
+            visible_tabs.push(SETTINGS_TAB_INDEX);
+        }
+
+        if visible_tabs.is_empty() {
+            return;
+        }
+
+        let current_pos = visible_tabs
+            .iter()
+            .position(|index| *index == self.active_tab)
+            .unwrap_or(0);
+
+        let len = visible_tabs.len() as isize;
+        let next_pos = (current_pos as isize + step).rem_euclid(len) as usize;
+        self.active_tab = visible_tabs[next_pos];
+    }
+
     pub fn subscription(&self) -> Subscription<Message> {
         Subscription::batch([
             Subscription::run(|| {
@@ -720,6 +877,204 @@ impl App {
             }),
         ])
     }
+}
+
+#[derive(Debug, Clone, Copy)]
+enum ShortcutAction {
+    NewTab,
+    CloseTab,
+    OpenSettings,
+    NextTab,
+    PrevTab,
+    Quit,
+}
+
+impl ShortcutAction {
+    fn resolve(key: &Key, modifiers: Modifiers, shortcuts: &ShortcutsConfig) -> Option<Self> {
+        if shortcut_matches(&shortcuts.new_tab, key, modifiers) {
+            return Some(Self::NewTab);
+        }
+        if shortcut_matches(&shortcuts.close_tab, key, modifiers) {
+            return Some(Self::CloseTab);
+        }
+        if shortcut_matches(&shortcuts.open_settings, key, modifiers) {
+            return Some(Self::OpenSettings);
+        }
+        if shortcut_matches(&shortcuts.next_tab, key, modifiers) {
+            return Some(Self::NextTab);
+        }
+        if shortcut_matches(&shortcuts.prev_tab, key, modifiers) {
+            return Some(Self::PrevTab);
+        }
+        if shortcut_matches(&shortcuts.quit, key, modifiers) {
+            return Some(Self::Quit);
+        }
+        None
+    }
+}
+
+#[derive(Debug, Clone)]
+struct ParsedShortcut {
+    modifiers: Modifiers,
+    key: String,
+}
+
+fn shortcut_matches(binding: &str, key: &Key, modifiers: Modifiers) -> bool {
+    let Some(parsed) = parse_shortcut(binding) else {
+        return false;
+    };
+    let Some(event_key) = event_key_token(key) else {
+        return false;
+    };
+
+    let tracked = Modifiers::SHIFT | Modifiers::CTRL | Modifiers::ALT | Modifiers::LOGO;
+    let pressed = modifiers & tracked;
+
+    parsed.key == event_key && parsed.modifiers == pressed
+}
+
+fn parse_shortcut(value: &str) -> Option<ParsedShortcut> {
+    let mut modifiers = Modifiers::default();
+    let mut key: Option<String> = None;
+
+    for token in value.split('+') {
+        let token = token.trim();
+        if token.is_empty() {
+            return None;
+        }
+
+        match token.to_ascii_lowercase().as_str() {
+            "ctrl" | "control" => modifiers.insert(Modifiers::CTRL),
+            "alt" | "option" => modifiers.insert(Modifiers::ALT),
+            "shift" => modifiers.insert(Modifiers::SHIFT),
+            "cmd" | "command" | "meta" | "super" => modifiers.insert(Modifiers::COMMAND),
+            _ => {
+                if key.is_some() {
+                    return None;
+                }
+                key = normalize_shortcut_key_token(token);
+                key.as_ref()?;
+            }
+        }
+    }
+
+    Some(ParsedShortcut {
+        modifiers,
+        key: key?,
+    })
+}
+
+fn event_key_token(key: &Key) -> Option<String> {
+    match key {
+        Key::Named(named) => match named {
+            Named::Enter => Some("Enter".to_string()),
+            Named::Tab => Some("Tab".to_string()),
+            Named::Space => Some("Space".to_string()),
+            Named::Escape => Some("Escape".to_string()),
+            Named::ArrowUp => Some("ArrowUp".to_string()),
+            Named::ArrowDown => Some("ArrowDown".to_string()),
+            Named::ArrowLeft => Some("ArrowLeft".to_string()),
+            Named::ArrowRight => Some("ArrowRight".to_string()),
+            Named::Home => Some("Home".to_string()),
+            Named::End => Some("End".to_string()),
+            Named::Delete => Some("Delete".to_string()),
+            Named::Backspace => Some("Backspace".to_string()),
+            Named::Insert => Some("Insert".to_string()),
+            Named::PageUp => Some("PageUp".to_string()),
+            Named::PageDown => Some("PageDown".to_string()),
+            Named::F1 => Some("F1".to_string()),
+            Named::F2 => Some("F2".to_string()),
+            Named::F3 => Some("F3".to_string()),
+            Named::F4 => Some("F4".to_string()),
+            Named::F5 => Some("F5".to_string()),
+            Named::F6 => Some("F6".to_string()),
+            Named::F7 => Some("F7".to_string()),
+            Named::F8 => Some("F8".to_string()),
+            Named::F9 => Some("F9".to_string()),
+            Named::F10 => Some("F10".to_string()),
+            Named::F11 => Some("F11".to_string()),
+            Named::F12 => Some("F12".to_string()),
+            _ => None,
+        },
+        Key::Character(c) => {
+            let mut chars = c.chars();
+            let ch = chars.next()?;
+            if chars.next().is_some() {
+                return None;
+            }
+
+            if ch.is_ascii_alphabetic() {
+                return Some(ch.to_ascii_uppercase().to_string());
+            }
+
+            match ch {
+                ',' => Some("Comma".to_string()),
+                '.' => Some("Period".to_string()),
+                _ if ch.is_ascii_digit()
+                    || matches!(ch, '[' | ']' | '/' | ';' | '\'' | '-' | '=' | '`') =>
+                {
+                    Some(ch.to_string())
+                }
+                _ => None,
+            }
+        }
+        Key::Unidentified => None,
+    }
+}
+
+fn normalize_shortcut_key_token(value: &str) -> Option<String> {
+    let lower = value.trim().to_ascii_lowercase();
+
+    let normalized = match lower.as_str() {
+        "esc" | "escape" => "Escape".to_string(),
+        "enter" | "return" => "Enter".to_string(),
+        "tab" => "Tab".to_string(),
+        "space" | "spacebar" => "Space".to_string(),
+        "home" => "Home".to_string(),
+        "end" => "End".to_string(),
+        "delete" | "del" => "Delete".to_string(),
+        "backspace" => "Backspace".to_string(),
+        "insert" | "ins" => "Insert".to_string(),
+        "pageup" | "page-up" | "pgup" => "PageUp".to_string(),
+        "pagedown" | "page-down" | "pgdown" => "PageDown".to_string(),
+        "up" | "arrowup" => "ArrowUp".to_string(),
+        "down" | "arrowdown" => "ArrowDown".to_string(),
+        "left" | "arrowleft" => "ArrowLeft".to_string(),
+        "right" | "arrowright" => "ArrowRight".to_string(),
+        "comma" => "Comma".to_string(),
+        "period" | "dot" => "Period".to_string(),
+        "f1" => "F1".to_string(),
+        "f2" => "F2".to_string(),
+        "f3" => "F3".to_string(),
+        "f4" => "F4".to_string(),
+        "f5" => "F5".to_string(),
+        "f6" => "F6".to_string(),
+        "f7" => "F7".to_string(),
+        "f8" => "F8".to_string(),
+        "f9" => "F9".to_string(),
+        "f10" => "F10".to_string(),
+        "f11" => "F11".to_string(),
+        "f12" => "F12".to_string(),
+        _ => {
+            if lower.chars().count() == 1 {
+                let ch = lower.chars().next()?;
+                if ch.is_ascii_alphanumeric() {
+                    ch.to_ascii_uppercase().to_string()
+                } else if matches!(
+                    ch,
+                    ',' | '.' | '[' | ']' | '/' | ';' | '\'' | '-' | '=' | '`'
+                ) {
+                    ch.to_string()
+                } else {
+                    return None;
+                }
+            } else {
+                return None;
+            }
+        }
+    };
+
+    Some(normalized)
 }
 
 impl Default for App {
