@@ -1,8 +1,8 @@
 use crate::config::{AppConfig, AppConfigUpdates, parse_hex_color};
 use crate::gui::app::Message;
-use crate::gui::theme::{SPACING_NORMAL, SPACING_SMALL};
-use iced::widget::{column, row, text, text_input};
-use iced::{Alignment, Element, Length};
+use crate::gui::theme::{Palette, RADIUS_NORMAL, SPACING_NORMAL, SPACING_SMALL};
+use iced::widget::{column, container, row, text, text_input, toggler};
+use iced::{Alignment, Background, Border, Color, Element, Length};
 
 pub mod terminal;
 pub mod theme;
@@ -18,6 +18,8 @@ pub enum SettingsField {
     ThemeBackground,
     ThemeCursor,
     ThemeBackgroundOpacity,
+    ThemeMacosBlurMaterial,
+    ThemeMacosBlurAlpha,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -49,6 +51,9 @@ pub struct SettingsDraft {
     pub background: String,
     pub cursor: String,
     pub background_opacity: String,
+    pub blur_enabled: bool,
+    pub macos_blur_material: String,
+    pub macos_blur_alpha: String,
 }
 
 impl SettingsDraft {
@@ -62,6 +67,9 @@ impl SettingsDraft {
             background: format_rgb(config.theme.background),
             cursor: format_rgb(config.theme.cursor),
             background_opacity: format!("{:.2}", config.theme.background_opacity),
+            blur_enabled: config.theme.blur_enabled,
+            macos_blur_material: config.theme.macos_blur_material.clone(),
+            macos_blur_alpha: format!("{:.2}", config.theme.macos_blur_alpha),
         }
     }
 
@@ -75,6 +83,8 @@ impl SettingsDraft {
             SettingsField::ThemeBackground => self.background = value,
             SettingsField::ThemeCursor => self.cursor = value,
             SettingsField::ThemeBackgroundOpacity => self.background_opacity = value,
+            SettingsField::ThemeMacosBlurMaterial => self.macos_blur_material = value,
+            SettingsField::ThemeMacosBlurAlpha => self.macos_blur_alpha = value,
         }
     }
 
@@ -88,6 +98,11 @@ impl SettingsDraft {
         updates.background = parse_hex_color(&self.background);
         updates.cursor = parse_hex_color(&self.cursor);
         updates.background_opacity = parse_f32(&self.background_opacity);
+        updates.blur_enabled = Some(self.blur_enabled);
+        if !self.macos_blur_material.trim().is_empty() {
+            updates.macos_blur_material = Some(self.macos_blur_material.clone());
+        }
+        updates.macos_blur_alpha = parse_f32(&self.macos_blur_alpha);
         updates
     }
 }
@@ -108,33 +123,58 @@ pub fn view_category<'a>(
     }
 }
 
-pub fn setting_row(label: &str, value: String) -> Element<'_, Message> {
-    row![text(label).size(13), text(value).size(13),]
-        .spacing(SPACING_NORMAL)
-        .align_y(Alignment::Center)
-        .width(Length::Fill)
-        .into()
-}
-
 pub fn input_row<'a>(label: &'a str, value: &'a str, field: SettingsField) -> Element<'a, Message> {
-    row![
-        text(label).size(13),
+    column(vec![
+        text(label).size(13).into(),
         text_input("", value)
             .on_input(move |next| Message::SettingsInputChanged(field, next))
-            .padding(6)
-            .width(Length::Fixed(140.0)),
+            .padding([8, 10])
+            .width(Length::Fill)
+            .into(),
+    ])
+    .spacing(SPACING_SMALL)
+    .width(Length::Fill)
+    .into()
+}
+
+pub fn toggle_row<'a>(label: &'a str, value: bool) -> Element<'a, Message> {
+    row![
+        text(label).size(13),
+        toggler(value)
+            .on_toggle(Message::SettingsBlurToggled)
+            .size(18)
     ]
-    .spacing(SPACING_NORMAL)
     .align_y(Alignment::Center)
+    .spacing(SPACING_NORMAL)
     .width(Length::Fill)
     .into()
 }
 
 pub fn section<'a>(title: &'a str, body: Element<'a, Message>) -> Element<'a, Message> {
-    column(vec![text(title).size(15).into(), body])
-        .spacing(SPACING_SMALL)
-        .width(Length::Fill)
-        .into()
+    let palette = Palette::DARK;
+    container(
+        column(vec![text(title).size(15).into(), body])
+            .spacing(SPACING_SMALL)
+            .width(Length::Fill),
+    )
+    .padding(12)
+    .width(Length::Fill)
+    .style(move |_theme: &iced::Theme| container::Style {
+        background: Some(Background::Color(Color {
+            a: 0.28,
+            ..palette.surface
+        })),
+        border: Border {
+            radius: RADIUS_NORMAL.into(),
+            width: 1.0,
+            color: Color {
+                a: 0.12,
+                ..palette.text
+            },
+        },
+        ..Default::default()
+    })
+    .into()
 }
 
 pub fn format_rgb(rgb: [u8; 3]) -> String {

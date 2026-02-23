@@ -10,6 +10,9 @@ pub const DEFAULT_THEME_FOREGROUND: [u8; 3] = [0xcd, 0xd6, 0xf4];
 pub const DEFAULT_THEME_BACKGROUND: [u8; 3] = [0x1e, 0x1e, 0x2e];
 pub const DEFAULT_THEME_CURSOR: [u8; 3] = [0x89, 0xb4, 0xfa];
 pub const DEFAULT_THEME_BG_OPACITY: f32 = 1.0;
+pub const DEFAULT_BLUR_ENABLED: bool = true;
+pub const DEFAULT_MACOS_BLUR_MATERIAL: &str = "sidebar";
+pub const DEFAULT_MACOS_BLUR_ALPHA: f32 = 1.0;
 const DEFAULT_FONT_PX: f32 = 14.0;
 const DEJAVU_SANS_MONO: &[u8] = include_bytes!("../fonts/DejaVuSansMono.ttf");
 
@@ -38,6 +41,9 @@ pub struct ThemeConfig {
     pub background: [u8; 3],
     pub cursor: [u8; 3],
     pub background_opacity: f32,
+    pub blur_enabled: bool,
+    pub macos_blur_material: String,
+    pub macos_blur_alpha: f32,
 }
 
 #[derive(Debug, Deserialize, Serialize)]
@@ -65,6 +71,9 @@ struct ThemeFileConfig {
     background: Option<String>,
     cursor: Option<String>,
     background_opacity: Option<f32>,
+    blur_enabled: Option<bool>,
+    macos_blur_material: Option<String>,
+    macos_blur_alpha: Option<f32>,
 }
 
 #[derive(Debug, Default, Clone)]
@@ -77,6 +86,9 @@ pub struct AppConfigUpdates {
     pub background: Option<[u8; 3]>,
     pub cursor: Option<[u8; 3]>,
     pub background_opacity: Option<f32>,
+    pub blur_enabled: Option<bool>,
+    pub macos_blur_material: Option<String>,
+    pub macos_blur_alpha: Option<f32>,
 }
 
 impl Default for AppConfig {
@@ -96,6 +108,9 @@ impl Default for AppConfig {
                 background: DEFAULT_THEME_BACKGROUND,
                 cursor: DEFAULT_THEME_CURSOR,
                 background_opacity: DEFAULT_THEME_BG_OPACITY,
+                blur_enabled: DEFAULT_BLUR_ENABLED,
+                macos_blur_material: DEFAULT_MACOS_BLUR_MATERIAL.to_string(),
+                macos_blur_alpha: DEFAULT_MACOS_BLUR_ALPHA,
             },
         }
     }
@@ -140,6 +155,16 @@ impl AppConfig {
         if let Some(opacity) = updates.background_opacity {
             self.theme.background_opacity =
                 sanitize_opacity(opacity, self.theme.background_opacity);
+        }
+        if let Some(enabled) = updates.blur_enabled {
+            self.theme.blur_enabled = enabled;
+        }
+        if let Some(material) = updates.macos_blur_material {
+            self.theme.macos_blur_material =
+                sanitize_macos_material(&material, &self.theme.macos_blur_material);
+        }
+        if let Some(alpha) = updates.macos_blur_alpha {
+            self.theme.macos_blur_alpha = sanitize_opacity(alpha, self.theme.macos_blur_alpha);
         }
     }
 
@@ -196,6 +221,16 @@ impl AppConfig {
                 self.theme.background_opacity =
                     sanitize_opacity(opacity, self.theme.background_opacity);
             }
+            if let Some(enabled) = theme.blur_enabled {
+                self.theme.blur_enabled = enabled;
+            }
+            if let Some(material) = theme.macos_blur_material.as_deref() {
+                self.theme.macos_blur_material =
+                    sanitize_macos_material(material, &self.theme.macos_blur_material);
+            }
+            if let Some(alpha) = theme.macos_blur_alpha {
+                self.theme.macos_blur_alpha = sanitize_opacity(alpha, self.theme.macos_blur_alpha);
+            }
         }
     }
 }
@@ -213,6 +248,27 @@ fn sanitize_opacity(value: f32, fallback: f32) -> f32 {
         value
     } else {
         fallback
+    }
+}
+
+fn sanitize_macos_material(value: &str, fallback: &str) -> String {
+    let normalized = value.trim().to_ascii_lowercase();
+    match normalized.as_str() {
+        "titlebar"
+        | "selection"
+        | "menu"
+        | "popover"
+        | "sidebar"
+        | "headerview"
+        | "sheet"
+        | "windowbackground"
+        | "hudwindow"
+        | "fullscreenui"
+        | "tooltip"
+        | "contentbackground"
+        | "underwindowbackground"
+        | "underpagebackground" => normalized,
+        _ => fallback.to_string(),
     }
 }
 
@@ -258,6 +314,9 @@ impl From<&AppConfig> for FileConfig {
                     config.theme.cursor[0], config.theme.cursor[1], config.theme.cursor[2]
                 )),
                 background_opacity: Some(config.theme.background_opacity),
+                blur_enabled: Some(config.theme.blur_enabled),
+                macos_blur_material: Some(config.theme.macos_blur_material.clone()),
+                macos_blur_alpha: Some(config.theme.macos_blur_alpha),
             }),
         }
     }
@@ -282,7 +341,7 @@ fn ensure_config_file(path: &Path) -> std::io::Result<()> {
 fn default_config_toml() -> String {
     let (cell_width, cell_height) = default_cell_metrics();
     format!(
-        "[ui]\nwindow_width = {width}\nwindow_height = {height}\n\n[terminal]\ncell_width = {cell_width:.1}\ncell_height = {cell_height:.1}\n\n[theme]\nforeground = \"#{fg:02x}{fg_g:02x}{fg_b:02x}\"\nbackground = \"#{bg:02x}{bg_g:02x}{bg_b:02x}\"\ncursor = \"#{cur:02x}{cur_g:02x}{cur_b:02x}\"\nbackground_opacity = {opacity:.2}\n",
+        "[ui]\nwindow_width = {width}\nwindow_height = {height}\n\n[terminal]\ncell_width = {cell_width:.1}\ncell_height = {cell_height:.1}\n\n[theme]\nforeground = \"#{fg:02x}{fg_g:02x}{fg_b:02x}\"\nbackground = \"#{bg:02x}{bg_g:02x}{bg_b:02x}\"\ncursor = \"#{cur:02x}{cur_g:02x}{cur_b:02x}\"\nbackground_opacity = {opacity:.2}\nblur_enabled = {blur_enabled}\nmacos_blur_material = \"{macos_blur_material}\"\nmacos_blur_alpha = {macos_blur_alpha:.2}\n",
         width = DEFAULT_WINDOW_WIDTH as u32,
         height = DEFAULT_WINDOW_HEIGHT as u32,
         cell_width = cell_width,
@@ -296,7 +355,10 @@ fn default_config_toml() -> String {
         cur = DEFAULT_THEME_CURSOR[0],
         cur_g = DEFAULT_THEME_CURSOR[1],
         cur_b = DEFAULT_THEME_CURSOR[2],
-        opacity = DEFAULT_THEME_BG_OPACITY
+        opacity = DEFAULT_THEME_BG_OPACITY,
+        blur_enabled = DEFAULT_BLUR_ENABLED,
+        macos_blur_material = DEFAULT_MACOS_BLUR_MATERIAL,
+        macos_blur_alpha = DEFAULT_MACOS_BLUR_ALPHA
     )
 }
 
