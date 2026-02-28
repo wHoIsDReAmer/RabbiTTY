@@ -21,6 +21,8 @@ iced = { version = "0.14.0", default-features = false, features = [
     "canvas",
     "advanced",
     "image",
+    "x11",
+    "wayland",
 ] }
 wgpu = "28.0.0"
 bytemuck = { version = "1.25", features = ["derive"] }
