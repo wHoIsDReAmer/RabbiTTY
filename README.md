@@ -18,4 +18,4 @@ Rabbitty is a terminal emulator chasing `foot`-like memory thrift and cross-plat
 
 - Mac (tested)
 - Windows 11 (tested)
-- Linux (not tested)
+- Linux (tested)
