@@ -115,6 +115,11 @@ impl SettingsDraft {
         }
     }
 
+    pub fn sync_window_size(&mut self, width: f32, height: f32) {
+        self.window_width = format!("{width:.0}");
+        self.window_height = format!("{height:.0}");
+    }
+
     pub fn to_updates(&self) -> AppConfigUpdates {
         let mut updates = AppConfigUpdates::default();
         updates.window_width = parse_f32(&self.window_width);
