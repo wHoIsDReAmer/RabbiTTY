@@ -44,7 +44,7 @@ pub fn view<'a>(
                 .placeholder("Select terminal font")
                 .width(Length::Fill)
                 .into(),
-                text("Terminal은 고정폭(Monospace) 폰트에서 가장 자연스럽게 보입니다.")
+                text("Terminal text looks best with monospaced fonts.")
                     .size(12)
                     .into(),
             ])
