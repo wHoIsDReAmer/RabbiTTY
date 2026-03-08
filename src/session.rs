@@ -128,6 +128,7 @@ impl Session {
     }
 
     /// 세션(자식 프로세스)이 아직 살아있는지 확인
+    #[allow(dead_code)]
     pub fn is_alive(&mut self) -> bool {
         if let Some(ref mut child) = self.child {
             // try_wait: None이면 아직 실행 중, Some이면 종료됨

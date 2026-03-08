@@ -82,6 +82,7 @@ struct CompositeVertex {
 
 #[derive(Debug)]
 struct OffscreenTarget {
+    #[allow(dead_code)]
     texture: wgpu::Texture,
     view: wgpu::TextureView,
     size: [u32; 2],

@@ -19,7 +19,9 @@ pub enum SettingsField {
     ThemeBackground,
     ThemeCursor,
     ThemeBackgroundOpacity,
+    #[allow(dead_code)]
     ThemeMacosBlurMaterial,
+    #[allow(dead_code)]
     ThemeMacosBlurAlpha,
     ShortcutNewTab,
     ShortcutCloseTab,

@@ -9,6 +9,7 @@ use std::sync::{Arc, Mutex};
 pub struct TerminalTab {
     pub id: u64,
     pub title: String,
+    #[allow(dead_code)]
     pub shell: ShellKind,
     pub session: TerminalSession,
     engine: TerminalEngine,
@@ -16,6 +17,7 @@ pub struct TerminalTab {
 
 pub enum TerminalSession {
     Active(Session),
+    #[allow(dead_code)]
     Failed(String),
 }
 
@@ -66,6 +68,7 @@ impl TerminalTab {
         self.engine.feed_bytes(bytes);
     }
 
+    #[allow(dead_code)]
     pub fn status_text(&self) -> String {
         match &self.session {
             TerminalSession::Active(_) => "Session: live".into(),
@@ -85,6 +88,7 @@ impl TerminalTab {
         self.engine.size()
     }
 
+    #[allow(dead_code)]
     pub fn is_alive(&mut self) -> bool {
         match &mut self.session {
             TerminalSession::Active(session) => session.is_alive(),
