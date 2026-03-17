@@ -48,11 +48,33 @@ pub const DEFAULT_TERMINAL_FONT_SIZE: f32 = 14.0;
 const DEJAVU_SANS_MONO: &[u8] = include_bytes!("../fonts/DejaVuSansMono.ttf");
 
 #[derive(Debug, Clone)]
+pub struct SshProfile {
+    pub name: String,
+    pub host: String,
+    pub port: u16,
+    pub user: String,
+    pub identity_file: Option<String>,
+}
+
+impl Default for SshProfile {
+    fn default() -> Self {
+        Self {
+            name: String::new(),
+            host: String::new(),
+            port: 22,
+            user: String::new(),
+            identity_file: None,
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
 pub struct AppConfig {
     pub ui: UiConfig,
     pub terminal: TerminalConfig,
     pub theme: ThemeConfig,
     pub shortcuts: ShortcutsConfig,
+    pub ssh_profiles: Vec<SshProfile>,
 }
 
 #[derive(Debug, Clone)]
@@ -91,11 +113,21 @@ pub struct ShortcutsConfig {
 }
 
 #[derive(Debug, Deserialize, Serialize)]
+struct SshProfileFileConfig {
+    name: Option<String>,
+    host: Option<String>,
+    port: Option<u16>,
+    user: Option<String>,
+    identity_file: Option<String>,
+}
+
+#[derive(Debug, Deserialize, Serialize)]
 struct FileConfig {
     ui: Option<UiFileConfig>,
     terminal: Option<TerminalFileConfig>,
     theme: Option<ThemeFileConfig>,
     shortcuts: Option<ShortcutsFileConfig>,
+    ssh_profiles: Option<Vec<SshProfileFileConfig>>,
 }
 
 #[derive(Debug, Deserialize, Serialize)]
@@ -189,6 +221,7 @@ impl Default for AppConfig {
                 prev_tab: DEFAULT_SHORTCUT_PREV_TAB.to_string(),
                 quit: DEFAULT_SHORTCUT_QUIT.to_string(),
             },
+            ssh_profiles: vec![],
         }
     }
 }
@@ -364,6 +397,36 @@ impl AppConfig {
             if let Some(value) = shortcuts.quit.as_deref() {
                 self.shortcuts.quit = sanitize_shortcut(value, &self.shortcuts.quit);
             }
+        }
+
+        if let Some(profiles) = file.ssh_profiles {
+            self.ssh_profiles = profiles
+                .into_iter()
+                .filter_map(|p| {
+                    let host = p.host.as_deref().map(str::trim).unwrap_or("");
+                    if host.is_empty() {
+                        return None;
+                    }
+                    Some(SshProfile {
+                        name: p
+                            .name
+                            .as_deref()
+                            .map(str::trim)
+                            .filter(|s| !s.is_empty())
+                            .unwrap_or(host)
+                            .to_string(),
+                        host: host.to_string(),
+                        port: p.port.unwrap_or(22),
+                        user: p.user.as_deref().map(str::trim).unwrap_or("").to_string(),
+                        identity_file: p
+                            .identity_file
+                            .as_deref()
+                            .map(str::trim)
+                            .filter(|s| !s.is_empty())
+                            .map(String::from),
+                    })
+                })
+                .collect();
         }
     }
 }
@@ -583,6 +646,27 @@ impl From<&AppConfig> for FileConfig {
                 prev_tab: Some(config.shortcuts.prev_tab.clone()),
                 quit: Some(config.shortcuts.quit.clone()),
             }),
+            ssh_profiles: if config.ssh_profiles.is_empty() {
+                None
+            } else {
+                Some(
+                    config
+                        .ssh_profiles
+                        .iter()
+                        .map(|p| SshProfileFileConfig {
+                            name: Some(p.name.clone()),
+                            host: Some(p.host.clone()),
+                            port: Some(p.port),
+                            user: if p.user.is_empty() {
+                                None
+                            } else {
+                                Some(p.user.clone())
+                            },
+                            identity_file: p.identity_file.clone(),
+                        })
+                        .collect(),
+                )
+            },
         }
     }
 }

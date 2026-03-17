@@ -1,8 +1,8 @@
 use crate::config::AppConfig;
 use crate::gui::app::Message;
-use crate::gui::settings::{SettingsDraft, SettingsField, input_row, section};
+use crate::gui::settings::{SettingsDraft, SettingsField, hint_text, input_row, section};
 use crate::gui::theme::SPACING_NORMAL;
-use iced::widget::{column, text};
+use iced::widget::column;
 use iced::{Element, Length};
 
 pub fn view<'a>(_config: &'a AppConfig, draft: &'a SettingsDraft) -> Element<'a, Message> {
@@ -35,9 +35,7 @@ pub fn view<'a>(_config: &'a AppConfig, draft: &'a SettingsDraft) -> Element<'a,
                 SettingsField::ShortcutPrevTab,
             ),
             input_row("Quit", &draft.shortcut_quit, SettingsField::ShortcutQuit),
-            text("Format: Command+T, Ctrl+W, Ctrl+PageDown, Command+Comma")
-                .size(12)
-                .into(),
+            hint_text("Format: Command+T, Ctrl+W, Ctrl+PageDown, Command+Comma"),
         ])
         .spacing(SPACING_NORMAL)
         .width(Length::Fill)

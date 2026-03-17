@@ -1,3 +1,4 @@
+use crate::config::SshProfile;
 use crate::session::{LaunchSpec, OutputEvent, Session, SessionError};
 use crate::terminal::{CellVisual, TerminalEngine, TerminalSize, TerminalTheme};
 use iced::futures::channel::mpsc;
@@ -177,7 +178,7 @@ impl TerminalTab {
     }
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone)]
 pub enum ShellKind {
     #[cfg(target_family = "unix")]
     Zsh,
@@ -185,13 +186,19 @@ pub enum ShellKind {
     Cmd,
     #[cfg(target_family = "windows")]
     PowerShell,
+    Ssh(SshProfile),
 }
 
 impl ShellKind {
-    fn launch_spec(self, size: TerminalSize) -> LaunchSpec {
+    fn launch_spec(&self, size: TerminalSize) -> LaunchSpec {
+        if let ShellKind::Ssh(profile) = self {
+            return profile.launch_spec(size);
+        }
+
         #[cfg(target_family = "unix")]
         let (program, args): (String, Vec<String>) = match self {
             ShellKind::Zsh => resolve_unix_shell(),
+            ShellKind::Ssh(_) => unreachable!(),
         };
 
         #[cfg(target_family = "windows")]
@@ -205,6 +212,7 @@ impl ShellKind {
                     "Bypass".to_string(),
                 ],
             ),
+            ShellKind::Ssh(_) => unreachable!(),
         };
 
         LaunchSpec {
@@ -215,7 +223,11 @@ impl ShellKind {
         }
     }
 
-    fn title_from_program(self, program: &str) -> String {
+    fn title_from_program(&self, program: &str) -> String {
+        if let ShellKind::Ssh(profile) = self {
+            return profile.tab_title();
+        }
+
         #[cfg(target_family = "unix")]
         {
             if let Some(name) = Path::new(program)
@@ -233,7 +245,57 @@ impl ShellKind {
             match self {
                 ShellKind::Cmd => "cmd".to_string(),
                 ShellKind::PowerShell => "powershell".to_string(),
+                ShellKind::Ssh(_) => unreachable!(),
             }
+        }
+    }
+}
+
+impl SshProfile {
+    fn launch_spec(&self, size: TerminalSize) -> LaunchSpec {
+        let mut args = Vec::new();
+
+        if self.port != 22 {
+            args.push("-p".to_string());
+            args.push(self.port.to_string());
+        }
+
+        if let Some(ref identity) = self.identity_file {
+            let expanded = if identity.starts_with("~/") {
+                dirs::home_dir()
+                    .map(|h| h.join(&identity[2..]).to_string_lossy().to_string())
+                    .unwrap_or_else(|| identity.clone())
+            } else {
+                identity.clone()
+            };
+            args.push("-i".to_string());
+            args.push(expanded);
+        }
+
+        let destination = if self.user.is_empty() {
+            self.host.clone()
+        } else {
+            format!("{}@{}", self.user, self.host)
+        };
+        args.push(destination);
+
+        LaunchSpec {
+            program: "ssh".to_string(),
+            args,
+            rows: size.lines as u16,
+            cols: size.columns as u16,
+        }
+    }
+
+    fn tab_title(&self) -> String {
+        if self.name.is_empty() {
+            if self.user.is_empty() {
+                self.host.clone()
+            } else {
+                format!("{}@{}", self.user, self.host)
+            }
+        } else {
+            self.name.clone()
         }
     }
 }
@@ -273,6 +335,7 @@ impl Display for ShellKind {
             ShellKind::Cmd => write!(f, "cmd"),
             #[cfg(target_family = "windows")]
             ShellKind::PowerShell => write!(f, "powershell"),
+            ShellKind::Ssh(profile) => write!(f, "ssh: {}", profile.tab_title()),
         }
     }
 }

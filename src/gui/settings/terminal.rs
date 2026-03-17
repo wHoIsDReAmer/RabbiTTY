@@ -1,9 +1,11 @@
 use crate::config::AppConfig;
 use crate::gui::app::Message;
-use crate::gui::settings::{SettingsDraft, SettingsField, TerminalFontOption, input_row, section};
+use crate::gui::settings::{
+    SettingsDraft, SettingsField, TerminalFontOption, hint_text, input_row_with_suffix, section,
+};
 use crate::gui::theme::SPACING_NORMAL;
-use iced::widget::{column, pick_list, text};
-use iced::{Element, Length};
+use iced::widget::{column, pick_list, row, text};
+use iced::{Alignment, Element, Length};
 
 pub fn view<'a>(
     _config: &'a AppConfig,
@@ -18,23 +20,35 @@ pub fn view<'a>(
     let terminal_section = section(
         "Cells",
         column(vec![
-            input_row(
+            input_row_with_suffix(
                 "Cell width",
                 &draft.cell_width,
                 SettingsField::TerminalCellWidth,
+                "px",
             ),
-            input_row(
+            input_row_with_suffix(
                 "Cell height",
                 &draft.cell_height,
                 SettingsField::TerminalCellHeight,
+                "px",
             ),
-            input_row(
-                "Terminal font size",
+        ])
+        .spacing(SPACING_NORMAL)
+        .width(Length::Fill)
+        .into(),
+    );
+
+    let font_section = section(
+        "Font",
+        column(vec![
+            input_row_with_suffix(
+                "Size",
                 &draft.terminal_font_size,
                 SettingsField::TerminalFontSize,
+                "pt",
             ),
-            column(vec![
-                text("Terminal font").size(13).into(),
+            row![
+                text("Font family").size(13).width(Length::Fixed(160.0)),
                 pick_list(terminal_font_options, selected_font, |option| {
                     Message::SettingsInputChanged(
                         SettingsField::TerminalFontSelection,
@@ -42,21 +56,20 @@ pub fn view<'a>(
                     )
                 })
                 .placeholder("Select terminal font")
-                .width(Length::Fill)
-                .into(),
-                text("Terminal text looks best with monospaced fonts.")
-                    .size(12)
-                    .into(),
-            ])
-            .spacing(6)
+                .width(Length::Fill),
+            ]
+            .align_y(Alignment::Center)
+            .spacing(SPACING_NORMAL)
+            .width(Length::Fill)
             .into(),
+            hint_text("Monospaced fonts are recommended for terminal text."),
         ])
         .spacing(SPACING_NORMAL)
         .width(Length::Fill)
         .into(),
     );
 
-    column(vec![terminal_section])
+    column(vec![terminal_section, font_section])
         .spacing(SPACING_NORMAL)
         .width(Length::Fill)
         .into()

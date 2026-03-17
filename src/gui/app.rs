@@ -1,5 +1,7 @@
 use crate::config::AppConfig;
-use crate::gui::settings::{SettingsCategory, SettingsDraft, SettingsField, TerminalFontOption};
+use crate::gui::settings::{
+    SettingsCategory, SettingsDraft, SettingsField, SshProfileField, TerminalFontOption,
+};
 use crate::gui::tab::{ShellKind, TerminalTab};
 use crate::session::OutputEvent;
 use crate::terminal_font::discover_system_terminal_fonts;
@@ -29,6 +31,11 @@ pub enum Message {
     SettingsBlurToggled(bool),
     ApplySettings,
     SaveSettings,
+    AddSshProfile,
+    RemoveSshProfile(usize),
+    SshProfileFieldChanged(usize, SshProfileField, String),
+    SaveSshProfiles,
+    CreateSshTab(usize),
     #[cfg(target_os = "macos")]
     ConfirmRestartForBlur,
     #[cfg(target_os = "macos")]

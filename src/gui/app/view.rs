@@ -146,35 +146,64 @@ impl App {
             )
             .on_press(Message::CloseShellPicker);
 
-            let popup_card = container(
-                column(vec![
-                    #[cfg(target_family = "unix")]
-                    if self.shell_picker_selected == 0 {
-                        button_primary("Shell")
+            let popup_card = container({
+                let mut items: Vec<Element<Message>> = Vec::new();
+                let mut option_index = 0usize;
+
+                #[cfg(target_family = "unix")]
+                {
+                    items.push(
+                        if self.shell_picker_selected == option_index {
+                            button_primary("Shell")
+                        } else {
+                            button_secondary("Shell")
+                        }
+                        .on_press(Message::CreateTab(ShellKind::Zsh))
+                        .width(Length::Fill)
+                        .into(),
+                    );
+                    option_index += 1;
+                }
+
+                #[cfg(target_family = "windows")]
+                {
+                    items.push(
+                        if self.shell_picker_selected == option_index {
+                            button_primary("cmd")
+                        } else {
+                            button_secondary("cmd")
+                        }
+                        .on_press(Message::CreateTab(ShellKind::Cmd))
+                        .width(Length::Fill)
+                        .into(),
+                    );
+                    option_index += 1;
+
+                    items.push(
+                        if self.shell_picker_selected == option_index {
+                            button_primary("PowerShell")
+                        } else {
+                            button_secondary("PowerShell")
+                        }
+                        .on_press(Message::CreateTab(ShellKind::PowerShell))
+                        .width(Length::Fill)
+                        .into(),
+                    );
+                    option_index += 1;
+                }
+
+                for (i, profile) in self.config.ssh_profiles.iter().enumerate() {
+                    let label: &str = if profile.name.is_empty() {
+                        &profile.host
                     } else {
-                        button_secondary("Shell")
-                    }
-                    .on_press(Message::CreateTab(ShellKind::Zsh))
-                    .width(Length::Fill)
-                    .into(),
-                    #[cfg(target_family = "windows")]
-                    if self.shell_picker_selected == 0 {
-                        button_primary("cmd")
-                    } else {
-                        button_secondary("cmd")
-                    }
-                    .on_press(Message::CreateTab(ShellKind::Cmd))
-                    .width(Length::Fill)
-                    .into(),
-                    #[cfg(target_family = "windows")]
-                    if self.shell_picker_selected == 1 {
-                        button_primary("PowerShell")
-                    } else {
-                        button_secondary("PowerShell")
-                    }
-                    .on_press(Message::CreateTab(ShellKind::PowerShell))
-                    .width(Length::Fill)
-                    .into(),
+                        &profile.name
+                    };
+                    let selected = self.shell_picker_selected == option_index;
+                    items.push(ssh_picker_button(label, selected, Message::CreateSshTab(i)));
+                    option_index += 1;
+                }
+
+                items.push(
                     if self.shell_picker_selected == self.shell_picker_option_count() - 1 {
                         button_primary("Cancel")
                     } else {
@@ -183,11 +212,13 @@ impl App {
                     .on_press(Message::CloseShellPicker)
                     .width(Length::Fill)
                     .into(),
-                ])
-                .spacing(10)
-                .padding(20)
-                .width(Length::Fixed(220.0)),
-            )
+                );
+
+                column(items)
+                    .spacing(10)
+                    .padding(20)
+                    .width(Length::Fixed(220.0))
+            })
             .style(|_theme: &iced::Theme| container::Style {
                 background: Some(iced::Background::Color(iced::color!(0x31, 0x32, 0x44))),
                 border: iced::Border {
@@ -280,8 +311,21 @@ impl App {
             ..Default::default()
         });
 
-        let header = row![
+        let breadcrumb = row![
             text("Settings").size(18),
+            text("/")
+                .size(16)
+                .color(Color { a: 0.3, ..palette.text }),
+            text(self.settings_category.label())
+                .size(16)
+                .color(palette.accent),
+        ]
+        .align_y(iced::Alignment::Center)
+        .spacing(SPACING_SMALL);
+
+        let header = row![
+            breadcrumb,
+            container("").width(Length::Fill),
             row![
                 button_secondary("Apply").on_press(Message::ApplySettings),
                 button_primary("Save").on_press(Message::SaveSettings),
@@ -318,6 +362,82 @@ impl App {
         row![sidebar, content]
             .spacing(SPACING_LARGE)
             .height(Length::Fill)
+            .width(Length::Fill)
+            .into()
+    }
+}
+
+fn ssh_picker_button(label: &str, selected: bool, on_press: Message) -> Element<'_, Message> {
+    let palette = Palette::DARK;
+    let prefix = format!("SSH: {label}");
+    if selected {
+        button(text(prefix))
+            .style(
+                move |_theme: &iced::Theme, status: iced::widget::button::Status| {
+                    let base = iced::widget::button::Style {
+                        background: Some(Background::Color(palette.accent)),
+                        text_color: palette.background,
+                        border: Border {
+                            radius: RADIUS_NORMAL.into(),
+                            width: 0.0,
+                            color: Color::TRANSPARENT,
+                        },
+                        shadow: iced::Shadow::default(),
+                        snap: true,
+                    };
+                    match status {
+                        iced::widget::button::Status::Hovered => iced::widget::button::Style {
+                            background: Some(Background::Color(Color {
+                                a: 0.9,
+                                ..palette.accent
+                            })),
+                            ..base
+                        },
+                        _ => base,
+                    }
+                },
+            )
+            .on_press(on_press)
+            .width(Length::Fill)
+            .into()
+    } else {
+        button(text(prefix))
+            .style(
+                move |_theme: &iced::Theme, status: iced::widget::button::Status| {
+                    let base = iced::widget::button::Style {
+                        background: Some(Background::Color(palette.surface)),
+                        text_color: palette.text,
+                        border: Border {
+                            radius: RADIUS_NORMAL.into(),
+                            width: 1.0,
+                            color: Color {
+                                a: 0.1,
+                                ..palette.text
+                            },
+                        },
+                        shadow: iced::Shadow::default(),
+                        snap: true,
+                    };
+                    match status {
+                        iced::widget::button::Status::Hovered => iced::widget::button::Style {
+                            background: Some(Background::Color(Color {
+                                a: 0.8,
+                                ..palette.surface
+                            })),
+                            border: Border {
+                                color: Color {
+                                    a: 0.3,
+                                    ..palette.text
+                                },
+                                ..base.border
+                            },
+                            ..base
+                        },
+                        _ => base,
+                    }
+                },
+            )
+            .on_press(on_press)
             .width(Length::Fill)
             .into()
     }

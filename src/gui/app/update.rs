@@ -53,6 +53,35 @@ impl App {
             Message::CreateTab(shell) => {
                 return self.create_tab(shell);
             }
+            Message::CreateSshTab(profile_index) => {
+                if let Some(profile) = self.config.ssh_profiles.get(profile_index) {
+                    let shell = ShellKind::Ssh(profile.clone());
+                    return self.create_tab(shell);
+                }
+            }
+            Message::AddSshProfile => {
+                self.config
+                    .ssh_profiles
+                    .push(crate::config::SshProfile::default());
+                self.settings_draft = SettingsDraft::from_config(&self.config);
+            }
+            Message::RemoveSshProfile(index) => {
+                if index < self.config.ssh_profiles.len() {
+                    self.config.ssh_profiles.remove(index);
+                    self.settings_draft = SettingsDraft::from_config(&self.config);
+                }
+            }
+            Message::SshProfileFieldChanged(index, field, value) => {
+                self.settings_draft.update_ssh_profile(index, field, value);
+            }
+            Message::SaveSshProfiles => {
+                self.settings_draft
+                    .apply_ssh_profiles_to(&mut self.config.ssh_profiles);
+                if let Err(err) = self.config.save() {
+                    eprintln!("Failed to save config: {err}");
+                }
+                self.settings_draft = SettingsDraft::from_config(&self.config);
+            }
             Message::OpenSettingsTab => {
                 self.settings_open = true;
                 self.active_tab = SETTINGS_TAB_INDEX;
@@ -315,14 +344,16 @@ impl App {
     }
 
     pub(super) fn shell_picker_option_count(&self) -> usize {
+        let ssh_count = self.config.ssh_profiles.len();
+
         #[cfg(target_family = "unix")]
         {
-            2
+            1 + ssh_count + 1 // shell + ssh profiles + cancel
         }
 
         #[cfg(target_family = "windows")]
         {
-            3
+            2 + ssh_count + 1 // cmd + powershell + ssh profiles + cancel
         }
     }
 
@@ -337,30 +368,40 @@ impl App {
     }
 
     fn confirm_shell_picker_selection(&mut self) -> Task<Message> {
+        let selected = self.shell_picker_selected;
+
         #[cfg(target_family = "unix")]
-        {
-            match self.shell_picker_selected {
-                0 => self.create_tab(ShellKind::Zsh),
-                _ => {
-                    self.show_shell_picker = false;
-                    self.shell_picker_selected = 0;
-                    Task::none()
-                }
+        let shell_count = 1usize;
+        #[cfg(target_family = "windows")]
+        let shell_count = 2usize;
+
+        // Shell options first
+        if selected < shell_count {
+            #[cfg(target_family = "unix")]
+            {
+                return self.create_tab(ShellKind::Zsh);
+            }
+
+            #[cfg(target_family = "windows")]
+            {
+                return match selected {
+                    0 => self.create_tab(ShellKind::Cmd),
+                    _ => self.create_tab(ShellKind::PowerShell),
+                };
             }
         }
 
-        #[cfg(target_family = "windows")]
-        {
-            return match self.shell_picker_selected {
-                0 => self.create_tab(ShellKind::Cmd),
-                1 => self.create_tab(ShellKind::PowerShell),
-                _ => {
-                    self.show_shell_picker = false;
-                    self.shell_picker_selected = 0;
-                    Task::none()
-                }
-            };
+        // SSH profiles
+        let ssh_index = selected - shell_count;
+        if ssh_index < self.config.ssh_profiles.len() {
+            let profile = self.config.ssh_profiles[ssh_index].clone();
+            return self.create_tab(ShellKind::Ssh(profile));
         }
+
+        // Cancel
+        self.show_shell_picker = false;
+        self.shell_picker_selected = 0;
+        Task::none()
     }
 
     fn handle_app_shortcut(&mut self, key: &Key, modifiers: Modifiers) -> Option<Task<Message>> {
