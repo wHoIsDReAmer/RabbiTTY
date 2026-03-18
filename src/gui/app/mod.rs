@@ -9,11 +9,9 @@ use iced::Size;
 use iced::futures::channel::mpsc;
 use iced::keyboard::{Key, Modifiers};
 
-#[path = "app/shortcuts.rs"]
 mod shortcuts;
-#[path = "app/update.rs"]
+mod subscription;
 pub(crate) mod update;
-#[path = "app/view.rs"]
 mod view;
 
 pub(super) const SETTINGS_TAB_INDEX: usize = usize::MAX;
@@ -66,27 +64,27 @@ pub enum Message {
 }
 
 pub struct App {
-    tabs: Vec<TerminalTab>,
-    active_tab: usize,
-    show_shell_picker: bool,
-    shell_picker_selected: usize,
-    window_size: Size,
-    settings_open: bool,
-    settings_category: SettingsCategory,
-    settings_draft: SettingsDraft,
-    terminal_font_options: Vec<TerminalFontOption>,
-    config: AppConfig,
-    pty_sender: Option<mpsc::Sender<OutputEvent>>,
-    next_tab_id: u64,
-    tab_bar_scroll_offset: f32,
-    ignore_scrollable_sync: bool,
-    window_style_applied: bool,
+    pub(super) tabs: Vec<TerminalTab>,
+    pub(super) active_tab: usize,
+    pub(super) show_shell_picker: bool,
+    pub(super) shell_picker_selected: usize,
+    pub(super) window_size: Size,
+    pub(super) settings_open: bool,
+    pub(super) settings_category: SettingsCategory,
+    pub(super) settings_draft: SettingsDraft,
+    pub(super) terminal_font_options: Vec<TerminalFontOption>,
+    pub(super) config: AppConfig,
+    pub(super) pty_sender: Option<mpsc::Sender<OutputEvent>>,
+    pub(super) next_tab_id: u64,
+    pub(super) tab_bar_scroll_offset: f32,
+    pub(super) ignore_scrollable_sync: bool,
+    pub(super) window_style_applied: bool,
     #[cfg(target_os = "macos")]
-    show_restart_confirm: bool,
+    pub(super) show_restart_confirm: bool,
     #[cfg(target_os = "macos")]
-    pending_settings_updates: Option<crate::config::AppConfigUpdates>,
+    pub(super) pending_settings_updates: Option<crate::config::AppConfigUpdates>,
     #[cfg(target_os = "macos")]
-    pending_save_on_restart: bool,
+    pub(super) pending_save_on_restart: bool,
 }
 
 impl App {
@@ -118,7 +116,7 @@ impl App {
         }
     }
 
-    fn grid_for_size(&self, size: Size) -> (usize, usize) {
+    pub(super) fn grid_for_size(&self, size: Size) -> (usize, usize) {
         let pad_x = self.config.terminal.padding_x * 2.0;
         let pad_y = self.config.terminal.padding_y * 2.0;
         let terminal_height = (size.height - 80.0 - pad_y).max(100.0);
@@ -137,14 +135,14 @@ impl App {
         }
     }
 
-    fn theme_background_color(&self) -> iced::Color {
+    pub(super) fn theme_background_color(&self) -> iced::Color {
         theme_color(
             self.config.theme.background,
             self.config.theme.background_opacity,
         )
     }
 
-    fn theme_text_color(&self) -> iced::Color {
+    pub(super) fn theme_text_color(&self) -> iced::Color {
         theme_color(self.config.theme.foreground, 1.0)
     }
 }
