@@ -12,7 +12,7 @@ use iced::keyboard::{Key, Modifiers};
 #[path = "app/shortcuts.rs"]
 mod shortcuts;
 #[path = "app/update.rs"]
-mod update;
+pub(crate) mod update;
 #[path = "app/view.rs"]
 mod view;
 
@@ -48,6 +48,7 @@ pub enum Message {
         modifiers: Modifiers,
         text: Option<String>,
     },
+    TabBarScroll(f32),
     WindowResized(Size),
     ApplyWindowStyle,
     #[cfg(target_os = "windows")]
@@ -72,6 +73,7 @@ pub struct App {
     config: AppConfig,
     pty_sender: Option<mpsc::Sender<OutputEvent>>,
     next_tab_id: u64,
+    tab_bar_scroll_offset: f32,
     window_style_applied: bool,
     #[cfg(target_os = "macos")]
     show_restart_confirm: bool,
@@ -98,6 +100,7 @@ impl App {
             config,
             pty_sender: None,
             next_tab_id: 1,
+            tab_bar_scroll_offset: 0.0,
             window_style_applied: false,
             #[cfg(target_os = "macos")]
             show_restart_confirm: false,

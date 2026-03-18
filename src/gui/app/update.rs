@@ -9,9 +9,16 @@ use iced::futures::channel::mpsc;
 use iced::futures::sink::SinkExt;
 use iced::keyboard::{self, Key, Modifiers, key::Named};
 use iced::stream;
-use iced::{Event, Size, Subscription, Task, event, window};
+use iced::widget::operation::scroll_to;
+use iced::widget::scrollable;
+use iced::{Event, Size, Subscription, Task, event, mouse, widget, window};
+
+use std::sync::LazyLock;
 
 use super::shortcuts::ShortcutAction;
+
+pub(in crate::gui) static TAB_BAR_SCROLLABLE_ID: LazyLock<widget::Id> =
+    LazyLock::new(widget::Id::unique);
 
 impl App {
     pub fn update(&mut self, message: Message) -> Task<Message> {
@@ -240,6 +247,21 @@ impl App {
                 return window::latest().and_then(window::drag);
             }
 
+            Message::TabBarScroll(delta) => {
+                let tab_count = self.tabs.len() + if self.settings_open { 1 } else { 0 };
+                let max_offset = (tab_count as f32 * 150.0).max(0.0);
+
+                self.tab_bar_scroll_offset =
+                    (self.tab_bar_scroll_offset + delta).clamp(0.0, max_offset);
+
+                return scroll_to(
+                    TAB_BAR_SCROLLABLE_ID.clone(),
+                    scrollable::AbsoluteOffset {
+                        x: self.tab_bar_scroll_offset,
+                        y: 0.0,
+                    },
+                );
+            }
             Message::WindowResized(size) => {
                 self.window_size = size;
 
@@ -498,7 +520,7 @@ impl App {
                     while let Some(first) = receiver.next().await {
                         let mut batch = vec![first];
                         // Drain all pending events without blocking
-                        while let Ok(Some(event)) = receiver.try_next() {
+                        while let Ok(event) = receiver.try_recv() {
                             batch.push(event);
                         }
                         if batch.len() == 1 {
@@ -528,6 +550,17 @@ impl App {
                     modifiers,
                     text: text.map(|s| s.to_string()),
                 }),
+                Event::Mouse(mouse::Event::WheelScrolled { delta }) => {
+                    let pixels = match delta {
+                        mouse::ScrollDelta::Lines { x, y } => x * 30.0 - y * 30.0,
+                        mouse::ScrollDelta::Pixels { x, y } => x - y,
+                    };
+                    if pixels.abs() > 0.1 {
+                        Some(Message::TabBarScroll(pixels))
+                    } else {
+                        None
+                    }
+                }
                 _ => None,
             }),
         ])

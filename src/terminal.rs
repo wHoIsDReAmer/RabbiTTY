@@ -24,6 +24,7 @@ pub struct CellVisual {
     pub fg: [f32; 4],
     pub bg: [f32; 4],
     pub underline: bool,
+    pub wide: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -242,6 +243,7 @@ pub struct TerminalEngine {
     cells_cache: RefCell<Arc<Vec<CellVisual>>>,
     cache_dirty: Cell<bool>,
     cache_size: Cell<TerminalSize>,
+    title: Arc<Mutex<Option<String>>>,
 }
 
 impl TerminalEngine {
@@ -255,12 +257,14 @@ impl TerminalEngine {
             scrolling_history: scrollback,
             ..Default::default()
         };
+        let title: Arc<Mutex<Option<String>>> = Arc::new(Mutex::new(None));
         let term = Term::new(
             config,
             &size,
             PtyEventProxy {
                 writer: Arc::clone(&writer),
                 size,
+                title: Arc::clone(&title),
             },
         );
 
@@ -272,11 +276,16 @@ impl TerminalEngine {
             cells_cache: RefCell::new(Arc::new(Vec::new())),
             cache_dirty: Cell::new(true),
             cache_size: Cell::new(size),
+            title,
         }
     }
 
     pub fn size(&self) -> TerminalSize {
         self.size
+    }
+
+    pub fn take_title(&self) -> Option<String> {
+        self.title.lock().ok()?.take()
     }
 
     pub fn feed_bytes(&mut self, bytes: &[u8]) {
@@ -331,6 +340,7 @@ impl TerminalEngine {
             fg: default_fg,
             bg: default_bg,
             underline: false,
+            wide: false,
         };
 
         cells.clear();
@@ -385,6 +395,7 @@ impl TerminalEngine {
                     slot.fg = fg;
                     slot.bg = bg;
                     slot.underline = indexed.cell.flags.intersects(Flags::ALL_UNDERLINES);
+                    slot.wide = indexed.cell.flags.contains(Flags::WIDE_CHAR);
                 }
             }
         }
@@ -504,6 +515,7 @@ fn xterm_component(value: u8) -> u8 {
 struct PtyEventProxy {
     writer: Arc<Mutex<Box<dyn Write + Send>>>,
     size: TerminalSize,
+    title: Arc<Mutex<Option<String>>>,
 }
 
 impl EventListener for PtyEventProxy {
@@ -526,6 +538,11 @@ impl EventListener for PtyEventProxy {
                     let text = formatter(ws);
                     let _ = guard.write_all(text.as_bytes());
                     let _ = guard.flush();
+                }
+            }
+            Event::Title(new_title) => {
+                if let Ok(mut guard) = self.title.lock() {
+                    *guard = Some(new_title);
                 }
             }
             _ => {}

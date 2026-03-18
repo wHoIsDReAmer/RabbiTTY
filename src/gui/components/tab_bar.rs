@@ -2,7 +2,7 @@ use crate::gui::app::Message;
 use crate::gui::theme::Palette;
 #[cfg(target_os = "windows")]
 use iced::widget::mouse_area;
-use iced::widget::{Space, button, container, row, text};
+use iced::widget::{button, container, row, scrollable, text};
 use iced::{Background, Border, Color, Element, Length, Theme};
 
 pub fn tab_bar<'a>(
@@ -41,7 +41,17 @@ pub fn tab_bar<'a>(
             },
         );
 
-    tab_elements.push(add_btn.into());
+    let tabs_row = row(tab_elements)
+        .spacing(2)
+        .align_y(iced::Alignment::Center);
+    let tabs_scroll = scrollable(tabs_row)
+        .id(crate::gui::app::update::TAB_BAR_SCROLLABLE_ID.clone())
+        .direction(scrollable::Direction::Both {
+            vertical: scrollable::Scrollbar::new().width(0).scroller_width(0),
+            horizontal: scrollable::Scrollbar::new().width(3).scroller_width(3),
+        })
+        .width(Length::Fill)
+        .height(Length::Shrink);
 
     let settings_btn = button(text("⚙").size(12))
         .on_press(on_settings)
@@ -149,20 +159,12 @@ pub fn tab_bar<'a>(
     };
 
     #[cfg(target_os = "windows")]
-    let content = {
-        let spacer = Space::new().width(Length::Fill).height(Length::Shrink);
-        row(tab_elements)
-            .push(spacer)
-            .push(settings_btn)
-            .push(window_controls)
-            .spacing(2)
-            .align_y(iced::Alignment::Center)
-    };
+    let content = row![tabs_scroll, add_btn, settings_btn, window_controls]
+        .spacing(2)
+        .align_y(iced::Alignment::Center);
 
     #[cfg(not(target_os = "windows"))]
-    let content = row(tab_elements)
-        .push(Space::new().width(Length::Fill).height(Length::Shrink))
-        .push(settings_btn)
+    let content = row![tabs_scroll, add_btn, settings_btn]
         .spacing(2)
         .align_y(iced::Alignment::Center);
 
@@ -196,7 +198,14 @@ fn browser_tab<'a>(
 ) -> Element<'a, Message> {
     let palette = Palette::DARK;
 
-    let tab_text = text(title).size(13);
+    const MAX_TITLE_LEN: usize = 24;
+    let display_title: std::borrow::Cow<'a, str> = if title.chars().count() > MAX_TITLE_LEN {
+        let truncated: String = title.chars().take(MAX_TITLE_LEN - 1).collect();
+        format!("{truncated}…").into()
+    } else {
+        title.into()
+    };
+    let tab_text = text(display_title).size(13);
 
     let close_btn = button(text("✕").size(10))
         .on_press(Message::CloseTab(index))

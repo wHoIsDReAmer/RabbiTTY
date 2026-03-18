@@ -70,6 +70,9 @@ impl TerminalTab {
 
     pub fn feed_bytes(&mut self, bytes: &[u8]) {
         self.engine.feed_bytes(bytes);
+        if let Some(new_title) = self.engine.take_title() {
+            self.title = new_title;
+        }
     }
 
     #[allow(dead_code)]

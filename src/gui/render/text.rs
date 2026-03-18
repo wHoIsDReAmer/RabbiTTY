@@ -405,7 +405,6 @@ impl TextPipelineData {
         }
 
         let top_margin = (cell_height - self.line_height).max(0.0) * 0.5;
-        let offset_x = (cell_width - self.cell_advance).max(0.0) * 0.5;
 
         self.glyph_instances.clear();
         let needed = cells.len().saturating_sub(self.glyph_instances.capacity());
@@ -425,9 +424,11 @@ impl TextPipelineData {
                 continue;
             }
 
+            let span = if cell.wide { 2.0 } else { 1.0 };
             let cell_x = cell.col as f32 * cell_width;
             let cell_y = cell.row as f32 * cell_height;
-            let origin_x = cell_x + offset_x;
+            let wide_offset_x = (cell_width * span - self.cell_advance * span).max(0.0) * 0.5;
+            let origin_x = cell_x + wide_offset_x;
             let origin_y = cell_y + top_margin - self.line_min_y;
             let pos = [origin_x + info.bearing[0], origin_y + info.bearing[1]];
 
