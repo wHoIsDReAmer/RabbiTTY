@@ -45,6 +45,8 @@ pub const DEFAULT_SHORTCUT_QUIT: &str = "Command+Q";
 pub const DEFAULT_SHORTCUT_QUIT: &str = "Ctrl+Q";
 
 pub const DEFAULT_TERMINAL_FONT_SIZE: f32 = 14.0;
+pub const DEFAULT_TERMINAL_PADDING_X: f32 = 4.0;
+pub const DEFAULT_TERMINAL_PADDING_Y: f32 = 4.0;
 const DEJAVU_SANS_MONO: &[u8] = include_bytes!("../fonts/DejaVuSansMono.ttf");
 
 #[derive(Debug, Clone)]
@@ -89,6 +91,8 @@ pub struct TerminalConfig {
     pub cell_height: f32,
     pub font_selection: Option<String>,
     pub font_size: f32,
+    pub padding_x: f32,
+    pub padding_y: f32,
 }
 
 #[derive(Debug, Clone)]
@@ -144,6 +148,8 @@ struct TerminalFileConfig {
     #[serde(alias = "font_path")]
     legacy_font_path: Option<String>,
     font_size: Option<f32>,
+    padding_x: Option<f32>,
+    padding_y: Option<f32>,
 }
 
 #[derive(Debug, Deserialize, Serialize)]
@@ -173,6 +179,8 @@ pub struct AppConfigUpdates {
     pub window_height: Option<f32>,
     pub terminal_font_selection: Option<String>,
     pub terminal_font_size: Option<f32>,
+    pub terminal_padding_x: Option<f32>,
+    pub terminal_padding_y: Option<f32>,
     pub foreground: Option<[u8; 3]>,
     pub background: Option<[u8; 3]>,
     pub cursor: Option<[u8; 3]>,
@@ -201,6 +209,8 @@ impl Default for AppConfig {
                 cell_height,
                 font_selection: None,
                 font_size: DEFAULT_TERMINAL_FONT_SIZE,
+                padding_x: DEFAULT_TERMINAL_PADDING_X,
+                padding_y: DEFAULT_TERMINAL_PADDING_Y,
             },
             theme: ThemeConfig {
                 foreground: DEFAULT_THEME_FOREGROUND,
@@ -257,6 +267,12 @@ impl AppConfig {
                 self.terminal.cell_width = cw;
                 self.terminal.cell_height = ch;
             }
+        }
+        if let Some(px) = updates.terminal_padding_x {
+            self.terminal.padding_x = sanitize_padding(px);
+        }
+        if let Some(py) = updates.terminal_padding_y {
+            self.terminal.padding_y = sanitize_padding(py);
         }
         if let Some(foreground) = updates.foreground {
             self.theme.foreground = foreground;
@@ -341,6 +357,13 @@ impl AppConfig {
             let (cw, ch) = cell_metrics_for_font_size(self.terminal.font_size);
             self.terminal.cell_width = cw;
             self.terminal.cell_height = ch;
+
+            if let Some(px) = term.padding_x {
+                self.terminal.padding_x = sanitize_padding(px);
+            }
+            if let Some(py) = term.padding_y {
+                self.terminal.padding_y = sanitize_padding(py);
+            }
         }
 
         if let Some(theme) = file.theme {
@@ -462,6 +485,14 @@ fn sanitize_macos_material(value: &str, fallback: &str) -> String {
 
 fn sanitize_shortcut(value: &str, fallback: &str) -> String {
     normalize_shortcut(value).unwrap_or_else(|| fallback.to_string())
+}
+
+fn sanitize_padding(value: f32) -> f32 {
+    if value.is_finite() && value >= 0.0 {
+        value.min(100.0)
+    } else {
+        0.0
+    }
 }
 
 fn sanitize_terminal_font_selection(value: &str) -> Option<String> {
@@ -607,6 +638,8 @@ impl From<&AppConfig> for FileConfig {
                 font_selection: config.terminal.font_selection.clone(),
                 legacy_font_path: None,
                 font_size: Some(config.terminal.font_size),
+                padding_x: Some(config.terminal.padding_x),
+                padding_y: Some(config.terminal.padding_y),
             }),
             theme: Some(ThemeFileConfig {
                 foreground: Some(format!(
@@ -680,10 +713,12 @@ fn ensure_config_file(path: &Path) -> std::io::Result<()> {
 
 fn default_config_toml() -> String {
     format!(
-        "[ui]\nwindow_width = {width}\nwindow_height = {height}\n\n[terminal]\nfont_selection = \"\"\nfont_size = {font_size:.1}\n\n[theme]\nforeground = \"#{fg:02x}{fg_g:02x}{fg_b:02x}\"\nbackground = \"#{bg:02x}{bg_g:02x}{bg_b:02x}\"\ncursor = \"#{cur:02x}{cur_g:02x}{cur_b:02x}\"\nbackground_opacity = {opacity:.2}\nblur_enabled = {blur_enabled}\nmacos_blur_material = \"{macos_blur_material}\"\nmacos_blur_alpha = {macos_blur_alpha:.2}\n\n[shortcuts]\nnew_tab = \"{shortcut_new_tab}\"\nclose_tab = \"{shortcut_close_tab}\"\nopen_settings = \"{shortcut_open_settings}\"\nnext_tab = \"{shortcut_next_tab}\"\nprev_tab = \"{shortcut_prev_tab}\"\nquit = \"{shortcut_quit}\"\n",
+        "[ui]\nwindow_width = {width}\nwindow_height = {height}\n\n[terminal]\nfont_selection = \"\"\nfont_size = {font_size:.1}\npadding_x = {padding_x:.1}\npadding_y = {padding_y:.1}\n\n[theme]\nforeground = \"#{fg:02x}{fg_g:02x}{fg_b:02x}\"\nbackground = \"#{bg:02x}{bg_g:02x}{bg_b:02x}\"\ncursor = \"#{cur:02x}{cur_g:02x}{cur_b:02x}\"\nbackground_opacity = {opacity:.2}\nblur_enabled = {blur_enabled}\nmacos_blur_material = \"{macos_blur_material}\"\nmacos_blur_alpha = {macos_blur_alpha:.2}\n\n[shortcuts]\nnew_tab = \"{shortcut_new_tab}\"\nclose_tab = \"{shortcut_close_tab}\"\nopen_settings = \"{shortcut_open_settings}\"\nnext_tab = \"{shortcut_next_tab}\"\nprev_tab = \"{shortcut_prev_tab}\"\nquit = \"{shortcut_quit}\"\n",
         width = DEFAULT_WINDOW_WIDTH as u32,
         height = DEFAULT_WINDOW_HEIGHT as u32,
         font_size = DEFAULT_TERMINAL_FONT_SIZE,
+        padding_x = DEFAULT_TERMINAL_PADDING_X,
+        padding_y = DEFAULT_TERMINAL_PADDING_Y,
         fg = DEFAULT_THEME_FOREGROUND[0],
         fg_g = DEFAULT_THEME_FOREGROUND[1],
         fg_b = DEFAULT_THEME_FOREGROUND[2],

@@ -109,8 +109,10 @@ impl App {
     }
 
     fn grid_for_size(&self, size: Size) -> (usize, usize) {
-        let terminal_height = (size.height - 80.0).max(100.0);
-        let terminal_width = (size.width - 20.0).max(100.0);
+        let pad_x = self.config.terminal.padding_x * 2.0;
+        let pad_y = self.config.terminal.padding_y * 2.0;
+        let terminal_height = (size.height - 80.0 - pad_y).max(100.0);
+        let terminal_width = (size.width - 20.0 - pad_x).max(100.0);
         let cell_width = self.config.terminal.cell_width.max(1.0);
         let cell_height = self.config.terminal.cell_height.max(1.0);
         let cols = (terminal_width / cell_width) as usize;
@@ -144,11 +146,20 @@ impl Default for App {
 }
 
 pub(super) fn theme_color(rgb: [u8; 3], alpha: f32) -> iced::Color {
-    iced::Color {
-        r: f32::from(rgb[0]) / 255.0,
-        g: f32::from(rgb[1]) / 255.0,
-        b: f32::from(rgb[2]) / 255.0,
-        a: alpha,
+    iced::Color::from_linear_rgba(
+        srgb_u8_to_linear(rgb[0]),
+        srgb_u8_to_linear(rgb[1]),
+        srgb_u8_to_linear(rgb[2]),
+        alpha,
+    )
+}
+
+pub(super) fn srgb_u8_to_linear(value: u8) -> f32 {
+    let v = f32::from(value) / 255.0;
+    if v <= 0.04045 {
+        v / 12.92
+    } else {
+        ((v + 0.055) / 1.055).powf(2.4)
     }
 }
 

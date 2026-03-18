@@ -20,6 +20,8 @@ pub struct TerminalProgram {
     pub grid_size: TerminalSize,
     pub terminal_font_selection: Option<String>,
     pub terminal_font_size: f32,
+    pub padding: [f32; 2],
+    pub clear_color: [f32; 4],
 }
 
 impl TerminalProgram {
@@ -38,24 +40,21 @@ impl ShaderProgram<crate::gui::app::Message> for TerminalProgram {
         _cursor: mouse::Cursor,
         bounds: Rectangle,
     ) -> Self::Primitive {
+        let pad_x = self.padding[0];
+        let pad_y = self.padding[1];
         let columns = self.grid_size.columns.max(1) as f32;
         let lines = self.grid_size.lines.max(1) as f32;
-        let cell_size = [bounds.width / columns, bounds.height / lines];
-        let clear_color = self
-            .cells
-            .first()
-            .map(|cell| cell.bg)
-            .unwrap_or([0.0, 0.0, 0.0, 0.0]);
-
+        let inner_w = (bounds.width - pad_x * 2.0).max(1.0);
+        let inner_h = (bounds.height - pad_y * 2.0).max(1.0);
+        let cell_size = [inner_w / columns, inner_h / lines];
         TerminalPrimitive {
             cells: Arc::clone(&self.cells),
             cell_size,
             viewport: [bounds.width, bounds.height],
-            offset: [0.0, 0.0],
-            clear_color,
+            offset: [pad_x, pad_y],
+            clear_color: self.clear_color,
             terminal_font_selection: self.terminal_font_selection.clone(),
             terminal_font_size: self.terminal_font_size,
-            // offset: [bounds.x, bounds.y],
         }
     }
 }
@@ -212,7 +211,7 @@ impl CompositePipeline {
                 compilation_options: wgpu::PipelineCompilationOptions::default(),
                 targets: &[Some(wgpu::ColorTargetState {
                     format,
-                    blend: Some(wgpu::BlendState::PREMULTIPLIED_ALPHA_BLENDING),
+                    blend: Some(wgpu::BlendState::ALPHA_BLENDING),
                     write_mask: wgpu::ColorWrites::ALL,
                 })],
             }),

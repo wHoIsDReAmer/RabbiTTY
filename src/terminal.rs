@@ -8,7 +8,7 @@ use alacritty_terminal::vte::ansi::Processor;
 use alacritty_terminal::vte::ansi::{Color as AnsiColor, CursorShape, NamedColor, Rgb};
 use std::cell::{Cell, RefCell};
 use std::io::Write;
-use std::sync::{Arc, Mutex, OnceLock};
+use std::sync::{Arc, Mutex};
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct TerminalSize {
@@ -454,22 +454,13 @@ fn resolve_rgb(
     }
 }
 
-static SRGB_TO_LINEAR: OnceLock<[f32; 256]> = OnceLock::new();
-
 fn srgb_u8_to_linear(value: u8) -> f32 {
-    let table = SRGB_TO_LINEAR.get_or_init(|| {
-        let mut table = [0.0f32; 256];
-        for (i, slot) in table.iter_mut().enumerate() {
-            let v = i as f32 / 255.0;
-            *slot = if v <= 0.04045 {
-                v / 12.92
-            } else {
-                ((v + 0.055) / 1.055).powf(2.4)
-            };
-        }
-        table
-    });
-    table[value as usize]
+    let v = f32::from(value) / 255.0;
+    if v <= 0.04045 {
+        v / 12.92
+    } else {
+        ((v + 0.055) / 1.055).powf(2.4)
+    }
 }
 
 fn rgb_to_rgba(rgb: Rgb, alpha: f32) -> [f32; 4] {

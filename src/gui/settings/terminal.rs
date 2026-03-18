@@ -48,7 +48,28 @@ pub fn view<'a>(
         .into(),
     );
 
-    column(vec![font_section])
+    let padding_section = section(
+        "Padding",
+        column(vec![
+            input_row_with_suffix(
+                "Horizontal",
+                &draft.terminal_padding_x,
+                SettingsField::TerminalPaddingX,
+                "px",
+            ),
+            input_row_with_suffix(
+                "Vertical",
+                &draft.terminal_padding_y,
+                SettingsField::TerminalPaddingY,
+                "px",
+            ),
+        ])
+        .spacing(SPACING_NORMAL)
+        .width(Length::Fill)
+        .into(),
+    );
+
+    column(vec![font_section, padding_section])
         .spacing(SPACING_NORMAL)
         .width(Length::Fill)
         .into()

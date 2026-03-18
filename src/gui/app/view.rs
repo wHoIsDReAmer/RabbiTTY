@@ -44,17 +44,30 @@ impl App {
             let dims = active_tab.size();
             let cells = active_tab.render_cells();
             let grid_size = dims;
-            let terminal_stack = TerminalProgram {
+            let bg = self.config.theme.background;
+            let bg_a = self.config.theme.background_opacity;
+            let clear_color = [
+                super::srgb_u8_to_linear(bg[0]),
+                super::srgb_u8_to_linear(bg[1]),
+                super::srgb_u8_to_linear(bg[2]),
+                bg_a,
+            ];
+            let terminal_widget = TerminalProgram {
                 cells,
                 grid_size,
                 terminal_font_selection: self.config.terminal.font_selection.clone(),
                 terminal_font_size: self.config.terminal.font_size,
+                padding: [
+                    self.config.terminal.padding_x,
+                    self.config.terminal.padding_y,
+                ],
+                clear_color,
             }
             .widget()
             .width(Length::Fill)
             .height(Length::Fill);
 
-            terminal_stack.into()
+            terminal_widget.into()
         } else {
             column(vec![
                 text("No tabs open").size(20).into(),
