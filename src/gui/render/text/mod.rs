@@ -1,17 +1,17 @@
+mod atlas;
+mod rasterize;
+
 use crate::config::DEFAULT_TERMINAL_FONT_SIZE;
 use crate::terminal::CellVisual;
-use crate::terminal_font::{load_cjk_fallback_font, load_system_font_by_family};
 use ab_glyph::{Font, FontArc, PxScale, ScaleFont, point};
+use atlas::{ATLAS_INITIAL_SIZE, ATLAS_MAX_SIZE, ATLAS_PADDING, GlyphAtlas};
 use bytemuck::{Pod, Zeroable};
 use iced::wgpu;
+use rasterize::{
+    COPY_BYTES_PER_ROW_ALIGNMENT, align_to, apply_lcd_filter, default_terminal_font,
+    load_cjk_fallback, load_font_from_selection, pack_subpixel_rgba,
+};
 use std::collections::HashMap;
-use std::fs;
-
-const DEJAVU_SANS_MONO: &[u8] = include_bytes!("../../../fonts/DejaVuSansMono.ttf");
-const ATLAS_INITIAL_SIZE: u32 = 2048;
-const ATLAS_MAX_SIZE: u32 = 4096;
-const ATLAS_PADDING: u32 = 1;
-const COPY_BYTES_PER_ROW_ALIGNMENT: u32 = 256;
 
 #[derive(Debug, Copy, Clone, Pod, Zeroable)]
 #[repr(C)]
@@ -37,88 +37,6 @@ struct GlyphInfo {
     uv_max: [f32; 2],
     size: [f32; 2],
     bearing: [f32; 2],
-}
-
-#[derive(Debug)]
-struct AtlasPacker {
-    size: u32,
-    cursor_x: u32,
-    cursor_y: u32,
-    row_height: u32,
-}
-
-impl AtlasPacker {
-    fn new(size: u32) -> Self {
-        Self {
-            size,
-            cursor_x: 0,
-            cursor_y: 0,
-            row_height: 0,
-        }
-    }
-
-    fn reset(&mut self, size: u32) {
-        self.size = size;
-        self.cursor_x = 0;
-        self.cursor_y = 0;
-        self.row_height = 0;
-    }
-
-    fn allocate(&mut self, width: u32, height: u32) -> Option<(u32, u32)> {
-        if width > self.size || height > self.size {
-            return None;
-        }
-
-        if self.cursor_x + width > self.size {
-            self.cursor_x = 0;
-            self.cursor_y = self.cursor_y.saturating_add(self.row_height);
-            self.row_height = 0;
-        }
-
-        if self.cursor_y + height > self.size {
-            return None;
-        }
-
-        let pos = (self.cursor_x, self.cursor_y);
-        self.cursor_x = self.cursor_x.saturating_add(width);
-        self.row_height = self.row_height.max(height);
-        Some(pos)
-    }
-}
-
-#[derive(Debug)]
-struct GlyphAtlas {
-    texture: wgpu::Texture,
-    view: wgpu::TextureView,
-    size: u32,
-    packer: AtlasPacker,
-}
-
-impl GlyphAtlas {
-    fn new(device: &wgpu::Device, size: u32) -> Self {
-        let texture = device.create_texture(&wgpu::TextureDescriptor {
-            label: Some("terminal.glyph_atlas"),
-            size: wgpu::Extent3d {
-                width: size,
-                height: size,
-                depth_or_array_layers: 1,
-            },
-            mip_level_count: 1,
-            sample_count: 1,
-            dimension: wgpu::TextureDimension::D2,
-            format: wgpu::TextureFormat::Rgba8Unorm,
-            usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
-            view_formats: &[],
-        });
-        let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
-
-        Self {
-            texture,
-            view,
-            size,
-            packer: AtlasPacker::new(size),
-        }
-    }
 }
 
 #[derive(Debug)]
@@ -150,16 +68,9 @@ pub(super) struct TextPipelineData {
     requested_font_selection: Option<String>,
 }
 
-fn align_to(value: u32, alignment: u32) -> u32 {
-    if alignment == 0 {
-        return value;
-    }
-    value.div_ceil(alignment) * alignment
-}
-
 impl TextPipelineData {
     pub(super) fn new(device: &wgpu::Device, format: wgpu::TextureFormat) -> Self {
-        let shader_src = include_str!("../terminal.wgsl");
+        let shader_src = include_str!("../../terminal.wgsl");
         let module = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("terminal.text.wgsl"),
             source: wgpu::ShaderSource::Wgsl(shader_src.into()),
@@ -254,7 +165,6 @@ impl TextPipelineData {
             push_constant_ranges: &[],
         });
 
-        // Single-pass subpixel: shader computes blending using known bg color
         let pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
             label: Some("terminal.text.pipeline"),
             layout: Some(&pipeline_layout),
@@ -307,8 +217,8 @@ impl TextPipelineData {
             cache: None,
         });
 
-        let font = FontArc::try_from_slice(DEJAVU_SANS_MONO).expect("font load failed");
-        let fallback_font = load_cjk_fallback_font();
+        let font = default_terminal_font();
+        let fallback_font = load_cjk_fallback();
         let scale = PxScale::from(1.0);
 
         let instance_buffer = device.create_buffer(&wgpu::BufferDescriptor {
@@ -624,7 +534,6 @@ impl TextPipelineData {
             glyph_id
         };
 
-        // If still missing in fallback, render as empty
         if resolved_glyph_id.0 == 0 {
             let info = GlyphInfo {
                 uv_min: [0.0, 0.0],
@@ -636,7 +545,6 @@ impl TextPipelineData {
             return Some(info);
         }
 
-        // Use 3x horizontal scale for subpixel rendering
         let subpixel_scale = PxScale {
             x: self.scale.x * 3.0,
             y: self.scale.y,
@@ -679,7 +587,6 @@ impl TextPipelineData {
         let origin_x = pos.0 + ATLAS_PADDING;
         let origin_y = pos.1 + ATLAS_PADDING;
 
-        // Rasterize at 3x horizontal resolution (reuse buffers)
         let raster_len = (raster_width * raster_height) as usize;
         self.raster_buf.clear();
         self.raster_buf.resize(raster_len, 0);
@@ -690,53 +597,16 @@ impl TextPipelineData {
             }
         });
 
-        // Apply FreeType-style 5-tap LCD filter to reduce color fringing
-        const LCD_W: [u32; 5] = [16, 64, 112, 64, 16]; // sum = 272
-        self.filter_buf.clear();
-        self.filter_buf.resize(raster_len, 0);
-        let rw = raster_width as i32;
-        for row in 0..raster_height {
-            let base = (row * raster_width) as i32;
-            for x in 0..rw {
-                let mut acc: u32 = 0;
-                for (k, &w) in LCD_W.iter().enumerate() {
-                    let sx = x + k as i32 - 2;
-                    if sx >= 0 && sx < rw {
-                        acc += self.raster_buf[(base + sx) as usize] as u32 * w;
-                    }
-                }
-                self.filter_buf[(base + x) as usize] = (acc / 272).min(255) as u8;
-            }
-        }
+        apply_lcd_filter(
+            &self.raster_buf,
+            &mut self.filter_buf,
+            raster_width,
+            raster_height,
+        );
 
-        // Pack every 3 filtered samples into RGBA (R=left, G=center, B=right subpixel)
-        let rgba_row_bytes = display_width * 4;
-        let padded_bytes_per_row = align_to(rgba_row_bytes, COPY_BYTES_PER_ROW_ALIGNMENT);
-        let mut padded = vec![0u8; (padded_bytes_per_row * raster_height) as usize];
-
-        for row in 0..raster_height {
-            let row_start = (row * raster_width) as usize;
-            let row_end = row_start + raster_width as usize;
-            for col in 0..display_width {
-                let rx = row_start + (col * 3) as usize;
-                let r = if rx < row_end { self.filter_buf[rx] } else { 0 };
-                let g = if rx + 1 < row_end {
-                    self.filter_buf[rx + 1]
-                } else {
-                    0
-                };
-                let b = if rx + 2 < row_end {
-                    self.filter_buf[rx + 2]
-                } else {
-                    0
-                };
-                let idx = (row * padded_bytes_per_row + col * 4) as usize;
-                padded[idx] = r;
-                padded[idx + 1] = g;
-                padded[idx + 2] = b;
-                padded[idx + 3] = r.max(g).max(b);
-            }
-        }
+        let padded =
+            pack_subpixel_rgba(&self.filter_buf, raster_width, raster_height, display_width);
+        let padded_bytes_per_row = align_to(display_width * 4, COPY_BYTES_PER_ROW_ALIGNMENT);
 
         queue.write_texture(
             wgpu::TexelCopyTextureInfo {
@@ -779,17 +649,4 @@ impl TextPipelineData {
         self.glyphs.insert(ch, info);
         Some(info)
     }
-}
-
-fn default_terminal_font() -> FontArc {
-    FontArc::try_from_slice(DEJAVU_SANS_MONO).expect("font load failed")
-}
-
-fn load_font_from_path(path: &str) -> Option<FontArc> {
-    let bytes = fs::read(path).ok()?;
-    FontArc::try_from_vec(bytes).ok()
-}
-
-fn load_font_from_selection(selection: &str) -> Option<FontArc> {
-    load_system_font_by_family(selection).or_else(|| load_font_from_path(selection))
 }
