@@ -3,7 +3,6 @@ mod gui;
 mod platform;
 mod session;
 mod terminal;
-mod terminal_font;
 
 use iced::Size;
 use iced::font;

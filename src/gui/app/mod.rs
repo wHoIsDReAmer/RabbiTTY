@@ -4,7 +4,7 @@ use crate::gui::settings::{
 };
 use crate::gui::tab::{ShellKind, TerminalTab};
 use crate::session::OutputEvent;
-use crate::terminal_font::discover_system_terminal_fonts;
+use crate::terminal::font::discover_system_terminal_fonts;
 use iced::Size;
 use iced::futures::channel::mpsc;
 use iced::keyboard::{Key, Modifiers};

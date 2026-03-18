@@ -1,7 +1,7 @@
 use ab_glyph::FontArc;
 use std::fs;
 
-use crate::terminal_font::{load_cjk_fallback_font, load_system_font_by_family};
+use crate::terminal::font::{load_cjk_fallback_font, load_system_font_by_family};
 
 const DEJAVU_SANS_MONO: &[u8] = include_bytes!("../../../../fonts/DejaVuSansMono.ttf");
 pub(super) const COPY_BYTES_PER_ROW_ALIGNMENT: u32 = 256;
