@@ -1,5 +1,8 @@
+mod dialog;
 mod settings;
 mod shell_picker;
+
+pub(in crate::gui) use dialog::{DialogButton, confirm_dialog};
 
 use super::{App, Message, SETTINGS_TAB_INDEX};
 use crate::gui::components::{panel, tab_bar};
@@ -63,7 +66,24 @@ impl App {
 
         #[cfg(target_os = "macos")]
         if self.show_restart_confirm {
-            return self.view_restart_confirm(base_layout);
+            return confirm_dialog(
+                base_layout,
+                "Blur on macOS requires restart.",
+                "Save changes and restart now?",
+                vec![
+                    DialogButton {
+                        label: "Cancel".into(),
+                        message: Message::CancelRestartForBlur,
+                        primary: false,
+                    },
+                    DialogButton {
+                        label: "Save & Restart".into(),
+                        message: Message::ConfirmRestartForBlur,
+                        primary: true,
+                    },
+                ],
+                Message::CancelRestartForBlur,
+            );
         }
 
         if self.show_shell_picker {

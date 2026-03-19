@@ -47,7 +47,7 @@ impl App {
     }
 
     pub(in crate::gui) fn shell_picker_option_count(&self) -> usize {
-        self.available_shells.len() + self.config.ssh_profiles.len() + 1 // +1 for Cancel
+        self.available_shells.len() + self.config.ssh_profiles.len()
     }
 
     pub(super) fn shift_shell_picker_selection(&mut self, delta: isize) {
