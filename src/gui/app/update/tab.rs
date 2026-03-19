@@ -47,17 +47,7 @@ impl App {
     }
 
     pub(in crate::gui) fn shell_picker_option_count(&self) -> usize {
-        let ssh_count = self.config.ssh_profiles.len();
-
-        #[cfg(target_family = "unix")]
-        {
-            1 + ssh_count + 1
-        }
-
-        #[cfg(target_family = "windows")]
-        {
-            2 + ssh_count + 1
-        }
+        self.available_shells.len() + self.config.ssh_profiles.len() + 1 // +1 for Cancel
     }
 
     pub(super) fn shift_shell_picker_selection(&mut self, delta: isize) {
@@ -72,31 +62,17 @@ impl App {
 
     pub(super) fn confirm_shell_picker_selection(&mut self) -> Task<Message> {
         let selected = self.shell_picker_selected;
-
-        #[cfg(target_family = "unix")]
-        let shell_count = 1usize;
-        #[cfg(target_family = "windows")]
-        let shell_count = 2usize;
+        let shell_count = self.available_shells.len();
 
         if selected < shell_count {
-            #[cfg(target_family = "unix")]
-            {
-                return self.create_tab(ShellKind::Zsh);
-            }
-
-            #[cfg(target_family = "windows")]
-            {
-                return match selected {
-                    0 => self.create_tab(ShellKind::Cmd),
-                    _ => self.create_tab(ShellKind::PowerShell),
-                };
-            }
+            let shell = self.available_shells[selected].clone();
+            return self.create_tab(shell);
         }
 
         let ssh_index = selected - shell_count;
         if ssh_index < self.config.ssh_profiles.len() {
             let profile = self.config.ssh_profiles[ssh_index].clone();
-            return self.create_tab(ShellKind::Ssh(profile));
+            return self.create_tab(crate::gui::tab::ShellKind::Ssh(profile));
         }
 
         self.show_shell_picker = false;

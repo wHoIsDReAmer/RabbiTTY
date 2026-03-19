@@ -1,6 +1,5 @@
 use super::super::{App, Message};
 use crate::gui::components::{button_primary, button_secondary};
-use crate::gui::tab::ShellKind;
 use crate::gui::theme::{Palette, RADIUS_NORMAL, SPACING_NORMAL, SPACING_SMALL};
 use iced::widget::{button, center, column, container, mouse_area, row, stack, text};
 use iced::{Background, Border, Color, Element, Length};
@@ -30,45 +29,14 @@ impl App {
             let mut items: Vec<Element<Message>> = Vec::new();
             let mut option_index = 0usize;
 
-            #[cfg(target_family = "unix")]
-            {
-                items.push(
-                    if self.shell_picker_selected == option_index {
-                        button_primary("Shell")
-                    } else {
-                        button_secondary("Shell")
-                    }
-                    .on_press(Message::CreateTab(ShellKind::Zsh))
-                    .width(Length::Fill)
-                    .into(),
-                );
-                option_index += 1;
-            }
-
-            #[cfg(target_family = "windows")]
-            {
-                items.push(
-                    if self.shell_picker_selected == option_index {
-                        button_primary("cmd")
-                    } else {
-                        button_secondary("cmd")
-                    }
-                    .on_press(Message::CreateTab(ShellKind::Cmd))
-                    .width(Length::Fill)
-                    .into(),
-                );
-                option_index += 1;
-
-                items.push(
-                    if self.shell_picker_selected == option_index {
-                        button_primary("PowerShell")
-                    } else {
-                        button_secondary("PowerShell")
-                    }
-                    .on_press(Message::CreateTab(ShellKind::PowerShell))
-                    .width(Length::Fill)
-                    .into(),
-                );
+            for shell in &self.available_shells {
+                let label = shell.display_name();
+                let selected = self.shell_picker_selected == option_index;
+                items.push(shell_option_button(
+                    label,
+                    selected,
+                    Message::CreateTab(shell.clone()),
+                ));
                 option_index += 1;
             }
 
@@ -172,6 +140,85 @@ impl App {
         stack![base_layout.into(), backdrop, centered_popup,]
             .width(Length::Fill)
             .height(Length::Fill)
+            .into()
+    }
+}
+
+fn shell_option_button(
+    label: String,
+    selected: bool,
+    on_press: Message,
+) -> Element<'static, Message> {
+    let palette = Palette::DARK;
+    if selected {
+        button(text(label))
+            .style(
+                move |_theme: &iced::Theme, status: iced::widget::button::Status| {
+                    let base = iced::widget::button::Style {
+                        background: Some(Background::Color(palette.accent)),
+                        text_color: palette.background,
+                        border: Border {
+                            radius: RADIUS_NORMAL.into(),
+                            width: 0.0,
+                            color: Color::TRANSPARENT,
+                        },
+                        shadow: iced::Shadow::default(),
+                        snap: true,
+                    };
+                    match status {
+                        iced::widget::button::Status::Hovered => iced::widget::button::Style {
+                            background: Some(Background::Color(Color {
+                                a: 0.9,
+                                ..palette.accent
+                            })),
+                            ..base
+                        },
+                        _ => base,
+                    }
+                },
+            )
+            .on_press(on_press)
+            .width(Length::Fill)
+            .into()
+    } else {
+        button(text(label))
+            .style(
+                move |_theme: &iced::Theme, status: iced::widget::button::Status| {
+                    let base = iced::widget::button::Style {
+                        background: Some(Background::Color(palette.surface)),
+                        text_color: palette.text,
+                        border: Border {
+                            radius: RADIUS_NORMAL.into(),
+                            width: 1.0,
+                            color: Color {
+                                a: 0.1,
+                                ..palette.text
+                            },
+                        },
+                        shadow: iced::Shadow::default(),
+                        snap: true,
+                    };
+                    match status {
+                        iced::widget::button::Status::Hovered => iced::widget::button::Style {
+                            background: Some(Background::Color(Color {
+                                a: 0.8,
+                                ..palette.surface
+                            })),
+                            border: Border {
+                                color: Color {
+                                    a: 0.3,
+                                    ..palette.text
+                                },
+                                ..base.border
+                            },
+                            ..base
+                        },
+                        _ => base,
+                    }
+                },
+            )
+            .on_press(on_press)
+            .width(Length::Fill)
             .into()
     }
 }

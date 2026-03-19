@@ -2,7 +2,7 @@ use crate::config::AppConfig;
 use crate::gui::settings::{
     SettingsCategory, SettingsDraft, SettingsField, SshProfileField, TerminalFontOption,
 };
-use crate::gui::tab::{ShellKind, TerminalTab};
+use crate::gui::tab::{ShellKind, TerminalTab, discover_available_shells};
 use crate::session::OutputEvent;
 use crate::terminal::font::discover_system_terminal_fonts;
 use iced::Size;
@@ -73,6 +73,7 @@ pub struct App {
     pub(super) settings_category: SettingsCategory,
     pub(super) settings_draft: SettingsDraft,
     pub(super) terminal_font_options: Vec<TerminalFontOption>,
+    pub(super) available_shells: Vec<ShellKind>,
     pub(super) config: AppConfig,
     pub(super) pty_sender: Option<mpsc::Sender<OutputEvent>>,
     pub(super) next_tab_id: u64,
@@ -101,6 +102,7 @@ impl App {
             terminal_font_options: build_terminal_font_options(
                 config.terminal.font_selection.as_deref(),
             ),
+            available_shells: discover_available_shells(),
             config,
             pty_sender: None,
             next_tab_id: 1,

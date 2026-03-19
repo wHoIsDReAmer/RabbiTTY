@@ -196,44 +196,25 @@ impl TerminalTab {
 
 #[derive(Debug, Clone)]
 pub enum ShellKind {
-    #[cfg(target_family = "unix")]
-    Zsh,
-    #[cfg(target_family = "windows")]
-    Cmd,
-    #[cfg(target_family = "windows")]
-    PowerShell,
+    Default,
+    Shell { name: String, path: String },
     Ssh(SshProfile),
 }
 
 impl ShellKind {
     fn launch_spec(&self, size: TerminalSize) -> LaunchSpec {
-        if let ShellKind::Ssh(profile) = self {
-            return profile.launch_spec(size);
-        }
-
-        #[cfg(target_family = "unix")]
-        let (program, args): (String, Vec<String>) = match self {
-            ShellKind::Zsh => resolve_unix_shell(),
-            ShellKind::Ssh(_) => unreachable!(),
+        let (program, args) = match self {
+            ShellKind::Ssh(profile) => return profile.launch_spec(size),
+            ShellKind::Default => resolve_default_shell(),
+            ShellKind::Shell { path, .. } => (path.clone(), vec!["-l".to_string()]),
         };
 
-        #[cfg(target_family = "windows")]
-        let (program, args): (String, Vec<String>) = match self {
-            ShellKind::Cmd => ("cmd".to_string(), vec!["/Q".to_string(), "/K".to_string()]),
-            ShellKind::PowerShell => (
-                "powershell".to_string(),
-                vec![
-                    "-NoLogo".to_string(),
-                    "-ExecutionPolicy".to_string(),
-                    "Bypass".to_string(),
-                ],
-            ),
-            ShellKind::Ssh(_) => unreachable!(),
-        };
+        let env = title_env_for_shell(&program);
 
         LaunchSpec {
             program,
             args,
+            env,
             rows: size.lines as u16,
             cols: size.columns as u16,
         }
@@ -244,25 +225,26 @@ impl ShellKind {
             return profile.tab_title();
         }
 
-        #[cfg(target_family = "unix")]
-        {
-            if let Some(name) = Path::new(program)
-                .file_name()
-                .and_then(|name| name.to_str())
-                && !name.trim().is_empty()
-            {
-                return name.to_string();
-            }
-            "shell".to_string()
-        }
+        Path::new(program)
+            .file_name()
+            .and_then(|name| name.to_str())
+            .filter(|name| !name.trim().is_empty())
+            .unwrap_or("shell")
+            .to_string()
+    }
 
-        #[cfg(target_family = "windows")]
-        {
-            match self {
-                ShellKind::Cmd => "cmd".to_string(),
-                ShellKind::PowerShell => "powershell".to_string(),
-                ShellKind::Ssh(_) => unreachable!(),
+    pub fn display_name(&self) -> String {
+        match self {
+            ShellKind::Default => {
+                let (program, _) = resolve_default_shell();
+                let name = Path::new(&program)
+                    .file_name()
+                    .and_then(|n| n.to_str())
+                    .unwrap_or("shell");
+                format!("{name} (Default)")
             }
+            ShellKind::Shell { name, .. } => name.clone(),
+            ShellKind::Ssh(profile) => format!("SSH: {}", profile.tab_title()),
         }
     }
 }
@@ -298,6 +280,7 @@ impl SshProfile {
         LaunchSpec {
             program: "ssh".to_string(),
             args,
+            env: vec![],
             rows: size.lines as u16,
             cols: size.columns as u16,
         }
@@ -316,21 +299,52 @@ impl SshProfile {
     }
 }
 
-#[cfg(target_family = "unix")]
-fn resolve_unix_shell() -> (String, Vec<String>) {
-    if let Ok(shell) = std::env::var("SHELL") {
-        let shell = shell.trim();
-        if !shell.is_empty() {
-            return (shell.to_string(), vec!["-i".to_string()]);
+/// Set PROMPT_COMMAND for bash to emit OSC 0 title with cwd.
+/// zsh handles this natively (precmd), fish uses fish_title.
+fn title_env_for_shell(program: &str) -> Vec<(String, String)> {
+    let name = Path::new(program)
+        .file_name()
+        .and_then(|n| n.to_str())
+        .unwrap_or("");
+
+    match name {
+        "bash" => vec![(
+            "PROMPT_COMMAND".to_string(),
+            r#"printf "\033]0;%s\007" "${PWD/#$HOME/~}""#.to_string(),
+        )],
+        _ => vec![],
+    }
+}
+
+fn resolve_default_shell() -> (String, Vec<String>) {
+    #[cfg(target_family = "unix")]
+    {
+        if let Ok(shell) = std::env::var("SHELL") {
+            let shell = shell.trim();
+            if !shell.is_empty() {
+                return (shell.to_string(), vec!["-l".to_string()]);
+            }
         }
+
+        const FALLBACKS: &[&str] = &["zsh", "bash", "fish", "sh"];
+        if let Some(candidate) = FALLBACKS.iter().find(|c| command_exists(c)) {
+            return ((*candidate).to_string(), vec!["-l".to_string()]);
+        }
+
+        ("sh".to_string(), vec!["-l".to_string()])
     }
 
-    const FALLBACKS: &[&str] = &["zsh", "bash", "fish", "sh"];
-    if let Some(candidate) = FALLBACKS.iter().find(|candidate| command_exists(candidate)) {
-        return ((*candidate).to_string(), vec!["-i".to_string()]);
+    #[cfg(target_family = "windows")]
+    {
+        (
+            "powershell".to_string(),
+            vec![
+                "-NoLogo".to_string(),
+                "-ExecutionPolicy".to_string(),
+                "Bypass".to_string(),
+            ],
+        )
     }
-
-    ("sh".to_string(), vec!["-i".to_string()])
 }
 
 #[cfg(target_family = "unix")]
@@ -342,15 +356,59 @@ fn command_exists(program: &str) -> bool {
         .is_ok_and(|status| status.success())
 }
 
+/// Discover available shells from `/etc/shells` (Unix) or known Windows shells.
+pub fn discover_available_shells() -> Vec<ShellKind> {
+    let mut shells = vec![ShellKind::Default];
+
+    #[cfg(target_family = "unix")]
+    {
+        let default_path = std::env::var("SHELL").unwrap_or_default();
+        let default_path = default_path.trim();
+
+        let etc_shells = std::fs::read_to_string("/etc/shells")
+            .or_else(|_| std::fs::read_to_string("/usr/share/defaults/etc/shells"))
+            .unwrap_or_default();
+
+        for line in etc_shells.lines() {
+            let line = line.trim();
+            if line.is_empty() || line.starts_with('#') {
+                continue;
+            }
+            // Skip if same as default shell (already listed)
+            if line == default_path {
+                continue;
+            }
+            // Skip non-interactive shells
+            let name = Path::new(line)
+                .file_name()
+                .and_then(|n| n.to_str())
+                .unwrap_or("");
+            if name.is_empty() || matches!(name, "nologin" | "false") {
+                continue;
+            }
+            shells.push(ShellKind::Shell {
+                name: name.to_string(),
+                path: line.to_string(),
+            });
+        }
+    }
+
+    #[cfg(target_family = "windows")]
+    {
+        shells.push(ShellKind::Shell {
+            name: "cmd".to_string(),
+            path: "cmd".to_string(),
+        });
+    }
+
+    shells
+}
+
 impl Display for ShellKind {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match self {
-            #[cfg(target_family = "unix")]
-            ShellKind::Zsh => write!(f, "shell"),
-            #[cfg(target_family = "windows")]
-            ShellKind::Cmd => write!(f, "cmd"),
-            #[cfg(target_family = "windows")]
-            ShellKind::PowerShell => write!(f, "powershell"),
+            ShellKind::Default => write!(f, "shell"),
+            ShellKind::Shell { name, .. } => write!(f, "{name}"),
             ShellKind::Ssh(profile) => write!(f, "ssh: {}", profile.tab_title()),
         }
     }

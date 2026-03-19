@@ -9,6 +9,7 @@ use std::time::Duration;
 pub struct LaunchSpec {
     pub program: String,
     pub args: Vec<String>,
+    pub env: Vec<(String, String)>,
     pub rows: u16,
     pub cols: u16,
 }
@@ -51,6 +52,9 @@ impl Session {
         let mut cmd = CommandBuilder::new(&spec.program);
         for arg in &spec.args {
             cmd.arg(arg);
+        }
+        for (key, value) in &spec.env {
+            cmd.env(key, value);
         }
 
         let child = pair
