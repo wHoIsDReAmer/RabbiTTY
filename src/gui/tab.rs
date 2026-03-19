@@ -96,11 +96,8 @@ impl TerminalTab {
     }
 
     #[allow(dead_code)]
-    pub fn is_alive(&mut self) -> bool {
-        match &mut self.session {
-            TerminalSession::Active(session) => session.is_alive(),
-            TerminalSession::Failed(_) => false,
-        }
+    pub fn is_alive(&self) -> bool {
+        matches!(&self.session, TerminalSession::Active(_))
     }
 
     pub fn scroll(&mut self, delta: i32) {
@@ -120,7 +117,7 @@ impl TerminalTab {
         let new_size = TerminalSize::new(columns, lines);
         self.engine.resize(new_size);
 
-        if let TerminalSession::Active(session) = &self.session {
+        if let TerminalSession::Active(session) = &mut self.session {
             let _ = session.resize(lines as u16, columns as u16);
         }
     }
@@ -235,14 +232,7 @@ impl ShellKind {
 
     pub fn display_name(&self) -> String {
         match self {
-            ShellKind::Default => {
-                let (program, _) = resolve_default_shell();
-                let name = Path::new(&program)
-                    .file_name()
-                    .and_then(|n| n.to_str())
-                    .unwrap_or("shell");
-                format!("{name} (Default)")
-            }
+            ShellKind::Default => default_shell_display_name(),
             ShellKind::Shell { name, .. } => name.clone(),
             ShellKind::Ssh(profile) => format!("SSH: {}", profile.tab_title()),
         }
@@ -299,8 +289,21 @@ impl SshProfile {
     }
 }
 
-/// Set PROMPT_COMMAND for bash to emit OSC 0 title with cwd.
-/// zsh handles this natively (precmd), fish uses fish_title.
+fn default_shell_display_name() -> String {
+    use std::sync::OnceLock;
+    static CACHED: OnceLock<String> = OnceLock::new();
+    CACHED
+        .get_or_init(|| {
+            let (program, _) = resolve_default_shell();
+            let name = Path::new(&program)
+                .file_name()
+                .and_then(|n| n.to_str())
+                .unwrap_or("shell");
+            format!("{name} (Default)")
+        })
+        .clone()
+}
+
 fn title_env_for_shell(program: &str) -> Vec<(String, String)> {
     let name = Path::new(program)
         .file_name()
