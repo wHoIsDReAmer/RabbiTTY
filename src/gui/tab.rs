@@ -413,6 +413,12 @@ pub fn discover_available_shells() -> Vec<ShellKind> {
             .or_else(|_| std::fs::read_to_string("/usr/share/defaults/etc/shells"))
             .unwrap_or_default();
 
+        let mut seen_names = std::collections::HashSet::new();
+        // Mark the default shell name as seen to avoid duplicates
+        if let Some(default_name) = Path::new(default_path).file_name().and_then(|n| n.to_str()) {
+            seen_names.insert(default_name.to_string());
+        }
+
         for line in etc_shells.lines() {
             let line = line.trim();
             if line.is_empty() || line.starts_with('#') {
@@ -428,6 +434,10 @@ pub fn discover_available_shells() -> Vec<ShellKind> {
                 .and_then(|n| n.to_str())
                 .unwrap_or("");
             if name.is_empty() || matches!(name, "nologin" | "false") {
+                continue;
+            }
+            // Skip duplicate shell names (e.g. /bin/bash and /usr/bin/bash)
+            if !seen_names.insert(name.to_string()) {
                 continue;
             }
             shells.push(ShellKind::Shell {
