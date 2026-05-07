@@ -2,8 +2,73 @@ use super::super::{App, Message};
 use crate::gui::tab::ShellKind;
 use crate::gui::theme::{Palette, RADIUS_NORMAL, RADIUS_SMALL, SPACING_SMALL};
 use iced::time::Instant;
-use iced::widget::{button, column, container, mouse_area, scrollable, stack, text};
+use iced::widget::{button, column, container, mouse_area, row, scrollable, stack, svg, text};
 use iced::{Background, Border, Color, Element, Length};
+use std::sync::LazyLock;
+
+static ICON_BASH: LazyLock<svg::Handle> =
+    LazyLock::new(|| svg::Handle::from_memory(include_bytes!("../../../../assets/icons/bash.svg")));
+static ICON_ZSH: LazyLock<svg::Handle> =
+    LazyLock::new(|| svg::Handle::from_memory(include_bytes!("../../../../assets/icons/zsh.svg")));
+static ICON_FISH: LazyLock<svg::Handle> =
+    LazyLock::new(|| svg::Handle::from_memory(include_bytes!("../../../../assets/icons/fish.svg")));
+static ICON_POWERSHELL: LazyLock<svg::Handle> = LazyLock::new(|| {
+    svg::Handle::from_memory(include_bytes!("../../../../assets/icons/powershell.svg"))
+});
+static ICON_TERMINAL: LazyLock<svg::Handle> = LazyLock::new(|| {
+    svg::Handle::from_memory(include_bytes!("../../../../assets/icons/terminal.svg"))
+});
+static ICON_SSH: LazyLock<svg::Handle> =
+    LazyLock::new(|| svg::Handle::from_memory(include_bytes!("../../../../assets/icons/ssh.svg")));
+
+struct ShellIcon {
+    handle: svg::Handle,
+    color: Color,
+}
+
+fn icon_by_name(name: &str) -> ShellIcon {
+    match name.to_lowercase().as_str() {
+        "bash" => ShellIcon {
+            handle: ICON_BASH.clone(),
+            color: Color::from_rgb8(0x4E, 0xAA, 0x25),
+        },
+        "zsh" => ShellIcon {
+            handle: ICON_ZSH.clone(),
+            color: Color::from_rgb8(0xF1, 0x5A, 0x24),
+        },
+        "fish" => ShellIcon {
+            handle: ICON_FISH.clone(),
+            color: Color::from_rgb8(0x34, 0xC5, 0x34),
+        },
+        "pwsh" | "powershell" => ShellIcon {
+            handle: ICON_POWERSHELL.clone(),
+            color: Color::from_rgb8(0x5A, 0x91, 0xD8),
+        },
+        _ => ShellIcon {
+            handle: ICON_TERMINAL.clone(),
+            color: Color::from_rgb8(0x4C, 0xC2, 0xFF),
+        },
+    }
+}
+
+fn icon_for_shell(shell: &ShellKind) -> ShellIcon {
+    match shell {
+        ShellKind::Ssh(_) => ShellIcon {
+            handle: ICON_SSH.clone(),
+            color: Color::from_rgb8(0x4F, 0xC0, 0x8D),
+        },
+        ShellKind::Default => {
+            let name = std::env::var("SHELL").unwrap_or_default();
+            let name = std::path::Path::new(&name)
+                .file_name()
+                .and_then(|n| n.to_str())
+                .unwrap_or("")
+                .to_string();
+            icon_by_name(&name)
+        }
+        ShellKind::Shell { name, .. } => icon_by_name(name),
+    }
+}
 
 const PICKER_WIDTH: f32 = 280.0;
 
@@ -77,6 +142,10 @@ impl App {
                     Message::CreateSshTab(i),
                     progress,
                     palette,
+                    ShellIcon {
+                        handle: (*ICON_SSH).clone(),
+                        color: Color::from_rgb8(0x4F, 0xC0, 0x8D),
+                    },
                 ));
                 option_index += 1;
             }
@@ -94,6 +163,7 @@ impl App {
                 ShellKind::Ssh(_) => None,
             };
             let selected = self.shell_picker_selected == option_index;
+            let icon = icon_for_shell(shell);
             items.push(picker_item(
                 label,
                 subtitle,
@@ -101,6 +171,7 @@ impl App {
                 Message::CreateTab(shell.clone()),
                 progress,
                 palette,
+                icon,
             ));
             option_index += 1;
         }
@@ -230,8 +301,20 @@ fn picker_item(
     on_press: Message,
     alpha: f32,
     palette: Palette,
+    shell_icon: ShellIcon,
 ) -> Element<'static, Message> {
-    let mut content_items: Vec<Element<'static, Message>> = vec![
+    let icon_color = shell_icon.color;
+    let icon = svg(shell_icon.handle)
+        .width(Length::Fixed(16.0))
+        .height(Length::Fixed(16.0))
+        .style(move |_theme: &iced::Theme, _status| svg::Style {
+            color: Some(Color {
+                a: alpha,
+                ..icon_color
+            }),
+        });
+
+    let mut label_items: Vec<Element<'static, Message>> = vec![
         text(label)
             .size(13)
             .color(Color {
@@ -242,7 +325,7 @@ fn picker_item(
     ];
 
     if let Some(sub) = subtitle {
-        content_items.push(
+        label_items.push(
             text(sub)
                 .size(10)
                 .color(Color {
@@ -253,7 +336,9 @@ fn picker_item(
         );
     }
 
-    let content = column(content_items).spacing(1);
+    let content = row![icon, column(label_items).spacing(1)]
+        .spacing(10)
+        .align_y(iced::Alignment::Center);
 
     button(content)
         .style(
