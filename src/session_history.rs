@@ -8,8 +8,15 @@ const MAX_ENTRIES: usize = 10;
 #[serde(tag = "type")]
 pub enum SessionKind {
     Default,
-    Shell { name: String, path: String },
-    Ssh { host: String, port: u16, user: String },
+    Shell {
+        name: String,
+        path: String,
+    },
+    Ssh {
+        host: String,
+        port: u16,
+        user: String,
+    },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -64,5 +71,9 @@ impl SessionHistory {
 }
 
 fn history_path() -> Option<PathBuf> {
-    Some(dirs::config_dir()?.join("rabbitty").join("session_history.toml"))
+    Some(
+        dirs::config_dir()?
+            .join("rabbitty")
+            .join("session_history.toml"),
+    )
 }

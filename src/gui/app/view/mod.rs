@@ -172,14 +172,10 @@ impl App {
         let version_label = text(format!("RabbiTTY v{}", env!("CARGO_PKG_VERSION")))
             .size(13)
             .color(Color::from_rgba(1.0, 1.0, 1.0, 0.4));
-        let new_tab_btn =
-            button_secondary("New Tab", palette).on_press(Message::OpenShellPicker);
+        let new_tab_btn = button_secondary("New Tab", palette).on_press(Message::OpenShellPicker);
 
-        let mut content: Vec<Element<Message>> = vec![
-            logo.into(),
-            version_label.into(),
-            new_tab_btn.into(),
-        ];
+        let mut content: Vec<Element<Message>> =
+            vec![logo.into(), version_label.into(), new_tab_btn.into()];
 
         if !self.session_history.entries.is_empty() {
             content.push(
@@ -198,7 +194,10 @@ impl App {
             content.push(
                 text("Recent Sessions")
                     .size(11)
-                    .color(Color { a: 0.5, ..palette.text_secondary })
+                    .color(Color {
+                        a: 0.5,
+                        ..palette.text_secondary
+                    })
                     .into(),
             );
 
@@ -211,31 +210,43 @@ impl App {
                 };
 
                 let label_col = column![
-                    text(name).size(13).color(Color { a: 0.9, ..palette.text }),
-                    text(kind_label).size(10).color(Color { a: 0.5, ..palette.text_secondary }),
+                    text(name).size(13).color(Color {
+                        a: 0.9,
+                        ..palette.text
+                    }),
+                    text(kind_label).size(10).color(Color {
+                        a: 0.5,
+                        ..palette.text_secondary
+                    }),
                 ]
                 .spacing(1);
 
                 content.push(
                     button(label_col)
-                        .style(move |_theme: &iced::Theme, status: iced::widget::button::Status| {
-                            let hovered = matches!(status, iced::widget::button::Status::Hovered);
-                            iced::widget::button::Style {
-                                background: Some(Background::Color(if hovered {
-                                    Color { a: 0.08, ..palette.text }
-                                } else {
-                                    Color::TRANSPARENT
-                                })),
-                                text_color: palette.text,
-                                border: Border {
-                                    radius: RADIUS_SMALL.into(),
-                                    width: 0.0,
-                                    color: Color::TRANSPARENT,
-                                },
-                                shadow: iced::Shadow::default(),
-                                snap: false,
-                            }
-                        })
+                        .style(
+                            move |_theme: &iced::Theme, status: iced::widget::button::Status| {
+                                let hovered =
+                                    matches!(status, iced::widget::button::Status::Hovered);
+                                iced::widget::button::Style {
+                                    background: Some(Background::Color(if hovered {
+                                        Color {
+                                            a: 0.08,
+                                            ..palette.text
+                                        }
+                                    } else {
+                                        Color::TRANSPARENT
+                                    })),
+                                    text_color: palette.text,
+                                    border: Border {
+                                        radius: RADIUS_SMALL.into(),
+                                        width: 0.0,
+                                        color: Color::TRANSPARENT,
+                                    },
+                                    shadow: iced::Shadow::default(),
+                                    snap: false,
+                                }
+                            },
+                        )
                         .padding([6, 10])
                         .width(Length::Fixed(240.0))
                         .on_press(Message::LaunchFromHistory(i))
