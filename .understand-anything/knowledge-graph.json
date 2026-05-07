@@ -1,0 +1,2871 @@
+{
+  "version": "1.0.0",
+  "project": {
+    "name": "rabbitty",
+    "languages": [
+      "rust",
+      "toml",
+      "yaml",
+      "markdown"
+    ],
+    "frameworks": [
+      "tokio",
+      "serde",
+      "iced",
+      "russh",
+      "GitHub Actions"
+    ],
+    "description": "Fast, lean, cross-platform terminal emulator built with Rust and iced GUI framework, featuring tabs, themes, SSH session management, and low-latency wgpu-based rendering.",
+    "analyzedAt": "2026-05-06T06:15:46.721Z",
+    "gitCommitHash": "5364bf6c0d43e7b446b12b488f0c732f2a50ed20"
+  },
+  "nodes": [
+    {
+      "id": "document:.github/PULL_REQUEST_TEMPLATE.md",
+      "type": "document",
+      "name": "PULL_REQUEST_TEMPLATE.md",
+      "filePath": ".github/PULL_REQUEST_TEMPLATE.md",
+      "summary": "Pull request template with a description section to standardize PR submissions.",
+      "tags": [
+        "documentation",
+        "development",
+        "github-template"
+      ],
+      "complexity": "simple"
+    },
+    {
+      "id": "pipeline:.github/workflows/compile_check.yml",
+      "type": "pipeline",
+      "name": "compile_check.yml",
+      "filePath": ".github/workflows/compile_check.yml",
+      "summary": "GitHub Actions workflow that runs Rust compile checks on pull requests to verify the project builds successfully.",
+      "tags": [
+        "ci-cd",
+        "rust",
+        "build-system"
+      ],
+      "complexity": "simple"
+    },
+    {
+      "id": "pipeline:.github/workflows/lint.yml",
+      "type": "pipeline",
+      "name": "lint.yml",
+      "filePath": ".github/workflows/lint.yml",
+      "summary": "GitHub Actions workflow that runs clippy and rustfmt linting checks on pull requests.",
+      "tags": [
+        "ci-cd",
+        "rust",
+        "linting"
+      ],
+      "complexity": "simple"
+    },
+    {
+      "id": "pipeline:.github/workflows/release.yml",
+      "type": "pipeline",
+      "name": "release.yml",
+      "filePath": ".github/workflows/release.yml",
+      "summary": "GitHub Actions workflow that builds cross-platform release binaries (macOS, Windows, Linux) and creates GitHub releases with artifacts.",
+      "tags": [
+        "ci-cd",
+        "deployment",
+        "cross-platform",
+        "release"
+      ],
+      "complexity": "complex"
+    },
+    {
+      "id": "config:assets/example-theme.toml",
+      "type": "config",
+      "name": "example-theme.toml",
+      "filePath": "assets/example-theme.toml",
+      "summary": "Example theme configuration file demonstrating how to customize terminal colors including foreground, background, cursor, and ANSI color palette.",
+      "tags": [
+        "configuration",
+        "theming",
+        "example"
+      ],
+      "complexity": "simple"
+    },
+    {
+      "id": "config:Cargo.toml",
+      "type": "config",
+      "name": "Cargo.toml",
+      "filePath": "Cargo.toml",
+      "summary": "Rust project manifest defining the rabbitty terminal emulator package with dependencies on iced GUI framework, portable-pty, and platform-specific libraries for macOS, Windows, and Linux.",
+      "tags": [
+        "configuration",
+        "rust",
+        "build-system",
+        "dependencies"
+      ],
+      "complexity": "moderate"
+    },
+    {
+      "id": "document:fonts/DEJAVU_LICENSE.txt",
+      "type": "document",
+      "name": "DEJAVU_LICENSE.txt",
+      "filePath": "fonts/DEJAVU_LICENSE.txt",
+      "summary": "License file for the bundled DejaVu Sans Mono font used as the default terminal font.",
+      "tags": [
+        "documentation",
+        "licensing",
+        "fonts"
+      ],
+      "complexity": "moderate"
+    },
+    {
+      "id": "document:README.md",
+      "type": "document",
+      "name": "README.md",
+      "filePath": "README.md",
+      "summary": "Project overview for Rabbitty terminal emulator covering goals (speed, cross-platform, theming), custom theme configuration, and supported platforms (macOS, Windows, Linux).",
+      "tags": [
+        "documentation",
+        "entry-point",
+        "overview"
+      ],
+      "complexity": "moderate"
+    },
+    {
+      "id": "file:rust-toolchain",
+      "type": "file",
+      "name": "rust-toolchain",
+      "filePath": "rust-toolchain",
+      "summary": "Rust toolchain configuration specifying the nightly channel and required components for building the project.",
+      "tags": [
+        "configuration",
+        "rust",
+        "build-system"
+      ],
+      "complexity": "simple"
+    },
+    {
+      "id": "file:src/ansi.rs",
+      "type": "file",
+      "name": "ansi.rs",
+      "filePath": "src/ansi.rs",
+      "summary": "Provides ANSI escape code formatting helpers for terminal text styling including bold, color, underline, and badge formatting.",
+      "tags": [
+        "utility",
+        "terminal",
+        "formatting"
+      ],
+      "complexity": "simple"
+    },
+    {
+      "id": "file:src/config.rs",
+      "type": "file",
+      "name": "config.rs",
+      "filePath": "src/config.rs",
+      "summary": "Comprehensive application configuration module handling loading, saving, validation, and serialization of all settings including UI, terminal, theme, shortcuts, and SSH profiles from TOML files.",
+      "tags": [
+        "configuration",
+        "data-model",
+        "serialization",
+        "validation"
+      ],
+      "complexity": "complex",
+      "languageNotes": "Uses serde for TOML deserialization with extensive input sanitization and normalization for keyboard shortcuts, font sizes, colors, and SSH profiles."
+    },
+    {
+      "id": "class:src/config.rs:AppConfig",
+      "type": "class",
+      "name": "AppConfig",
+      "filePath": "src/config.rs",
+      "lineRange": [
+        102,
+        108
+      ],
+      "summary": "Main application configuration struct containing UI, terminal, theme, shortcuts, and SSH profile settings with methods for loading from file, applying updates, and saving.",
+      "tags": [
+        "data-model",
+        "configuration",
+        "serialization"
+      ],
+      "complexity": "complex"
+    },
+    {
+      "id": "function:src/config.rs:apply_file",
+      "type": "function",
+      "name": "apply_file",
+      "filePath": "src/config.rs",
+      "lineRange": [
+        398,
+        567
+      ],
+      "summary": "Applies parsed TOML file configuration to the AppConfig, sanitizing all values and handling theme color parsing, shortcut normalization, and SSH profile construction.",
+      "tags": [
+        "configuration",
+        "validation",
+        "parsing"
+      ],
+      "complexity": "complex"
+    },
+    {
+      "id": "function:src/config.rs:normalize_shortcut",
+      "type": "function",
+      "name": "normalize_shortcut",
+      "filePath": "src/config.rs",
+      "lineRange": [
+        615,
+        661
+      ],
+      "summary": "Normalizes keyboard shortcut strings into a canonical format with ordered modifiers and validated key names.",
+      "tags": [
+        "validation",
+        "utility",
+        "keyboard-shortcuts"
+      ],
+      "complexity": "moderate"
+    },
+    {
+      "id": "function:src/config.rs:cell_metrics_for_font_arc",
+      "type": "function",
+      "name": "cell_metrics_for_font_arc",
+      "filePath": "src/config.rs",
+      "lineRange": [
+        884,
+        930
+      ],
+      "summary": "Calculates terminal cell width and height metrics from a font at a given size by measuring glyph outlines and advance widths.",
+      "tags": [
+        "utility",
+        "font-metrics",
+        "terminal"
+      ],
+      "complexity": "complex"
+    },
+    {
+      "id": "file:src/gui/app/mod.rs",
+      "type": "file",
+      "name": "mod.rs",
+      "filePath": "src/gui/app/mod.rs",
+      "summary": "Core application module defining the App struct, Message enum, and initialization logic for the iced GUI framework terminal application with tab management, settings, and theme support.",
+      "tags": [
+        "entry-point",
+        "component",
+        "data-model"
+      ],
+      "complexity": "complex"
+    },
+    {
+      "id": "class:src/gui/app/mod.rs:App",
+      "type": "class",
+      "name": "App",
+      "filePath": "src/gui/app/mod.rs",
+      "lineRange": [
+        100,
+        136
+      ],
+      "summary": "Main application state struct holding tabs, settings, configuration, PTY sender, window state, font options, and animation state for the terminal emulator GUI.",
+      "tags": [
+        "component",
+        "data-model",
+        "state-management"
+      ],
+      "complexity": "complex"
+    },
+    {
+      "id": "class:src/gui/app/mod.rs:Message",
+      "type": "class",
+      "name": "Message",
+      "filePath": "src/gui/app/mod.rs",
+      "lineRange": [
+        22,
+        98
+      ],
+      "summary": "Comprehensive message enum defining all user and system events for the iced application including tab operations, terminal I/O, settings changes, SSH actions, and window management.",
+      "tags": [
+        "event-handler",
+        "data-model",
+        "iced-framework"
+      ],
+      "complexity": "complex"
+    },
+    {
+      "id": "function:src/gui/app/mod.rs:new",
+      "type": "function",
+      "name": "new",
+      "filePath": "src/gui/app/mod.rs",
+      "lineRange": [
+        139,
+        187
+      ],
+      "summary": "Constructs a new App instance from configuration, initializing font options, settings draft, available shells, animations, and default window state.",
+      "tags": [
+        "factory",
+        "initialization"
+      ],
+      "complexity": "moderate"
+    },
+    {
+      "id": "file:src/gui/app/shortcuts.rs",
+      "type": "file",
+      "name": "shortcuts.rs",
+      "filePath": "src/gui/app/shortcuts.rs",
+      "summary": "Keyboard shortcut resolution module that parses shortcut binding strings, matches them against keyboard events, and resolves actions like new tab, close tab, and quit.",
+      "tags": [
+        "event-handler",
+        "keyboard-shortcuts",
+        "utility"
+      ],
+      "complexity": "complex"
+    },
+    {
+      "id": "function:src/gui/app/shortcuts.rs:resolve",
+      "type": "function",
+      "name": "resolve",
+      "filePath": "src/gui/app/shortcuts.rs",
+      "lineRange": [
+        79,
+        112
+      ],
+      "summary": "Resolves a keyboard event (key + modifiers) against configured shortcut bindings and returns the matching ShortcutAction if found.",
+      "tags": [
+        "event-handler",
+        "keyboard-shortcuts"
+      ],
+      "complexity": "moderate"
+    },
+    {
+      "id": "function:src/gui/app/shortcuts.rs:event_key_token",
+      "type": "function",
+      "name": "event_key_token",
+      "filePath": "src/gui/app/shortcuts.rs",
+      "lineRange": [
+        165,
+        216
+      ],
+      "summary": "Converts an iced keyboard Key event into a normalized string token for shortcut matching, handling named keys, characters, and special symbols.",
+      "tags": [
+        "utility",
+        "keyboard-shortcuts",
+        "normalization"
+      ],
+      "complexity": "moderate"
+    },
+    {
+      "id": "file:src/gui/app/subscription.rs",
+      "type": "file",
+      "name": "subscription.rs",
+      "filePath": "src/gui/app/subscription.rs",
+      "summary": "Defines the iced subscription for the App, handling PTY output streaming with batching, keyboard/window events, IME input, and mouse scroll events.",
+      "tags": [
+        "event-handler",
+        "subscription",
+        "async"
+      ],
+      "complexity": "moderate"
+    },
+    {
+      "id": "function:src/gui/app/subscription.rs:subscription",
+      "type": "function",
+      "name": "subscription",
+      "filePath": "src/gui/app/subscription.rs",
+      "lineRange": [
+        11,
+        93
+      ],
+      "summary": "Creates the main iced Subscription combining PTY output batching via async channels, keyboard/IME event listening, window resize events, and mouse scroll handling.",
+      "tags": [
+        "subscription",
+        "async",
+        "event-handler"
+      ],
+      "complexity": "complex"
+    },
+    {
+      "id": "file:src/gui/app/update/mod.rs",
+      "type": "file",
+      "name": "mod.rs",
+      "filePath": "src/gui/app/update/mod.rs",
+      "summary": "Main update function for the iced application handling all Message variants including tab management, terminal I/O, keyboard input, clipboard operations, scrolling, window resize, and SSH operations.",
+      "tags": [
+        "event-handler",
+        "state-management",
+        "entry-point"
+      ],
+      "complexity": "complex"
+    },
+    {
+      "id": "function:src/gui/app/update/mod.rs:update",
+      "type": "function",
+      "name": "update",
+      "filePath": "src/gui/app/update/mod.rs",
+      "lineRange": [
+        64,
+        412
+      ],
+      "summary": "Core message dispatch function implementing the iced update pattern, routing all Message variants to their appropriate handlers for state transitions and side effects.",
+      "tags": [
+        "event-handler",
+        "state-management"
+      ],
+      "complexity": "complex"
+    },
+    {
+      "id": "function:src/gui/app/update/mod.rs:handle_key_pressed",
+      "type": "function",
+      "name": "handle_key_pressed",
+      "filePath": "src/gui/app/update/mod.rs",
+      "lineRange": [
+        414,
+        508
+      ],
+      "summary": "Handles keyboard input by routing to shell picker navigation, shortcut resolution, copy/paste operations, or forwarding to the active terminal session.",
+      "tags": [
+        "event-handler",
+        "keyboard-shortcuts"
+      ],
+      "complexity": "complex"
+    },
+    {
+      "id": "file:src/gui/app/update/settings.rs",
+      "type": "file",
+      "name": "settings.rs",
+      "filePath": "src/gui/app/update/settings.rs",
+      "summary": "Settings update handlers for applying configuration changes at runtime, resizing windows, updating terminal themes, and triggering application restart for blur settings.",
+      "tags": [
+        "event-handler",
+        "configuration",
+        "state-management"
+      ],
+      "complexity": "moderate"
+    },
+    {
+      "id": "function:src/gui/app/update/settings.rs:apply_settings",
+      "type": "function",
+      "name": "apply_settings",
+      "filePath": "src/gui/app/update/settings.rs",
+      "lineRange": [
+        8,
+        34
+      ],
+      "summary": "Applies settings from the draft to the runtime configuration, detecting blur changes that require restart and optionally saving to disk.",
+      "tags": [
+        "configuration",
+        "state-management"
+      ],
+      "complexity": "moderate"
+    },
+    {
+      "id": "function:src/gui/app/update/settings.rs:handle_confirm_restart",
+      "type": "function",
+      "name": "handle_confirm_restart",
+      "filePath": "src/gui/app/update/settings.rs",
+      "lineRange": [
+        62,
+        97
+      ],
+      "summary": "Handles user confirmation to restart the application after blur settings change by saving config, spawning a new process, and exiting the current one.",
+      "tags": [
+        "event-handler",
+        "configuration"
+      ],
+      "complexity": "moderate"
+    },
+    {
+      "id": "file:src/gui/app/update/tab.rs",
+      "type": "file",
+      "name": "tab.rs",
+      "filePath": "src/gui/app/update/tab.rs",
+      "summary": "Tab management logic including creating new tabs with PTY sessions, closing tabs, handling shell picker selection, and resolving app-level keyboard shortcuts to actions.",
+      "tags": [
+        "event-handler",
+        "state-management",
+        "tab-management"
+      ],
+      "complexity": "moderate"
+    },
+    {
+      "id": "function:src/gui/app/update/tab.rs:handle_app_shortcut",
+      "type": "function",
+      "name": "handle_app_shortcut",
+      "filePath": "src/gui/app/update/tab.rs",
+      "lineRange": [
+        100,
+        134
+      ],
+      "summary": "Resolves a keyboard shortcut against configured bindings and dispatches the corresponding action (new tab, close, settings, navigate tabs, quit, font size adjust).",
+      "tags": [
+        "event-handler",
+        "keyboard-shortcuts"
+      ],
+      "complexity": "moderate"
+    },
+    {
+      "id": "file:src/gui/app/update/terminal.rs",
+      "type": "file",
+      "name": "terminal.rs",
+      "filePath": "src/gui/app/update/terminal.rs",
+      "summary": "Terminal update handlers for PTY output processing, window resize with debouncing, scroll synchronization, and tab bar scrolling.",
+      "tags": [
+        "event-handler",
+        "terminal",
+        "state-management"
+      ],
+      "complexity": "moderate"
+    },
+    {
+      "id": "file:src/gui/app/view/dialog.rs",
+      "type": "file",
+      "name": "dialog.rs",
+      "filePath": "src/gui/app/view/dialog.rs",
+      "summary": "Renders modal dialog overlays for the application including the blur restart confirmation dialog and SSH profile deletion confirmation.",
+      "tags": [
+        "component",
+        "ui-view",
+        "dialog"
+      ],
+      "complexity": "moderate"
+    },
+    {
+      "id": "file:src/gui/app/view/mod.rs",
+      "type": "file",
+      "name": "mod.rs",
+      "filePath": "src/gui/app/view/mod.rs",
+      "summary": "Main view function composing the application layout with tab bar, terminal content area, settings panel, shell picker overlay, and modal dialogs using iced widgets.",
+      "tags": [
+        "component",
+        "ui-view",
+        "entry-point"
+      ],
+      "complexity": "moderate"
+    },
+    {
+      "id": "file:src/gui/app/view/settings.rs",
+      "type": "file",
+      "name": "settings.rs",
+      "filePath": "src/gui/app/view/settings.rs",
+      "summary": "Renders the settings panel UI with categorized sections for terminal, theme, and shortcut configuration using iced form inputs.",
+      "tags": [
+        "component",
+        "ui-view",
+        "configuration"
+      ],
+      "complexity": "moderate"
+    },
+    {
+      "id": "file:src/gui/app/view/shell_picker.rs",
+      "type": "file",
+      "name": "shell_picker.rs",
+      "filePath": "src/gui/app/view/shell_picker.rs",
+      "summary": "Renders the animated shell picker overlay allowing users to select from available local shells and configured SSH profiles when creating new tabs.",
+      "tags": [
+        "component",
+        "ui-view",
+        "shell-picker"
+      ],
+      "complexity": "complex"
+    },
+    {
+      "id": "file:src/gui/components/button.rs",
+      "type": "file",
+      "name": "button.rs",
+      "filePath": "src/gui/components/button.rs",
+      "summary": "Reusable styled button components for the application including primary, secondary, and icon button variants with consistent theming.",
+      "tags": [
+        "component",
+        "ui-view",
+        "utility"
+      ],
+      "complexity": "moderate"
+    },
+    {
+      "id": "file:src/gui/components/container.rs",
+      "type": "file",
+      "name": "container.rs",
+      "filePath": "src/gui/components/container.rs",
+      "summary": "Reusable styled container component providing themed background and border styling for UI sections.",
+      "tags": [
+        "component",
+        "ui-view",
+        "utility"
+      ],
+      "complexity": "simple"
+    },
+    {
+      "id": "file:src/gui/components/ime_wrapper.rs",
+      "type": "file",
+      "name": "ime_wrapper.rs",
+      "filePath": "src/gui/components/ime_wrapper.rs",
+      "summary": "Custom iced widget wrapper that handles IME (Input Method Editor) state for CJK text input, displaying preedit text overlays during composition.",
+      "tags": [
+        "component",
+        "widget",
+        "internationalization"
+      ],
+      "complexity": "moderate",
+      "languageNotes": "Implements a custom iced Widget trait for IME composition overlay positioning and rendering."
+    },
+    {
+      "id": "file:src/gui/components/mod.rs",
+      "type": "file",
+      "name": "mod.rs",
+      "filePath": "src/gui/components/mod.rs",
+      "summary": "Barrel module re-exporting GUI component submodules including button, container, IME wrapper, and tab bar.",
+      "tags": [
+        "barrel",
+        "entry-point",
+        "component"
+      ],
+      "complexity": "simple"
+    },
+    {
+      "id": "file:src/gui/components/tab_bar.rs",
+      "type": "file",
+      "name": "tab_bar.rs",
+      "filePath": "src/gui/components/tab_bar.rs",
+      "summary": "Custom tab bar component supporting drag-and-drop tab reordering, close buttons, horizontal scrolling, and visual indicators for active/hovered/drag-target tabs.",
+      "tags": [
+        "component",
+        "widget",
+        "tab-management"
+      ],
+      "complexity": "complex"
+    },
+    {
+      "id": "file:src/gui/mod.rs",
+      "type": "file",
+      "name": "mod.rs",
+      "filePath": "src/gui/mod.rs",
+      "summary": "GUI module barrel that re-exports sub-modules for app, components, render, settings, tab, and theme.",
+      "tags": [
+        "barrel",
+        "entry-point",
+        "gui",
+        "module-root"
+      ],
+      "complexity": "simple"
+    },
+    {
+      "id": "file:src/gui/render/bg.rs",
+      "type": "file",
+      "name": "bg.rs",
+      "filePath": "src/gui/render/bg.rs",
+      "summary": "GPU background rendering pipeline that draws colored cell backgrounds and selection highlights using wgpu instanced rendering.",
+      "tags": [
+        "rendering",
+        "gpu",
+        "wgpu",
+        "pipeline"
+      ],
+      "complexity": "complex",
+      "languageNotes": "Uses wgpu buffer instancing for efficient per-cell background color rendering with a shared shader."
+    },
+    {
+      "id": "class:src/gui/render/bg.rs:BackgroundPipeline",
+      "type": "class",
+      "name": "BackgroundPipeline",
+      "filePath": "src/gui/render/bg.rs",
+      "lineRange": [
+        21,
+        29
+      ],
+      "summary": "Manages the wgpu render pipeline, uniform buffers, and instance buffers for drawing terminal cell backgrounds.",
+      "tags": [
+        "rendering",
+        "gpu",
+        "pipeline",
+        "wgpu"
+      ],
+      "complexity": "complex"
+    },
+    {
+      "id": "function:src/gui/render/bg.rs:new",
+      "type": "function",
+      "name": "new",
+      "filePath": "src/gui/render/bg.rs",
+      "lineRange": [
+        32,
+        153
+      ],
+      "summary": "Constructs the BackgroundPipeline by creating the shader module, bind group layout, render pipeline, and initial buffers.",
+      "tags": [
+        "constructor",
+        "gpu",
+        "wgpu"
+      ],
+      "complexity": "complex"
+    },
+    {
+      "id": "function:src/gui/render/bg.rs:prepare_instances",
+      "type": "function",
+      "name": "prepare_instances",
+      "filePath": "src/gui/render/bg.rs",
+      "lineRange": [
+        170,
+        222
+      ],
+      "summary": "Converts terminal cells and selection state into GPU instance data for background rendering, reallocating buffers as needed.",
+      "tags": [
+        "rendering",
+        "gpu",
+        "instancing"
+      ],
+      "complexity": "moderate"
+    },
+    {
+      "id": "file:src/gui/render/composite.rs",
+      "type": "file",
+      "name": "composite.rs",
+      "filePath": "src/gui/render/composite.rs",
+      "summary": "Composite rendering pipeline that manages offscreen render targets and composites the terminal output to the final surface.",
+      "tags": [
+        "rendering",
+        "gpu",
+        "compositing",
+        "wgpu"
+      ],
+      "complexity": "complex"
+    },
+    {
+      "id": "class:src/gui/render/composite.rs:CompositePipeline",
+      "type": "class",
+      "name": "CompositePipeline",
+      "filePath": "src/gui/render/composite.rs",
+      "lineRange": [
+        20,
+        28
+      ],
+      "summary": "Manages offscreen texture allocation and the final compositing pass that blits the rendered terminal onto the window surface.",
+      "tags": [
+        "rendering",
+        "gpu",
+        "compositing",
+        "pipeline"
+      ],
+      "complexity": "complex"
+    },
+    {
+      "id": "function:src/gui/render/composite.rs:new",
+      "type": "function",
+      "name": "new",
+      "filePath": "src/gui/render/composite.rs",
+      "lineRange": [
+        31,
+        148
+      ],
+      "summary": "Creates the composite pipeline with shader, bind group layout, render pipeline, and quad buffer for screen-space blitting.",
+      "tags": [
+        "constructor",
+        "gpu",
+        "wgpu"
+      ],
+      "complexity": "complex"
+    },
+    {
+      "id": "function:src/gui/render/composite.rs:ensure_offscreen",
+      "type": "function",
+      "name": "ensure_offscreen",
+      "filePath": "src/gui/render/composite.rs",
+      "lineRange": [
+        150,
+        198
+      ],
+      "summary": "Ensures the offscreen render texture matches the required viewport size, recreating it if dimensions have changed.",
+      "tags": [
+        "rendering",
+        "gpu",
+        "texture-management"
+      ],
+      "complexity": "moderate"
+    },
+    {
+      "id": "file:src/gui/render/mod.rs",
+      "type": "file",
+      "name": "mod.rs",
+      "filePath": "src/gui/render/mod.rs",
+      "summary": "Core terminal rendering module implementing iced's custom widget and shader programs for GPU-accelerated terminal display.",
+      "tags": [
+        "rendering",
+        "widget",
+        "iced",
+        "gpu",
+        "entry-point"
+      ],
+      "complexity": "complex",
+      "languageNotes": "Implements iced GUI framework's shader::Program trait for custom GPU rendering within the widget tree."
+    },
+    {
+      "id": "class:src/gui/render/mod.rs:TerminalProgram",
+      "type": "class",
+      "name": "TerminalProgram",
+      "filePath": "src/gui/render/mod.rs",
+      "lineRange": [
+        20,
+        29
+      ],
+      "summary": "Iced widget program that handles terminal mouse interactions and produces rendering primitives for the GPU pipeline.",
+      "tags": [
+        "widget",
+        "iced",
+        "rendering",
+        "event-handler"
+      ],
+      "complexity": "complex"
+    },
+    {
+      "id": "class:src/gui/render/mod.rs:TerminalPrimitive",
+      "type": "class",
+      "name": "TerminalPrimitive",
+      "filePath": "src/gui/render/mod.rs",
+      "lineRange": [
+        210,
+        219
+      ],
+      "summary": "GPU rendering primitive that orchestrates background, text, and composite pipelines to render terminal content.",
+      "tags": [
+        "rendering",
+        "gpu",
+        "pipeline",
+        "iced"
+      ],
+      "complexity": "complex"
+    },
+    {
+      "id": "function:src/gui/render/mod.rs:prepare",
+      "type": "function",
+      "name": "prepare",
+      "filePath": "src/gui/render/mod.rs",
+      "lineRange": [
+        224,
+        283
+      ],
+      "summary": "Prepares all GPU pipelines (background, text, composite) with current terminal state before rendering a frame.",
+      "tags": [
+        "rendering",
+        "gpu",
+        "frame-preparation"
+      ],
+      "complexity": "complex"
+    },
+    {
+      "id": "function:src/gui/render/mod.rs:render",
+      "type": "function",
+      "name": "render",
+      "filePath": "src/gui/render/mod.rs",
+      "lineRange": [
+        285,
+        383
+      ],
+      "summary": "Executes the multi-pass GPU rendering: backgrounds to offscreen, text to offscreen, then composites to the final target.",
+      "tags": [
+        "rendering",
+        "gpu",
+        "multi-pass"
+      ],
+      "complexity": "complex"
+    },
+    {
+      "id": "file:src/gui/render/shaders/terminal.wgsl",
+      "type": "file",
+      "name": "terminal.wgsl",
+      "filePath": "src/gui/render/shaders/terminal.wgsl",
+      "summary": "WGSL shader for terminal background cell rendering, using instanced quads with per-cell position and color uniforms.",
+      "tags": [
+        "shader",
+        "wgsl",
+        "gpu",
+        "rendering"
+      ],
+      "complexity": "moderate",
+      "languageNotes": "WebGPU Shading Language (WGSL) shader using instanced rendering with vertex/fragment stages for terminal cell backgrounds."
+    },
+    {
+      "id": "file:src/gui/render/text/atlas.rs",
+      "type": "file",
+      "name": "atlas.rs",
+      "filePath": "src/gui/render/text/atlas.rs",
+      "summary": "Glyph atlas allocator using a shelf-packing algorithm to efficiently pack rasterized glyphs into GPU textures.",
+      "tags": [
+        "rendering",
+        "text",
+        "atlas",
+        "gpu"
+      ],
+      "complexity": "moderate"
+    },
+    {
+      "id": "class:src/gui/render/text/atlas.rs:AtlasPacker",
+      "type": "class",
+      "name": "AtlasPacker",
+      "filePath": "src/gui/render/text/atlas.rs",
+      "lineRange": [
+        8,
+        13
+      ],
+      "summary": "Shelf-based rectangle packing allocator that manages glyph placement within the texture atlas.",
+      "tags": [
+        "atlas",
+        "packing",
+        "text-rendering"
+      ],
+      "complexity": "moderate"
+    },
+    {
+      "id": "file:src/gui/render/text/mod.rs",
+      "type": "file",
+      "name": "mod.rs",
+      "filePath": "src/gui/render/text/mod.rs",
+      "summary": "Text rendering pipeline managing glyph rasterization, atlas caching, and instanced GPU rendering for terminal characters.",
+      "tags": [
+        "rendering",
+        "text",
+        "gpu",
+        "glyph-cache",
+        "pipeline"
+      ],
+      "complexity": "complex",
+      "languageNotes": "Implements sub-pixel LCD rendering with font fallback chains and dynamic glyph atlas management."
+    },
+    {
+      "id": "class:src/gui/render/text/mod.rs:TextPipelineData",
+      "type": "class",
+      "name": "TextPipelineData",
+      "filePath": "src/gui/render/text/mod.rs",
+      "lineRange": [
+        43,
+        69
+      ],
+      "summary": "Manages font state, glyph atlas, GPU pipelines, and instance buffers for rendering terminal text characters.",
+      "tags": [
+        "rendering",
+        "text",
+        "gpu",
+        "pipeline",
+        "font"
+      ],
+      "complexity": "complex"
+    },
+    {
+      "id": "function:src/gui/render/text/mod.rs:new",
+      "type": "function",
+      "name": "new",
+      "filePath": "src/gui/render/text/mod.rs",
+      "lineRange": [
+        72,
+        258
+      ],
+      "summary": "Constructs the text pipeline with shader, atlas texture, bind groups, font loading, and initial glyph rasterization setup.",
+      "tags": [
+        "constructor",
+        "gpu",
+        "text-rendering"
+      ],
+      "complexity": "complex"
+    },
+    {
+      "id": "function:src/gui/render/text/mod.rs:prepare_instances",
+      "type": "function",
+      "name": "prepare_instances",
+      "filePath": "src/gui/render/text/mod.rs",
+      "lineRange": [
+        297,
+        384
+      ],
+      "summary": "Builds GPU instance data for all visible glyphs, performing atlas lookups and glyph rasterization on cache miss.",
+      "tags": [
+        "rendering",
+        "text",
+        "instancing",
+        "glyph-cache"
+      ],
+      "complexity": "complex"
+    },
+    {
+      "id": "function:src/gui/render/text/mod.rs:get_or_insert_glyph",
+      "type": "function",
+      "name": "get_or_insert_glyph",
+      "filePath": "src/gui/render/text/mod.rs",
+      "lineRange": [
+        517,
+        656
+      ],
+      "summary": "Retrieves a cached glyph from the atlas or rasterizes and inserts it, handling font fallback and atlas overflow.",
+      "tags": [
+        "glyph-cache",
+        "font",
+        "rasterization",
+        "atlas"
+      ],
+      "complexity": "complex"
+    },
+    {
+      "id": "file:src/gui/render/text/rasterize.rs",
+      "type": "file",
+      "name": "rasterize.rs",
+      "filePath": "src/gui/render/text/rasterize.rs",
+      "summary": "Sub-pixel LCD font rasterization utilities that apply LCD color filtering and pack rasterized glyphs into RGBA textures.",
+      "tags": [
+        "rendering",
+        "text",
+        "rasterization",
+        "subpixel"
+      ],
+      "complexity": "moderate",
+      "languageNotes": "Implements sub-pixel anti-aliasing by separating RGB sub-pixel coverage into distinct color channels."
+    },
+    {
+      "id": "function:src/gui/render/text/rasterize.rs:apply_lcd_filter",
+      "type": "function",
+      "name": "apply_lcd_filter",
+      "filePath": "src/gui/render/text/rasterize.rs",
+      "lineRange": [
+        21,
+        44
+      ],
+      "summary": "Applies an LCD sub-pixel color filter kernel to rasterized glyph coverage data.",
+      "tags": [
+        "text",
+        "rasterization",
+        "subpixel",
+        "filter"
+      ],
+      "complexity": "moderate"
+    },
+    {
+      "id": "function:src/gui/render/text/rasterize.rs:pack_subpixel_rgba",
+      "type": "function",
+      "name": "pack_subpixel_rgba",
+      "filePath": "src/gui/render/text/rasterize.rs",
+      "lineRange": [
+        47,
+        81
+      ],
+      "summary": "Packs filtered sub-pixel coverage data into RGBA texture format suitable for GPU upload.",
+      "tags": [
+        "text",
+        "rasterization",
+        "texture",
+        "packing"
+      ],
+      "complexity": "moderate"
+    },
+    {
+      "id": "file:src/gui/settings/mod.rs",
+      "type": "file",
+      "name": "mod.rs",
+      "filePath": "src/gui/settings/mod.rs",
+      "summary": "Settings panel orchestrator defining data models, draft state management, and shared UI components for all settings categories.",
+      "tags": [
+        "settings",
+        "gui",
+        "state-management",
+        "component",
+        "entry-point"
+      ],
+      "complexity": "complex"
+    },
+    {
+      "id": "class:src/gui/settings/mod.rs:SshProfileDraft",
+      "type": "class",
+      "name": "SshProfileDraft",
+      "filePath": "src/gui/settings/mod.rs",
+      "lineRange": [
+        103,
+        113
+      ],
+      "summary": "Draft state for SSH profile editing in the settings modal, supporting create and edit workflows.",
+      "tags": [
+        "settings",
+        "ssh",
+        "data-model",
+        "draft"
+      ],
+      "complexity": "moderate"
+    },
+    {
+      "id": "class:src/gui/settings/mod.rs:SettingsDraft",
+      "type": "class",
+      "name": "SettingsDraft",
+      "filePath": "src/gui/settings/mod.rs",
+      "lineRange": [
+        209,
+        235
+      ],
+      "summary": "Mutable draft of all application settings with methods to sync with config, manage SSH profiles, and produce update deltas.",
+      "tags": [
+        "settings",
+        "state-management",
+        "data-model",
+        "config"
+      ],
+      "complexity": "complex"
+    },
+    {
+      "id": "class:src/gui/settings/mod.rs:SettingsCategory",
+      "type": "class",
+      "name": "SettingsCategory",
+      "filePath": "src/gui/settings/mod.rs",
+      "lineRange": [
+        64,
+        70
+      ],
+      "summary": "Enum representing settings panel categories (Terminal, Theme, SSH, Shortcuts, UI) with display labels and icons.",
+      "tags": [
+        "settings",
+        "enum",
+        "ui"
+      ],
+      "complexity": "simple"
+    },
+    {
+      "id": "file:src/gui/settings/shortcuts.rs",
+      "type": "file",
+      "name": "shortcuts.rs",
+      "filePath": "src/gui/settings/shortcuts.rs",
+      "summary": "Keyboard shortcuts settings view displaying configurable key bindings in a read-only list.",
+      "tags": [
+        "settings",
+        "gui",
+        "shortcuts",
+        "component"
+      ],
+      "complexity": "moderate"
+    },
+    {
+      "id": "file:src/gui/settings/ssh.rs",
+      "type": "file",
+      "name": "ssh.rs",
+      "filePath": "src/gui/settings/ssh.rs",
+      "summary": "SSH profile management UI with modal dialogs for creating, editing, and testing SSH connection profiles.",
+      "tags": [
+        "settings",
+        "gui",
+        "ssh",
+        "component",
+        "modal"
+      ],
+      "complexity": "complex"
+    },
+    {
+      "id": "file:src/gui/settings/terminal.rs",
+      "type": "file",
+      "name": "terminal.rs",
+      "filePath": "src/gui/settings/terminal.rs",
+      "summary": "Terminal settings view for configuring font family, font size, scrollback lines, and shell selection.",
+      "tags": [
+        "settings",
+        "gui",
+        "terminal",
+        "component"
+      ],
+      "complexity": "moderate"
+    },
+    {
+      "id": "file:src/gui/settings/theme.rs",
+      "type": "file",
+      "name": "theme.rs",
+      "filePath": "src/gui/settings/theme.rs",
+      "summary": "Theme settings view with preset color scheme cards and individual ANSI color customization controls.",
+      "tags": [
+        "settings",
+        "gui",
+        "theme",
+        "component"
+      ],
+      "complexity": "complex"
+    },
+    {
+      "id": "file:src/gui/settings/ui.rs",
+      "type": "file",
+      "name": "ui.rs",
+      "filePath": "src/gui/settings/ui.rs",
+      "summary": "UI settings view for configuring window appearance options like opacity and tab bar visibility.",
+      "tags": [
+        "settings",
+        "gui",
+        "ui",
+        "component"
+      ],
+      "complexity": "simple"
+    },
+    {
+      "id": "file:src/gui/tab.rs",
+      "type": "file",
+      "name": "tab.rs",
+      "filePath": "src/gui/tab.rs",
+      "summary": "Terminal tab abstraction managing PTY session lifecycle, input handling, text selection, and shell discovery.",
+      "tags": [
+        "terminal",
+        "tab",
+        "pty",
+        "session",
+        "component"
+      ],
+      "complexity": "complex"
+    },
+    {
+      "id": "class:src/gui/tab.rs:TerminalTab",
+      "type": "class",
+      "name": "TerminalTab",
+      "filePath": "src/gui/tab.rs",
+      "lineRange": [
+        12,
+        20
+      ],
+      "summary": "Represents a single terminal tab with its PTY session, terminal engine, scroll state, and input handling logic.",
+      "tags": [
+        "terminal",
+        "tab",
+        "pty",
+        "state-management"
+      ],
+      "complexity": "complex"
+    },
+    {
+      "id": "class:src/gui/tab.rs:ShellKind",
+      "type": "class",
+      "name": "ShellKind",
+      "filePath": "src/gui/tab.rs",
+      "lineRange": [
+        285,
+        289
+      ],
+      "summary": "Enum of supported shell types (Zsh, Bash, Fish, PowerShell, Cmd, Nushell, Custom) with launch spec generation.",
+      "tags": [
+        "shell",
+        "enum",
+        "platform"
+      ],
+      "complexity": "moderate"
+    },
+    {
+      "id": "function:src/gui/tab.rs:discover_available_shells",
+      "type": "function",
+      "name": "discover_available_shells",
+      "filePath": "src/gui/tab.rs",
+      "lineRange": [
+        404,
+        449
+      ],
+      "summary": "Discovers available shell programs on the system by checking standard paths and platform-specific locations.",
+      "tags": [
+        "shell",
+        "discovery",
+        "platform"
+      ],
+      "complexity": "moderate"
+    },
+    {
+      "id": "file:src/gui/theme.rs",
+      "type": "file",
+      "name": "theme.rs",
+      "filePath": "src/gui/theme.rs",
+      "summary": "GUI palette structure derived from terminal themes, providing colors for UI elements and scrollbar styling.",
+      "tags": [
+        "theme",
+        "gui",
+        "styling",
+        "palette"
+      ],
+      "complexity": "moderate"
+    },
+    {
+      "id": "file:src/keychain.rs",
+      "type": "file",
+      "name": "keychain.rs",
+      "filePath": "src/keychain.rs",
+      "summary": "Cross-platform keychain wrapper for securely storing and retrieving SSH passwords using the OS credential store.",
+      "tags": [
+        "security",
+        "keychain",
+        "ssh",
+        "utility"
+      ],
+      "complexity": "moderate"
+    },
+    {
+      "id": "file:src/lib.rs",
+      "type": "file",
+      "name": "lib.rs",
+      "filePath": "src/lib.rs",
+      "summary": "Library crate root that re-exports all top-level modules (ansi, config, gui, keychain, platform, session, ssh, terminal).",
+      "tags": [
+        "entry-point",
+        "barrel",
+        "library"
+      ],
+      "complexity": "simple"
+    },
+    {
+      "id": "file:src/main.rs",
+      "type": "file",
+      "name": "main.rs",
+      "filePath": "src/main.rs",
+      "summary": "Application entry point that initializes configuration, sets up the iced GUI application with window settings, and launches.",
+      "tags": [
+        "entry-point",
+        "application",
+        "iced"
+      ],
+      "complexity": "moderate"
+    },
+    {
+      "id": "function:src/main.rs:main",
+      "type": "function",
+      "name": "main",
+      "filePath": "src/main.rs",
+      "lineRange": [
+        19,
+        63
+      ],
+      "summary": "Initializes logging, loads config, sets window parameters, and starts the iced application event loop.",
+      "tags": [
+        "entry-point",
+        "initialization",
+        "iced"
+      ],
+      "complexity": "moderate"
+    },
+    {
+      "id": "file:src/platform/macos.rs",
+      "type": "file",
+      "name": "macos.rs",
+      "filePath": "src/platform/macos.rs",
+      "summary": "macOS-specific window styling using Cocoa APIs to set title bar transparency and vibrancy effects.",
+      "tags": [
+        "platform",
+        "macos",
+        "window-styling",
+        "native"
+      ],
+      "complexity": "moderate",
+      "languageNotes": "Uses unsafe Objective-C runtime interop via cocoa/objc crates for NSWindow customization."
+    },
+    {
+      "id": "file:src/platform/mod.rs",
+      "type": "file",
+      "name": "mod.rs",
+      "filePath": "src/platform/mod.rs",
+      "summary": "Platform abstraction module that conditionally compiles macOS or Windows native window styling.",
+      "tags": [
+        "platform",
+        "abstraction",
+        "barrel"
+      ],
+      "complexity": "simple"
+    },
+    {
+      "id": "file:src/platform/windows.rs",
+      "type": "file",
+      "name": "windows.rs",
+      "filePath": "src/platform/windows.rs",
+      "summary": "Windows-specific window styling using DWM APIs for dark mode title bars and acrylic/mica backdrop effects.",
+      "tags": [
+        "platform",
+        "windows",
+        "window-styling",
+        "native"
+      ],
+      "complexity": "complex",
+      "languageNotes": "Uses Win32 subclassing and undocumented DWM attributes for modern Windows visual effects."
+    },
+    {
+      "id": "file:src/session.rs",
+      "type": "file",
+      "name": "session.rs",
+      "filePath": "src/session.rs",
+      "summary": "PTY session management handling local shell spawning and SSH session creation with async I/O for terminal output.",
+      "tags": [
+        "session",
+        "pty",
+        "async",
+        "io",
+        "service"
+      ],
+      "complexity": "complex"
+    },
+    {
+      "id": "class:src/session.rs:Session",
+      "type": "class",
+      "name": "Session",
+      "filePath": "src/session.rs",
+      "lineRange": [
+        24,
+        35
+      ],
+      "summary": "Manages an active terminal session (local PTY or SSH) with methods for spawning, writing, and resizing.",
+      "tags": [
+        "session",
+        "pty",
+        "ssh",
+        "lifecycle"
+      ],
+      "complexity": "complex"
+    },
+    {
+      "id": "function:src/session.rs:spawn",
+      "type": "function",
+      "name": "spawn",
+      "filePath": "src/session.rs",
+      "lineRange": [
+        75,
+        157
+      ],
+      "summary": "Spawns a local PTY process with the given shell spec, wiring up async output streaming to the GUI.",
+      "tags": [
+        "pty",
+        "spawn",
+        "async",
+        "platform"
+      ],
+      "complexity": "complex"
+    },
+    {
+      "id": "file:src/ssh.rs",
+      "type": "file",
+      "name": "ssh.rs",
+      "filePath": "src/ssh.rs",
+      "summary": "SSH client implementation using async-ssh2 with support for password/key authentication, proxy commands, and connection testing.",
+      "tags": [
+        "ssh",
+        "networking",
+        "async",
+        "authentication"
+      ],
+      "complexity": "complex"
+    },
+    {
+      "id": "function:src/ssh.rs:ssh_task",
+      "type": "function",
+      "name": "ssh_task",
+      "filePath": "src/ssh.rs",
+      "lineRange": [
+        201,
+        364
+      ],
+      "summary": "Long-running async task that establishes an SSH connection, opens a PTY channel, and bridges I/O between terminal and remote.",
+      "tags": [
+        "ssh",
+        "async",
+        "io",
+        "networking"
+      ],
+      "complexity": "complex"
+    },
+    {
+      "id": "file:src/terminal/engine.rs",
+      "type": "file",
+      "name": "engine.rs",
+      "filePath": "src/terminal/engine.rs",
+      "summary": "Terminal emulation engine wrapping alacritty_terminal to process ANSI escape sequences and produce renderable cell data.",
+      "tags": [
+        "terminal",
+        "emulation",
+        "ansi",
+        "engine"
+      ],
+      "complexity": "complex"
+    },
+    {
+      "id": "class:src/terminal/engine.rs:TerminalEngine",
+      "type": "class",
+      "name": "TerminalEngine",
+      "filePath": "src/terminal/engine.rs",
+      "lineRange": [
+        15,
+        24
+      ],
+      "summary": "Core terminal state machine backed by alacritty_terminal, managing grid content, scrollback, and ANSI processing.",
+      "tags": [
+        "terminal",
+        "emulation",
+        "state-management",
+        "engine"
+      ],
+      "complexity": "complex"
+    },
+    {
+      "id": "function:src/terminal/engine.rs:build_cells_into",
+      "type": "function",
+      "name": "build_cells_into",
+      "filePath": "src/terminal/engine.rs",
+      "lineRange": [
+        144,
+        260
+      ],
+      "summary": "Iterates the terminal grid extracting character, color, and attribute data into a flat cell buffer for GPU rendering.",
+      "tags": [
+        "terminal",
+        "rendering",
+        "grid",
+        "cell-extraction"
+      ],
+      "complexity": "complex"
+    },
+    {
+      "id": "file:src/terminal/font.rs",
+      "type": "file",
+      "name": "font.rs",
+      "filePath": "src/terminal/font.rs",
+      "summary": "System font discovery and loading for terminal use, filtering for monospace fonts suitable for code display with CJK fallback.",
+      "tags": [
+        "font",
+        "discovery",
+        "platform",
+        "utility"
+      ],
+      "complexity": "complex"
+    },
+    {
+      "id": "function:src/terminal/font.rs:discover_system_terminal_fonts",
+      "type": "function",
+      "name": "discover_system_terminal_fonts",
+      "filePath": "src/terminal/font.rs",
+      "lineRange": [
+        12,
+        70
+      ],
+      "summary": "Scans system fonts and returns a filtered, deduplicated list of monospace font families suitable for terminal rendering.",
+      "tags": [
+        "font",
+        "discovery",
+        "platform",
+        "filtering"
+      ],
+      "complexity": "complex"
+    },
+    {
+      "id": "function:src/terminal/font.rs:is_suitable_for_terminal",
+      "type": "function",
+      "name": "is_suitable_for_terminal",
+      "filePath": "src/terminal/font.rs",
+      "lineRange": [
+        130,
+        216
+      ],
+      "summary": "Determines if a font family is suitable for terminal use by checking monospace metrics and character coverage.",
+      "tags": [
+        "font",
+        "validation",
+        "monospace"
+      ],
+      "complexity": "complex"
+    },
+    {
+      "id": "file:src/terminal/mod.rs",
+      "type": "file",
+      "name": "mod.rs",
+      "filePath": "src/terminal/mod.rs",
+      "summary": "Terminal module root defining shared data types (TerminalSize, Cell, Selection) used across rendering and emulation.",
+      "tags": [
+        "terminal",
+        "data-model",
+        "barrel",
+        "type-definition"
+      ],
+      "complexity": "moderate"
+    },
+    {
+      "id": "class:src/terminal/mod.rs:TerminalSize",
+      "type": "class",
+      "name": "TerminalSize",
+      "filePath": "src/terminal/mod.rs",
+      "lineRange": [
+        11,
+        14
+      ],
+      "summary": "Terminal dimensions in rows and columns with pixel size, providing helper methods for grid calculations.",
+      "tags": [
+        "terminal",
+        "data-model",
+        "dimensions"
+      ],
+      "complexity": "simple"
+    },
+    {
+      "id": "class:src/terminal/mod.rs:Selection",
+      "type": "class",
+      "name": "Selection",
+      "filePath": "src/terminal/mod.rs",
+      "lineRange": [
+        43,
+        46
+      ],
+      "summary": "Represents a text selection range in the terminal grid with ordering and containment checking.",
+      "tags": [
+        "terminal",
+        "selection",
+        "data-model"
+      ],
+      "complexity": "simple"
+    },
+    {
+      "id": "file:src/terminal/theme.rs",
+      "type": "file",
+      "name": "theme.rs",
+      "filePath": "src/terminal/theme.rs",
+      "summary": "Terminal color theme system with built-in presets, custom theme loading, ANSI color resolution, and contrast enforcement.",
+      "tags": [
+        "theme",
+        "color",
+        "ansi",
+        "configuration"
+      ],
+      "complexity": "complex"
+    },
+    {
+      "id": "class:src/terminal/theme.rs:TerminalTheme",
+      "type": "class",
+      "name": "TerminalTheme",
+      "filePath": "src/terminal/theme.rs",
+      "lineRange": [
+        9,
+        14
+      ],
+      "summary": "Terminal color theme containing foreground, background, cursor, selection, and 16 ANSI palette colors with preset support.",
+      "tags": [
+        "theme",
+        "color",
+        "data-model",
+        "configuration"
+      ],
+      "complexity": "moderate"
+    },
+    {
+      "id": "function:src/terminal/theme.rs:resolve_rgb",
+      "type": "function",
+      "name": "resolve_rgb",
+      "filePath": "src/terminal/theme.rs",
+      "lineRange": [
+        429,
+        463
+      ],
+      "summary": "Resolves a terminal cell color specification to a concrete RGB value using the theme palette and intensity flags.",
+      "tags": [
+        "color",
+        "resolution",
+        "ansi",
+        "theme"
+      ],
+      "complexity": "moderate"
+    },
+    {
+      "id": "function:src/terminal/theme.rs:enforce_min_contrast",
+      "type": "function",
+      "name": "enforce_min_contrast",
+      "filePath": "src/terminal/theme.rs",
+      "lineRange": [
+        469,
+        512
+      ],
+      "summary": "Adjusts foreground color lightness to ensure minimum WCAG contrast ratio against the background for readability.",
+      "tags": [
+        "accessibility",
+        "contrast",
+        "color"
+      ],
+      "complexity": "moderate"
+    }
+  ],
+  "edges": [
+    {
+      "source": "file:src/gui/app/mod.rs",
+      "target": "file:src/gui/app/shortcuts.rs",
+      "type": "imports",
+      "direction": "forward",
+      "weight": 0.7
+    },
+    {
+      "source": "file:src/gui/app/mod.rs",
+      "target": "file:src/gui/app/subscription.rs",
+      "type": "imports",
+      "direction": "forward",
+      "weight": 0.7
+    },
+    {
+      "source": "file:src/gui/app/mod.rs",
+      "target": "file:src/gui/app/update/mod.rs",
+      "type": "imports",
+      "direction": "forward",
+      "weight": 0.7
+    },
+    {
+      "source": "file:src/gui/app/mod.rs",
+      "target": "file:src/gui/app/view/mod.rs",
+      "type": "imports",
+      "direction": "forward",
+      "weight": 0.7
+    },
+    {
+      "source": "file:src/gui/app/update/mod.rs",
+      "target": "file:src/gui/app/update/settings.rs",
+      "type": "imports",
+      "direction": "forward",
+      "weight": 0.7
+    },
+    {
+      "source": "file:src/gui/app/update/mod.rs",
+      "target": "file:src/gui/app/update/tab.rs",
+      "type": "imports",
+      "direction": "forward",
+      "weight": 0.7
+    },
+    {
+      "source": "file:src/gui/app/update/mod.rs",
+      "target": "file:src/gui/app/update/terminal.rs",
+      "type": "imports",
+      "direction": "forward",
+      "weight": 0.7
+    },
+    {
+      "source": "file:src/gui/app/view/mod.rs",
+      "target": "file:src/gui/app/view/dialog.rs",
+      "type": "imports",
+      "direction": "forward",
+      "weight": 0.7
+    },
+    {
+      "source": "file:src/gui/app/view/mod.rs",
+      "target": "file:src/gui/app/view/settings.rs",
+      "type": "imports",
+      "direction": "forward",
+      "weight": 0.7
+    },
+    {
+      "source": "file:src/gui/app/view/mod.rs",
+      "target": "file:src/gui/app/view/shell_picker.rs",
+      "type": "imports",
+      "direction": "forward",
+      "weight": 0.7
+    },
+    {
+      "source": "file:src/gui/components/mod.rs",
+      "target": "file:src/gui/components/button.rs",
+      "type": "imports",
+      "direction": "forward",
+      "weight": 0.7
+    },
+    {
+      "source": "file:src/gui/components/mod.rs",
+      "target": "file:src/gui/components/container.rs",
+      "type": "imports",
+      "direction": "forward",
+      "weight": 0.7
+    },
+    {
+      "source": "file:src/gui/components/mod.rs",
+      "target": "file:src/gui/components/ime_wrapper.rs",
+      "type": "imports",
+      "direction": "forward",
+      "weight": 0.7
+    },
+    {
+      "source": "file:src/gui/components/mod.rs",
+      "target": "file:src/gui/components/tab_bar.rs",
+      "type": "imports",
+      "direction": "forward",
+      "weight": 0.7
+    },
+    {
+      "source": "file:src/gui/app/mod.rs",
+      "target": "class:src/gui/app/mod.rs:App",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1
+    },
+    {
+      "source": "file:src/gui/app/mod.rs",
+      "target": "class:src/gui/app/mod.rs:Message",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1
+    },
+    {
+      "source": "file:src/gui/app/mod.rs",
+      "target": "function:src/gui/app/mod.rs:new",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1
+    },
+    {
+      "source": "file:src/gui/app/mod.rs",
+      "target": "class:src/gui/app/mod.rs:App",
+      "type": "exports",
+      "direction": "forward",
+      "weight": 0.8
+    },
+    {
+      "source": "file:src/gui/app/mod.rs",
+      "target": "class:src/gui/app/mod.rs:Message",
+      "type": "exports",
+      "direction": "forward",
+      "weight": 0.8
+    },
+    {
+      "source": "file:src/config.rs",
+      "target": "class:src/config.rs:AppConfig",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1
+    },
+    {
+      "source": "file:src/config.rs",
+      "target": "function:src/config.rs:apply_file",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1
+    },
+    {
+      "source": "file:src/config.rs",
+      "target": "function:src/config.rs:normalize_shortcut",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1
+    },
+    {
+      "source": "file:src/config.rs",
+      "target": "function:src/config.rs:cell_metrics_for_font_arc",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1
+    },
+    {
+      "source": "file:src/config.rs",
+      "target": "class:src/config.rs:AppConfig",
+      "type": "exports",
+      "direction": "forward",
+      "weight": 0.8
+    },
+    {
+      "source": "file:src/gui/app/shortcuts.rs",
+      "target": "function:src/gui/app/shortcuts.rs:resolve",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1
+    },
+    {
+      "source": "file:src/gui/app/shortcuts.rs",
+      "target": "function:src/gui/app/shortcuts.rs:event_key_token",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1
+    },
+    {
+      "source": "file:src/gui/app/shortcuts.rs",
+      "target": "function:src/gui/app/shortcuts.rs:resolve",
+      "type": "exports",
+      "direction": "forward",
+      "weight": 0.8
+    },
+    {
+      "source": "file:src/gui/app/subscription.rs",
+      "target": "function:src/gui/app/subscription.rs:subscription",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1
+    },
+    {
+      "source": "file:src/gui/app/subscription.rs",
+      "target": "function:src/gui/app/subscription.rs:subscription",
+      "type": "exports",
+      "direction": "forward",
+      "weight": 0.8
+    },
+    {
+      "source": "file:src/gui/app/update/mod.rs",
+      "target": "function:src/gui/app/update/mod.rs:update",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1
+    },
+    {
+      "source": "file:src/gui/app/update/mod.rs",
+      "target": "function:src/gui/app/update/mod.rs:handle_key_pressed",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1
+    },
+    {
+      "source": "file:src/gui/app/update/mod.rs",
+      "target": "function:src/gui/app/update/mod.rs:update",
+      "type": "exports",
+      "direction": "forward",
+      "weight": 0.8
+    },
+    {
+      "source": "file:src/gui/app/update/settings.rs",
+      "target": "function:src/gui/app/update/settings.rs:apply_settings",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1
+    },
+    {
+      "source": "file:src/gui/app/update/settings.rs",
+      "target": "function:src/gui/app/update/settings.rs:handle_confirm_restart",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1
+    },
+    {
+      "source": "file:src/gui/app/update/tab.rs",
+      "target": "function:src/gui/app/update/tab.rs:handle_app_shortcut",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1
+    },
+    {
+      "source": "config:Cargo.toml",
+      "target": "file:src/gui/app/mod.rs",
+      "type": "configures",
+      "direction": "forward",
+      "weight": 0.6
+    },
+    {
+      "source": "config:assets/example-theme.toml",
+      "target": "file:src/config.rs",
+      "type": "related",
+      "direction": "forward",
+      "weight": 0.5
+    },
+    {
+      "source": "document:README.md",
+      "target": "file:src/gui/app/mod.rs",
+      "type": "documents",
+      "direction": "forward",
+      "weight": 0.5
+    },
+    {
+      "source": "pipeline:.github/workflows/compile_check.yml",
+      "target": "config:Cargo.toml",
+      "type": "depends_on",
+      "direction": "forward",
+      "weight": 0.6
+    },
+    {
+      "source": "pipeline:.github/workflows/lint.yml",
+      "target": "config:Cargo.toml",
+      "type": "depends_on",
+      "direction": "forward",
+      "weight": 0.6
+    },
+    {
+      "source": "pipeline:.github/workflows/release.yml",
+      "target": "config:Cargo.toml",
+      "type": "depends_on",
+      "direction": "forward",
+      "weight": 0.6
+    },
+    {
+      "source": "file:src/gui/mod.rs",
+      "target": "file:src/gui/render/mod.rs",
+      "type": "imports",
+      "direction": "forward",
+      "weight": 0.7
+    },
+    {
+      "source": "file:src/gui/mod.rs",
+      "target": "file:src/gui/settings/mod.rs",
+      "type": "imports",
+      "direction": "forward",
+      "weight": 0.7
+    },
+    {
+      "source": "file:src/gui/mod.rs",
+      "target": "file:src/gui/tab.rs",
+      "type": "imports",
+      "direction": "forward",
+      "weight": 0.7
+    },
+    {
+      "source": "file:src/gui/mod.rs",
+      "target": "file:src/gui/theme.rs",
+      "type": "imports",
+      "direction": "forward",
+      "weight": 0.7
+    },
+    {
+      "source": "file:src/gui/render/mod.rs",
+      "target": "file:src/gui/render/bg.rs",
+      "type": "imports",
+      "direction": "forward",
+      "weight": 0.7
+    },
+    {
+      "source": "file:src/gui/render/mod.rs",
+      "target": "file:src/gui/render/composite.rs",
+      "type": "imports",
+      "direction": "forward",
+      "weight": 0.7
+    },
+    {
+      "source": "file:src/gui/render/mod.rs",
+      "target": "file:src/gui/render/text/mod.rs",
+      "type": "imports",
+      "direction": "forward",
+      "weight": 0.7
+    },
+    {
+      "source": "file:src/gui/render/text/mod.rs",
+      "target": "file:src/gui/render/text/atlas.rs",
+      "type": "imports",
+      "direction": "forward",
+      "weight": 0.7
+    },
+    {
+      "source": "file:src/gui/render/text/mod.rs",
+      "target": "file:src/gui/render/text/rasterize.rs",
+      "type": "imports",
+      "direction": "forward",
+      "weight": 0.7
+    },
+    {
+      "source": "file:src/gui/settings/mod.rs",
+      "target": "file:src/gui/settings/shortcuts.rs",
+      "type": "imports",
+      "direction": "forward",
+      "weight": 0.7
+    },
+    {
+      "source": "file:src/gui/settings/mod.rs",
+      "target": "file:src/gui/settings/ssh.rs",
+      "type": "imports",
+      "direction": "forward",
+      "weight": 0.7
+    },
+    {
+      "source": "file:src/gui/settings/mod.rs",
+      "target": "file:src/gui/settings/terminal.rs",
+      "type": "imports",
+      "direction": "forward",
+      "weight": 0.7
+    },
+    {
+      "source": "file:src/gui/settings/mod.rs",
+      "target": "file:src/gui/settings/theme.rs",
+      "type": "imports",
+      "direction": "forward",
+      "weight": 0.7
+    },
+    {
+      "source": "file:src/gui/settings/mod.rs",
+      "target": "file:src/gui/settings/ui.rs",
+      "type": "imports",
+      "direction": "forward",
+      "weight": 0.7
+    },
+    {
+      "source": "file:src/lib.rs",
+      "target": "file:src/gui/mod.rs",
+      "type": "imports",
+      "direction": "forward",
+      "weight": 0.7
+    },
+    {
+      "source": "file:src/lib.rs",
+      "target": "file:src/keychain.rs",
+      "type": "imports",
+      "direction": "forward",
+      "weight": 0.7
+    },
+    {
+      "source": "file:src/lib.rs",
+      "target": "file:src/platform/mod.rs",
+      "type": "imports",
+      "direction": "forward",
+      "weight": 0.7
+    },
+    {
+      "source": "file:src/lib.rs",
+      "target": "file:src/session.rs",
+      "type": "imports",
+      "direction": "forward",
+      "weight": 0.7
+    },
+    {
+      "source": "file:src/lib.rs",
+      "target": "file:src/ssh.rs",
+      "type": "imports",
+      "direction": "forward",
+      "weight": 0.7
+    },
+    {
+      "source": "file:src/lib.rs",
+      "target": "file:src/terminal/mod.rs",
+      "type": "imports",
+      "direction": "forward",
+      "weight": 0.7
+    },
+    {
+      "source": "file:src/main.rs",
+      "target": "file:src/gui/mod.rs",
+      "type": "imports",
+      "direction": "forward",
+      "weight": 0.7
+    },
+    {
+      "source": "file:src/main.rs",
+      "target": "file:src/keychain.rs",
+      "type": "imports",
+      "direction": "forward",
+      "weight": 0.7
+    },
+    {
+      "source": "file:src/main.rs",
+      "target": "file:src/platform/mod.rs",
+      "type": "imports",
+      "direction": "forward",
+      "weight": 0.7
+    },
+    {
+      "source": "file:src/main.rs",
+      "target": "file:src/session.rs",
+      "type": "imports",
+      "direction": "forward",
+      "weight": 0.7
+    },
+    {
+      "source": "file:src/main.rs",
+      "target": "file:src/ssh.rs",
+      "type": "imports",
+      "direction": "forward",
+      "weight": 0.7
+    },
+    {
+      "source": "file:src/main.rs",
+      "target": "file:src/terminal/mod.rs",
+      "type": "imports",
+      "direction": "forward",
+      "weight": 0.7
+    },
+    {
+      "source": "file:src/platform/mod.rs",
+      "target": "file:src/platform/windows.rs",
+      "type": "imports",
+      "direction": "forward",
+      "weight": 0.7
+    },
+    {
+      "source": "file:src/platform/mod.rs",
+      "target": "file:src/platform/macos.rs",
+      "type": "imports",
+      "direction": "forward",
+      "weight": 0.7
+    },
+    {
+      "source": "file:src/terminal/mod.rs",
+      "target": "file:src/terminal/engine.rs",
+      "type": "imports",
+      "direction": "forward",
+      "weight": 0.7
+    },
+    {
+      "source": "file:src/terminal/mod.rs",
+      "target": "file:src/terminal/font.rs",
+      "type": "imports",
+      "direction": "forward",
+      "weight": 0.7
+    },
+    {
+      "source": "file:src/terminal/mod.rs",
+      "target": "file:src/terminal/theme.rs",
+      "type": "imports",
+      "direction": "forward",
+      "weight": 0.7
+    },
+    {
+      "source": "file:src/gui/render/bg.rs",
+      "target": "class:src/gui/render/bg.rs:BackgroundPipeline",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1
+    },
+    {
+      "source": "file:src/gui/render/bg.rs",
+      "target": "class:src/gui/render/bg.rs:BackgroundPipeline",
+      "type": "exports",
+      "direction": "forward",
+      "weight": 0.8
+    },
+    {
+      "source": "file:src/gui/render/bg.rs",
+      "target": "function:src/gui/render/bg.rs:new",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1
+    },
+    {
+      "source": "file:src/gui/render/bg.rs",
+      "target": "function:src/gui/render/bg.rs:prepare_instances",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1
+    },
+    {
+      "source": "file:src/gui/render/composite.rs",
+      "target": "class:src/gui/render/composite.rs:CompositePipeline",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1
+    },
+    {
+      "source": "file:src/gui/render/composite.rs",
+      "target": "class:src/gui/render/composite.rs:CompositePipeline",
+      "type": "exports",
+      "direction": "forward",
+      "weight": 0.8
+    },
+    {
+      "source": "file:src/gui/render/composite.rs",
+      "target": "function:src/gui/render/composite.rs:new",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1
+    },
+    {
+      "source": "file:src/gui/render/composite.rs",
+      "target": "function:src/gui/render/composite.rs:ensure_offscreen",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1
+    },
+    {
+      "source": "file:src/gui/render/mod.rs",
+      "target": "class:src/gui/render/mod.rs:TerminalProgram",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1
+    },
+    {
+      "source": "file:src/gui/render/mod.rs",
+      "target": "class:src/gui/render/mod.rs:TerminalProgram",
+      "type": "exports",
+      "direction": "forward",
+      "weight": 0.8
+    },
+    {
+      "source": "file:src/gui/render/mod.rs",
+      "target": "class:src/gui/render/mod.rs:TerminalPrimitive",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1
+    },
+    {
+      "source": "file:src/gui/render/mod.rs",
+      "target": "class:src/gui/render/mod.rs:TerminalPrimitive",
+      "type": "exports",
+      "direction": "forward",
+      "weight": 0.8
+    },
+    {
+      "source": "file:src/gui/render/mod.rs",
+      "target": "function:src/gui/render/mod.rs:prepare",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1
+    },
+    {
+      "source": "file:src/gui/render/mod.rs",
+      "target": "function:src/gui/render/mod.rs:render",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1
+    },
+    {
+      "source": "file:src/gui/render/text/atlas.rs",
+      "target": "class:src/gui/render/text/atlas.rs:AtlasPacker",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1
+    },
+    {
+      "source": "file:src/gui/render/text/atlas.rs",
+      "target": "class:src/gui/render/text/atlas.rs:AtlasPacker",
+      "type": "exports",
+      "direction": "forward",
+      "weight": 0.8
+    },
+    {
+      "source": "file:src/gui/render/text/mod.rs",
+      "target": "class:src/gui/render/text/mod.rs:TextPipelineData",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1
+    },
+    {
+      "source": "file:src/gui/render/text/mod.rs",
+      "target": "class:src/gui/render/text/mod.rs:TextPipelineData",
+      "type": "exports",
+      "direction": "forward",
+      "weight": 0.8
+    },
+    {
+      "source": "file:src/gui/render/text/mod.rs",
+      "target": "function:src/gui/render/text/mod.rs:new",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1
+    },
+    {
+      "source": "file:src/gui/render/text/mod.rs",
+      "target": "function:src/gui/render/text/mod.rs:prepare_instances",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1
+    },
+    {
+      "source": "file:src/gui/render/text/mod.rs",
+      "target": "function:src/gui/render/text/mod.rs:get_or_insert_glyph",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1
+    },
+    {
+      "source": "file:src/gui/render/text/rasterize.rs",
+      "target": "function:src/gui/render/text/rasterize.rs:apply_lcd_filter",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1
+    },
+    {
+      "source": "file:src/gui/render/text/rasterize.rs",
+      "target": "function:src/gui/render/text/rasterize.rs:pack_subpixel_rgba",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1
+    },
+    {
+      "source": "file:src/gui/settings/mod.rs",
+      "target": "class:src/gui/settings/mod.rs:SshProfileDraft",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1
+    },
+    {
+      "source": "file:src/gui/settings/mod.rs",
+      "target": "class:src/gui/settings/mod.rs:SettingsDraft",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1
+    },
+    {
+      "source": "file:src/gui/settings/mod.rs",
+      "target": "class:src/gui/settings/mod.rs:SettingsCategory",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1
+    },
+    {
+      "source": "file:src/gui/settings/mod.rs",
+      "target": "class:src/gui/settings/mod.rs:SettingsDraft",
+      "type": "exports",
+      "direction": "forward",
+      "weight": 0.8
+    },
+    {
+      "source": "file:src/gui/settings/mod.rs",
+      "target": "class:src/gui/settings/mod.rs:SettingsCategory",
+      "type": "exports",
+      "direction": "forward",
+      "weight": 0.8
+    },
+    {
+      "source": "file:src/gui/settings/mod.rs",
+      "target": "class:src/gui/settings/mod.rs:SshProfileDraft",
+      "type": "exports",
+      "direction": "forward",
+      "weight": 0.8
+    },
+    {
+      "source": "file:src/gui/tab.rs",
+      "target": "class:src/gui/tab.rs:TerminalTab",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1
+    },
+    {
+      "source": "file:src/gui/tab.rs",
+      "target": "class:src/gui/tab.rs:TerminalTab",
+      "type": "exports",
+      "direction": "forward",
+      "weight": 0.8
+    },
+    {
+      "source": "file:src/gui/tab.rs",
+      "target": "class:src/gui/tab.rs:ShellKind",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1
+    },
+    {
+      "source": "file:src/gui/tab.rs",
+      "target": "class:src/gui/tab.rs:ShellKind",
+      "type": "exports",
+      "direction": "forward",
+      "weight": 0.8
+    },
+    {
+      "source": "file:src/gui/tab.rs",
+      "target": "function:src/gui/tab.rs:discover_available_shells",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1
+    },
+    {
+      "source": "file:src/gui/tab.rs",
+      "target": "function:src/gui/tab.rs:discover_available_shells",
+      "type": "exports",
+      "direction": "forward",
+      "weight": 0.8
+    },
+    {
+      "source": "file:src/main.rs",
+      "target": "function:src/main.rs:main",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1
+    },
+    {
+      "source": "file:src/session.rs",
+      "target": "class:src/session.rs:Session",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1
+    },
+    {
+      "source": "file:src/session.rs",
+      "target": "class:src/session.rs:Session",
+      "type": "exports",
+      "direction": "forward",
+      "weight": 0.8
+    },
+    {
+      "source": "file:src/session.rs",
+      "target": "function:src/session.rs:spawn",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1
+    },
+    {
+      "source": "file:src/ssh.rs",
+      "target": "function:src/ssh.rs:ssh_task",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1
+    },
+    {
+      "source": "file:src/terminal/engine.rs",
+      "target": "class:src/terminal/engine.rs:TerminalEngine",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1
+    },
+    {
+      "source": "file:src/terminal/engine.rs",
+      "target": "class:src/terminal/engine.rs:TerminalEngine",
+      "type": "exports",
+      "direction": "forward",
+      "weight": 0.8
+    },
+    {
+      "source": "file:src/terminal/engine.rs",
+      "target": "function:src/terminal/engine.rs:build_cells_into",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1
+    },
+    {
+      "source": "file:src/terminal/font.rs",
+      "target": "function:src/terminal/font.rs:discover_system_terminal_fonts",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1
+    },
+    {
+      "source": "file:src/terminal/font.rs",
+      "target": "function:src/terminal/font.rs:discover_system_terminal_fonts",
+      "type": "exports",
+      "direction": "forward",
+      "weight": 0.8
+    },
+    {
+      "source": "file:src/terminal/font.rs",
+      "target": "function:src/terminal/font.rs:is_suitable_for_terminal",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1
+    },
+    {
+      "source": "file:src/terminal/mod.rs",
+      "target": "class:src/terminal/mod.rs:TerminalSize",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1
+    },
+    {
+      "source": "file:src/terminal/mod.rs",
+      "target": "class:src/terminal/mod.rs:TerminalSize",
+      "type": "exports",
+      "direction": "forward",
+      "weight": 0.8
+    },
+    {
+      "source": "file:src/terminal/mod.rs",
+      "target": "class:src/terminal/mod.rs:Selection",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1
+    },
+    {
+      "source": "file:src/terminal/mod.rs",
+      "target": "class:src/terminal/mod.rs:Selection",
+      "type": "exports",
+      "direction": "forward",
+      "weight": 0.8
+    },
+    {
+      "source": "file:src/terminal/theme.rs",
+      "target": "class:src/terminal/theme.rs:TerminalTheme",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1
+    },
+    {
+      "source": "file:src/terminal/theme.rs",
+      "target": "class:src/terminal/theme.rs:TerminalTheme",
+      "type": "exports",
+      "direction": "forward",
+      "weight": 0.8
+    },
+    {
+      "source": "file:src/terminal/theme.rs",
+      "target": "function:src/terminal/theme.rs:resolve_rgb",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1
+    },
+    {
+      "source": "file:src/terminal/theme.rs",
+      "target": "function:src/terminal/theme.rs:resolve_rgb",
+      "type": "exports",
+      "direction": "forward",
+      "weight": 0.8
+    },
+    {
+      "source": "file:src/terminal/theme.rs",
+      "target": "function:src/terminal/theme.rs:enforce_min_contrast",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1
+    },
+    {
+      "source": "file:src/terminal/theme.rs",
+      "target": "function:src/terminal/theme.rs:enforce_min_contrast",
+      "type": "exports",
+      "direction": "forward",
+      "weight": 0.8
+    },
+    {
+      "source": "file:src/session.rs",
+      "target": "file:src/ssh.rs",
+      "type": "calls",
+      "direction": "forward",
+      "weight": 0.8
+    },
+    {
+      "source": "file:src/gui/render/text/mod.rs",
+      "target": "file:src/gui/render/text/rasterize.rs",
+      "type": "calls",
+      "direction": "forward",
+      "weight": 0.8
+    },
+    {
+      "source": "file:src/gui/mod.rs",
+      "target": "file:src/gui/app/mod.rs",
+      "type": "imports",
+      "direction": "forward",
+      "weight": 0.7
+    },
+    {
+      "source": "file:src/gui/mod.rs",
+      "target": "file:src/gui/components/mod.rs",
+      "type": "imports",
+      "direction": "forward",
+      "weight": 0.7
+    },
+    {
+      "source": "file:src/lib.rs",
+      "target": "file:src/ansi.rs",
+      "type": "imports",
+      "direction": "forward",
+      "weight": 0.7
+    },
+    {
+      "source": "file:src/lib.rs",
+      "target": "file:src/config.rs",
+      "type": "imports",
+      "direction": "forward",
+      "weight": 0.7
+    },
+    {
+      "source": "file:src/main.rs",
+      "target": "file:src/ansi.rs",
+      "type": "imports",
+      "direction": "forward",
+      "weight": 0.7
+    },
+    {
+      "source": "file:src/main.rs",
+      "target": "file:src/config.rs",
+      "type": "imports",
+      "direction": "forward",
+      "weight": 0.7
+    }
+  ],
+  "layers": [
+    {
+      "id": "layer:gui-application",
+      "name": "GUI Application",
+      "description": "Iced application struct, message update handlers, view rendering, event subscriptions, and keyboard shortcut dispatch",
+      "nodeIds": [
+        "file:src/gui/app/mod.rs",
+        "file:src/gui/app/shortcuts.rs",
+        "file:src/gui/app/subscription.rs",
+        "file:src/gui/app/update/mod.rs",
+        "file:src/gui/app/update/settings.rs",
+        "file:src/gui/app/update/tab.rs",
+        "file:src/gui/app/update/terminal.rs",
+        "file:src/gui/app/view/dialog.rs",
+        "file:src/gui/app/view/mod.rs",
+        "file:src/gui/app/view/settings.rs",
+        "file:src/gui/app/view/shell_picker.rs",
+        "file:src/gui/mod.rs",
+        "file:src/gui/tab.rs",
+        "file:src/gui/theme.rs"
+      ]
+    },
+    {
+      "id": "layer:gui-components",
+      "name": "GUI Components",
+      "description": "Reusable iced UI widgets including buttons, containers, IME input wrapper, and tab bar",
+      "nodeIds": [
+        "file:src/gui/components/button.rs",
+        "file:src/gui/components/container.rs",
+        "file:src/gui/components/ime_wrapper.rs",
+        "file:src/gui/components/mod.rs",
+        "file:src/gui/components/tab_bar.rs"
+      ]
+    },
+    {
+      "id": "layer:rendering",
+      "name": "Rendering Pipeline",
+      "description": "Low-latency wgpu-based terminal rendering including background pipelines, compositing, glyph atlas, text rasterization, and WGSL shaders",
+      "nodeIds": [
+        "file:src/gui/render/bg.rs",
+        "file:src/gui/render/composite.rs",
+        "file:src/gui/render/mod.rs",
+        "file:src/gui/render/shaders/terminal.wgsl",
+        "file:src/gui/render/text/atlas.rs",
+        "file:src/gui/render/text/mod.rs",
+        "file:src/gui/render/text/rasterize.rs"
+      ]
+    },
+    {
+      "id": "layer:settings",
+      "name": "Settings UI",
+      "description": "Settings page views for configuring shortcuts, SSH profiles, terminal behavior, themes, and general UI preferences",
+      "nodeIds": [
+        "file:src/gui/settings/mod.rs",
+        "file:src/gui/settings/shortcuts.rs",
+        "file:src/gui/settings/ssh.rs",
+        "file:src/gui/settings/terminal.rs",
+        "file:src/gui/settings/theme.rs",
+        "file:src/gui/settings/ui.rs"
+      ]
+    },
+    {
+      "id": "layer:terminal-core",
+      "name": "Terminal Core",
+      "description": "Terminal emulation engine with grid state management, font loading, built-in color themes, and ANSI escape sequence parsing",
+      "nodeIds": [
+        "file:src/terminal/engine.rs",
+        "file:src/terminal/font.rs",
+        "file:src/terminal/mod.rs",
+        "file:src/terminal/theme.rs",
+        "file:src/ansi.rs"
+      ]
+    },
+    {
+      "id": "layer:session-platform",
+      "name": "Session & Platform",
+      "description": "PTY session management, SSH client connectivity, OS-specific platform abstractions, keychain credential storage, and configuration loading",
+      "nodeIds": [
+        "file:src/session.rs",
+        "file:src/ssh.rs",
+        "file:src/keychain.rs",
+        "file:src/config.rs",
+        "file:src/platform/macos.rs",
+        "file:src/platform/mod.rs",
+        "file:src/platform/windows.rs"
+      ]
+    },
+    {
+      "id": "layer:entry",
+      "name": "Application Entry",
+      "description": "Binary entry point and library crate root that wires together all modules",
+      "nodeIds": [
+        "file:src/main.rs",
+        "file:src/lib.rs"
+      ]
+    },
+    {
+      "id": "layer:ci-cd-project",
+      "name": "CI/CD & Project Support",
+      "description": "GitHub Actions workflows for compilation, linting, and releases, plus project documentation, configuration, and font assets",
+      "nodeIds": [
+        "pipeline:.github/workflows/compile_check.yml",
+        "pipeline:.github/workflows/lint.yml",
+        "pipeline:.github/workflows/release.yml",
+        "document:README.md",
+        "document:.github/PULL_REQUEST_TEMPLATE.md",
+        "document:fonts/DEJAVU_LICENSE.txt",
+        "config:Cargo.toml",
+        "config:assets/example-theme.toml",
+        "file:rust-toolchain"
+      ]
+    }
+  ],
+  "tour": [
+    {
+      "order": 1,
+      "title": "Project Overview",
+      "description": "The README introduces Rabbitty as a fast, lean, cross-platform terminal emulator built with Rust and the iced GUI framework. It prioritizes small memory footprint, low-latency rendering, and modern features like tabs, themes, SSH session management, and planned plugin support via WASM. This document sets the context for understanding the architectural decisions throughout the codebase.",
+      "nodeIds": [
+        "document:README.md"
+      ]
+    },
+    {
+      "order": 2,
+      "title": "Application Entry Point",
+      "description": "main.rs is the binary entry point that bootstraps the application by importing the library crate and launching the iced GUI application. In Rust's binary/library split pattern, main.rs is intentionally minimal -- it delegates all logic to lib.rs, keeping the binary as a thin launcher.",
+      "nodeIds": [
+        "file:src/main.rs"
+      ],
+      "languageLesson": "Rust projects often split into a binary crate (main.rs) and a library crate (lib.rs). This allows the library to be tested independently and potentially reused, while the binary only handles process startup."
+    },
+    {
+      "order": 3,
+      "title": "Library Root and Module Tree",
+      "description": "lib.rs is the library root with the highest fan-out in the project (8 direct imports), declaring all top-level modules: gui, terminal, session, ssh, config, keychain, ansi, and platform. This file is the map of the entire architecture -- each module declaration here corresponds to one of the project's architectural layers.",
+      "nodeIds": [
+        "file:src/lib.rs",
+        "config:Cargo.toml"
+      ],
+      "languageLesson": "In Rust, 'mod' declarations in lib.rs define the module tree. Each 'pub mod foo' makes the module publicly accessible. The Cargo.toml manifest declares external dependencies that these modules consume."
+    },
+    {
+      "order": 4,
+      "title": "Configuration and Terminal Core",
+      "description": "The config module handles reading and writing user preferences (shell, font, theme, keybindings), while the terminal module provides the core emulation engine including the character grid, ANSI escape sequence processing, font loading, and built-in color themes. Together they form the non-GUI foundation that everything else builds upon.",
+      "nodeIds": [
+        "file:src/config.rs",
+        "file:src/terminal/mod.rs",
+        "file:src/terminal/engine.rs",
+        "file:src/ansi.rs"
+      ],
+      "languageLesson": "Rust modules with a mod.rs file act as directory-level entry points, re-exporting child modules. The terminal/mod.rs re-exports engine.rs, font.rs, and theme.rs to present a clean public API to the rest of the crate."
+    },
+    {
+      "order": 5,
+      "title": "GUI Module Architecture",
+      "description": "The GUI module root orchestrates the entire user interface by importing six sub-modules: app (iced Application), components (reusable widgets), render (wgpu pipelines), settings (preferences UI), tab (tab management), and theme (color schemes). This hierarchical structure mirrors the iced framework's model-view-update architecture.",
+      "nodeIds": [
+        "file:src/gui/mod.rs",
+        "file:src/gui/theme.rs",
+        "file:src/gui/tab.rs"
+      ],
+      "languageLesson": "The iced framework follows The Elm Architecture (TEA): Application state (Model), a view() function that renders UI from state, and an update() function that processes messages to produce new state. This pattern eliminates shared mutable state in the UI layer."
+    },
+    {
+      "order": 6,
+      "title": "Application State and Logic",
+      "description": "The App struct implements iced's Application trait, defining the core state, message types, and lifecycle. The update module handles all incoming messages (user input, terminal output, system events) through pattern matching on a Message enum, with separate handlers for terminal events, tab operations, and settings changes.",
+      "nodeIds": [
+        "file:src/gui/app/mod.rs",
+        "file:src/gui/app/update/mod.rs",
+        "file:src/gui/app/update/terminal.rs",
+        "file:src/gui/app/update/tab.rs"
+      ],
+      "languageLesson": "Rust enums with variants (discriminated unions) are the idiomatic way to represent messages in TEA architectures. Pattern matching with 'match' ensures every message variant is handled, and the compiler enforces exhaustiveness."
+    },
+    {
+      "order": 7,
+      "title": "Views and UI Components",
+      "description": "The view layer translates application state into rendered UI. The main view function composes reusable components -- tab bar, buttons, containers, and an IME wrapper for international input -- into the final layout. Dialog views handle modal interactions like shell selection and settings panels.",
+      "nodeIds": [
+        "file:src/gui/app/view/mod.rs",
+        "file:src/gui/components/tab_bar.rs",
+        "file:src/gui/components/ime_wrapper.rs",
+        "file:src/gui/app/view/dialog.rs"
+      ]
+    },
+    {
+      "order": 8,
+      "title": "GPU Rendering Pipeline",
+      "description": "Rabbitty achieves low-latency rendering through a custom wgpu-based pipeline rather than CPU-drawn text. The render module coordinates three sub-pipelines: background rendering, text rendering, and a final compositing pass. The ShaderProgram abstraction manages GPU state, buffers, and draw calls.",
+      "nodeIds": [
+        "file:src/gui/render/mod.rs",
+        "file:src/gui/render/bg.rs",
+        "file:src/gui/render/composite.rs",
+        "file:src/gui/render/shaders/terminal.wgsl"
+      ],
+      "languageLesson": "WGSL (WebGPU Shading Language) is the shader language for wgpu. Unlike GLSL, it uses Rust-like syntax with explicit type annotations. The @vertex and @fragment attributes mark entry points for the two programmable GPU stages."
+    },
+    {
+      "order": 9,
+      "title": "Text Rendering and Glyph Atlas",
+      "description": "The text rendering pipeline rasterizes font glyphs into a GPU texture atlas, then renders terminal text by looking up glyph positions in the atlas. This approach batches thousands of characters into a single draw call, which is the key to Rabbitty's rendering performance. The atlas grows dynamically as new glyphs are encountered.",
+      "nodeIds": [
+        "file:src/gui/render/text/mod.rs",
+        "file:src/gui/render/text/atlas.rs",
+        "file:src/gui/render/text/rasterize.rs"
+      ],
+      "languageLesson": "A glyph atlas (texture atlas) packs many small glyph images into one large GPU texture. During rendering, each character maps to UV coordinates within the atlas, avoiding per-character texture switches which would be prohibitively expensive for terminal output."
+    },
+    {
+      "order": 10,
+      "title": "Session and SSH Networking",
+      "description": "The session module manages PTY (pseudo-terminal) connections to local shells, handling process spawning, I/O multiplexing, and terminal resize events. The SSH module extends this with remote session support, while the keychain module securely stores SSH credentials using OS-native secret storage.",
+      "nodeIds": [
+        "file:src/session.rs",
+        "file:src/ssh.rs",
+        "file:src/keychain.rs"
+      ]
+    },
+    {
+      "order": 11,
+      "title": "Platform Abstraction",
+      "description": "The platform module provides OS-specific implementations behind a unified interface, handling differences in PTY APIs, window management, and system integration between macOS, Linux, and Windows. This abstraction layer is what enables Rabbitty's cross-platform promise without platform-specific code leaking into the rest of the codebase.",
+      "nodeIds": [
+        "file:src/platform/mod.rs",
+        "file:src/platform/macos.rs",
+        "file:src/platform/windows.rs"
+      ],
+      "languageLesson": "Rust's conditional compilation with #[cfg(target_os = \"macos\")] and #[cfg(target_os = \"windows\")] attributes lets the compiler include only the relevant platform code in each binary, with zero runtime cost for the abstraction."
+    },
+    {
+      "order": 12,
+      "title": "Theming System",
+      "description": "Rabbitty's theming spans three files: terminal/theme.rs defines built-in color schemes, gui/theme.rs maps theme data to iced widget styling, and the example-theme.toml shows how users create custom themes in TOML format. This separation allows themes to affect both the terminal content colors and the surrounding UI chrome independently.",
+      "nodeIds": [
+        "file:src/terminal/theme.rs",
+        "file:src/gui/settings/theme.rs",
+        "config:assets/example-theme.toml"
+      ],
+      "languageLesson": "TOML (Tom's Obvious Minimal Language) is the standard configuration format in the Rust ecosystem, used by Cargo.toml and commonly adopted for application configs. Its explicit table syntax maps naturally to Rust structs via serde deserialization."
+    },
+    {
+      "order": 13,
+      "title": "CI/CD and Release Pipeline",
+      "description": "Three GitHub Actions workflows ensure code quality and automate releases: compile_check verifies the project builds on all target platforms, lint enforces code style with clippy and rustfmt, and release automates cross-platform binary builds and distribution. Together they form the quality gate that every pull request must pass.",
+      "nodeIds": [
+        "pipeline:.github/workflows/compile_check.yml",
+        "pipeline:.github/workflows/lint.yml",
+        "pipeline:.github/workflows/release.yml"
+      ],
+      "languageLesson": "GitHub Actions workflows use matrix builds to test across multiple OS targets (ubuntu, macos, windows) in parallel. For Rust projects, caching the target/ directory and ~/.cargo registry between runs dramatically reduces CI build times."
+    }
+  ]
+}
