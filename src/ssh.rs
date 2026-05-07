@@ -114,22 +114,60 @@ pub fn spawn_ssh_session(
     cols: u16,
     output_tx: futures_mpsc::UnboundedSender<OutputEvent>,
 ) -> SshSessionHandle {
-    let (write_tx, write_rx) = tokio_mpsc::unbounded_channel::<Vec<u8>>();
-    let (resize_tx, resize_rx) = tokio_mpsc::unbounded_channel::<(u16, u16)>();
+    let (initial_write_tx, _) = tokio_mpsc::unbounded_channel::<Vec<u8>>();
+    let (resize_tx, _) = tokio_mpsc::unbounded_channel::<(u16, u16)>();
 
     let writer: Arc<Mutex<Box<dyn Write + Send>>> =
-        Arc::new(Mutex::new(Box::new(SshWriter { tx: write_tx })));
+        Arc::new(Mutex::new(Box::new(SshWriter { tx: initial_write_tx })));
+    let writer_handle = Arc::clone(&writer);
 
     tokio::spawn(async move {
         let mut otx = output_tx;
-        if let Err(e) = ssh_task(profile, tab_id, rows, cols, write_rx, resize_rx, &mut otx).await {
-            let badge = ssh_badge();
-            let msg = format!("\r\n  {badge}  {}\r\n", ansi::red_bold(&e.to_string()));
-            let _ = otx.unbounded_send(OutputEvent::Data {
+        let badge = ssh_badge();
+
+        loop {
+            let (attempt_write_tx, attempt_write_rx) = tokio_mpsc::unbounded_channel();
+            let (_, attempt_resize_rx) = tokio_mpsc::unbounded_channel();
+
+            if let Ok(mut guard) = writer_handle.lock() {
+                *guard = Box::new(SshWriter { tx: attempt_write_tx });
+            }
+
+            match ssh_task(
+                profile.clone(),
                 tab_id,
-                bytes: msg.into_bytes(),
-            });
+                rows,
+                cols,
+                attempt_write_rx,
+                attempt_resize_rx,
+                &mut otx,
+            )
+            .await
+            {
+                Ok(()) => break,
+                Err(e) => {
+                    let msg = format!(
+                        "\r\n  {badge}  {}\r\n  {badge}  {}\r\n",
+                        ansi::red_bold(&e.to_string()),
+                        ansi::cyan("Press any key to reconnect...")
+                    );
+                    let _ = otx.unbounded_send(OutputEvent::Data {
+                        tab_id,
+                        bytes: msg.into_bytes(),
+                    });
+
+                    let (wait_tx, mut wait_rx) = tokio_mpsc::unbounded_channel();
+                    if let Ok(mut guard) = writer_handle.lock() {
+                        *guard = Box::new(SshWriter { tx: wait_tx });
+                    }
+
+                    if wait_rx.recv().await.is_none() {
+                        break;
+                    }
+                }
+            }
         }
+
         let _ = otx.unbounded_send(OutputEvent::Closed { tab_id });
     });
 
@@ -277,13 +315,19 @@ async fn ssh_task(
             &format!("         {}\r\n", ansi::cyan("Using ProxyCommand")),
         );
         let stream = spawn_proxy_command(proxy_command, &profile.host, profile.port)?;
-        match tokio::time::timeout(connect_timeout, client::connect_stream(config, stream, handler)).await {
+        match tokio::time::timeout(
+            connect_timeout,
+            client::connect_stream(config, stream, handler),
+        )
+        .await
+        {
             Ok(result) => result?,
             Err(_) => return Err("Connection timed out (15s).".into()),
         }
     } else {
         let addr = format!("{}:{}", profile.host, profile.port);
-        match tokio::time::timeout(connect_timeout, client::connect(config, &*addr, handler)).await {
+        match tokio::time::timeout(connect_timeout, client::connect(config, &*addr, handler)).await
+        {
             Ok(result) => result?,
             Err(_) => return Err("Connection timed out (15s).".into()),
         }
@@ -313,7 +357,12 @@ async fn ssh_task(
     let user = ssh_user(&profile.user);
 
     let auth_timeout = std::time::Duration::from_secs(15);
-    let authenticated = match tokio::time::timeout(auth_timeout, authenticate_session(&mut session, &profile, &user)).await {
+    let authenticated = match tokio::time::timeout(
+        auth_timeout,
+        authenticate_session(&mut session, &profile, &user),
+    )
+    .await
+    {
         Ok(result) => result?,
         Err(_) => return Err("Authentication timed out (15s).".into()),
     };
