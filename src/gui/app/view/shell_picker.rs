@@ -59,11 +59,9 @@ impl PickerStyle {
         svg(shell_icon.handle)
             .width(Length::Fixed(16.0))
             .height(Length::Fixed(16.0))
+            .opacity(alpha)
             .style(move |_theme: &iced::Theme, _status| svg::Style {
-                color: Some(Color {
-                    a: alpha,
-                    ..icon_color
-                }),
+                color: Some(icon_color),
             })
             .into()
     }
