@@ -26,38 +26,47 @@ struct ShellIcon {
     color: Color,
 }
 
+fn icon_by_name(name: &str) -> ShellIcon {
+    match name.to_lowercase().as_str() {
+        "bash" => ShellIcon {
+            handle: ICON_BASH.clone(),
+            color: Color::from_rgb8(0x4E, 0xAA, 0x25),
+        },
+        "zsh" => ShellIcon {
+            handle: ICON_ZSH.clone(),
+            color: Color::from_rgb8(0xF1, 0x5A, 0x24),
+        },
+        "fish" => ShellIcon {
+            handle: ICON_FISH.clone(),
+            color: Color::from_rgb8(0x34, 0xC5, 0x34),
+        },
+        "pwsh" | "powershell" => ShellIcon {
+            handle: ICON_POWERSHELL.clone(),
+            color: Color::from_rgb8(0x5A, 0x91, 0xD8),
+        },
+        _ => ShellIcon {
+            handle: ICON_TERMINAL.clone(),
+            color: Color::from_rgb8(0x4C, 0xC2, 0xFF),
+        },
+    }
+}
+
 fn icon_for_shell(shell: &ShellKind) -> ShellIcon {
     match shell {
         ShellKind::Ssh(_) => ShellIcon {
             handle: ICON_SSH.clone(),
-            color: Color::from_rgb8(0x4F, 0xC0, 0x8D), // teal
+            color: Color::from_rgb8(0x4F, 0xC0, 0x8D),
         },
-        ShellKind::Default => ShellIcon {
-            handle: ICON_TERMINAL.clone(),
-            color: Color::from_rgb8(0x4C, 0xC2, 0xFF), // blue
-        },
-        ShellKind::Shell { name, .. } => match name.to_lowercase().as_str() {
-            "bash" => ShellIcon {
-                handle: ICON_BASH.clone(),
-                color: Color::from_rgb8(0x4E, 0xAA, 0x25), // bash green
-            },
-            "zsh" => ShellIcon {
-                handle: ICON_ZSH.clone(),
-                color: Color::from_rgb8(0xF1, 0x5A, 0x24), // zsh orange
-            },
-            "fish" => ShellIcon {
-                handle: ICON_FISH.clone(),
-                color: Color::from_rgb8(0x34, 0xC5, 0x34), // fish green
-            },
-            "pwsh" | "powershell" => ShellIcon {
-                handle: ICON_POWERSHELL.clone(),
-                color: Color::from_rgb8(0x5A, 0x91, 0xD8), // powershell blue
-            },
-            _ => ShellIcon {
-                handle: ICON_TERMINAL.clone(),
-                color: Color::from_rgb8(0x4C, 0xC2, 0xFF),
-            },
-        },
+        ShellKind::Default => {
+            let name = std::env::var("SHELL").unwrap_or_default();
+            let name = std::path::Path::new(&name)
+                .file_name()
+                .and_then(|n| n.to_str())
+                .unwrap_or("")
+                .to_string();
+            icon_by_name(&name)
+        }
+        ShellKind::Shell { name, .. } => icon_by_name(name),
     }
 }
 
@@ -305,13 +314,15 @@ fn picker_item(
             }),
         });
 
-    let mut label_items: Vec<Element<'static, Message>> = vec![text(label)
-        .size(13)
-        .color(Color {
-            a: alpha,
-            ..palette.text
-        })
-        .into()];
+    let mut label_items: Vec<Element<'static, Message>> = vec![
+        text(label)
+            .size(13)
+            .color(Color {
+                a: alpha,
+                ..palette.text
+            })
+            .into(),
+    ];
 
     if let Some(sub) = subtitle {
         label_items.push(
