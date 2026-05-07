@@ -136,7 +136,7 @@ pub fn spawn_ssh_session(
                 });
             }
 
-            match ssh_task(
+            let result = ssh_task(
                 profile.clone(),
                 tab_id,
                 rows,
@@ -145,29 +145,32 @@ pub fn spawn_ssh_session(
                 attempt_resize_rx,
                 &mut otx,
             )
-            .await
-            {
-                Ok(()) => break,
-                Err(e) => {
-                    let msg = format!(
-                        "\r\n  {badge}  {}\r\n  {badge}  {}\r\n",
-                        ansi::red_bold(&e.to_string()),
-                        ansi::cyan("Press any key to reconnect...")
-                    );
-                    let _ = otx.unbounded_send(OutputEvent::Data {
-                        tab_id,
-                        bytes: msg.into_bytes(),
-                    });
+            .await;
 
-                    let (wait_tx, mut wait_rx) = tokio_mpsc::unbounded_channel();
-                    if let Ok(mut guard) = writer_handle.lock() {
-                        *guard = Box::new(SshWriter { tx: wait_tx });
-                    }
+            let msg = match &result {
+                Ok(()) => format!(
+                    "\r\n  {badge}  {}\r\n  {badge}  {}\r\n",
+                    ansi::yellow("Session disconnected."),
+                    ansi::cyan("Press any key to reconnect...")
+                ),
+                Err(e) => format!(
+                    "\r\n  {badge}  {}\r\n  {badge}  {}\r\n",
+                    ansi::red_bold(&e.to_string()),
+                    ansi::cyan("Press any key to reconnect...")
+                ),
+            };
+            let _ = otx.unbounded_send(OutputEvent::Data {
+                tab_id,
+                bytes: msg.into_bytes(),
+            });
 
-                    if wait_rx.recv().await.is_none() {
-                        break;
-                    }
-                }
+            let (wait_tx, mut wait_rx) = tokio_mpsc::unbounded_channel();
+            if let Ok(mut guard) = writer_handle.lock() {
+                *guard = Box::new(SshWriter { tx: wait_tx });
+            }
+
+            if wait_rx.recv().await.is_none() {
+                break;
             }
         }
 
