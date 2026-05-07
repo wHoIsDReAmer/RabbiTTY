@@ -120,24 +120,9 @@ impl App {
                 }
             }
             Message::LaunchFromHistory(index) => {
-                if let Some(entry) = self.session_history.entries.get(index).cloned() {
-                    use crate::session_history::SessionKind;
-                    let shell = match entry.kind {
-                        SessionKind::Default => ShellKind::Default,
-                        SessionKind::Shell { name, path } => ShellKind::Shell { name, path },
-                        SessionKind::Ssh { host, port, user } => {
-                            if let Some(profile) = self
-                                .config
-                                .ssh_profiles
-                                .iter()
-                                .find(|p| p.host == host && p.port == port && p.user == user)
-                            {
-                                ShellKind::Ssh(profile.clone())
-                            } else {
-                                return Task::none();
-                            }
-                        }
-                    };
+                if let Some(entry) = self.session_history.entries.get(index).cloned()
+                    && let Some(shell) = entry.kind.to_shell_kind(&self.config.ssh_profiles)
+                {
                     return self.create_tab(shell);
                 }
             }

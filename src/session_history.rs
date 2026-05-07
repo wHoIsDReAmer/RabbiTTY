@@ -70,6 +70,44 @@ impl SessionHistory {
     }
 }
 
+impl From<&crate::gui::tab::ShellKind> for SessionKind {
+    fn from(shell: &crate::gui::tab::ShellKind) -> Self {
+        use crate::gui::tab::ShellKind;
+        match shell {
+            ShellKind::Default => SessionKind::Default,
+            ShellKind::Shell { name, path } => SessionKind::Shell {
+                name: name.clone(),
+                path: path.clone(),
+            },
+            ShellKind::Ssh(p) => SessionKind::Ssh {
+                host: p.host.clone(),
+                port: p.port,
+                user: p.user.clone(),
+            },
+        }
+    }
+}
+
+impl SessionKind {
+    pub fn to_shell_kind(
+        &self,
+        ssh_profiles: &[crate::config::SshProfile],
+    ) -> Option<crate::gui::tab::ShellKind> {
+        use crate::gui::tab::ShellKind;
+        match self {
+            SessionKind::Default => Some(ShellKind::Default),
+            SessionKind::Shell { name, path } => Some(ShellKind::Shell {
+                name: name.clone(),
+                path: path.clone(),
+            }),
+            SessionKind::Ssh { host, port, user } => ssh_profiles
+                .iter()
+                .find(|p| p.host == *host && p.port == *port && p.user == *user)
+                .map(|p| ShellKind::Ssh(p.clone())),
+        }
+    }
+}
+
 fn history_path() -> Option<PathBuf> {
     Some(
         dirs::config_dir()?

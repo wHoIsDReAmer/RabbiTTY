@@ -26,6 +26,121 @@ struct ShellIcon {
     color: Color,
 }
 
+#[derive(Clone, Copy)]
+struct PickerStyle {
+    alpha: f32,
+    palette: Palette,
+}
+
+impl PickerStyle {
+    fn text(&self, label: impl ToString, size: f32) -> Element<'static, Message> {
+        text(label.to_string())
+            .size(size)
+            .color(Color {
+                a: self.alpha,
+                ..self.palette.text
+            })
+            .into()
+    }
+
+    fn text_secondary(&self, label: impl ToString, size: f32) -> Element<'static, Message> {
+        text(label.to_string())
+            .size(size)
+            .color(Color {
+                a: self.alpha * 0.7,
+                ..self.palette.text_secondary
+            })
+            .into()
+    }
+
+    fn icon(&self, shell_icon: ShellIcon) -> Element<'static, Message> {
+        let alpha = self.alpha;
+        let icon_color = shell_icon.color;
+        svg(shell_icon.handle)
+            .width(Length::Fixed(16.0))
+            .height(Length::Fixed(16.0))
+            .style(move |_theme: &iced::Theme, _status| svg::Style {
+                color: Some(Color {
+                    a: alpha,
+                    ..icon_color
+                }),
+            })
+            .into()
+    }
+
+    fn divider(&self) -> Element<'static, Message> {
+        let alpha = self.alpha;
+        let palette = self.palette;
+        container(text(""))
+            .width(Length::Fill)
+            .height(1)
+            .style(move |_theme: &iced::Theme| container::Style {
+                background: Some(Background::Color(Color {
+                    a: 0.1 * alpha,
+                    ..palette.text
+                })),
+                ..Default::default()
+            })
+            .into()
+    }
+
+    fn item_button(
+        &self,
+        icon: ShellIcon,
+        label: String,
+        subtitle: Option<String>,
+        selected: bool,
+        on_press: Message,
+    ) -> Element<'static, Message> {
+        let alpha = self.alpha;
+        let palette = self.palette;
+
+        let mut label_items: Vec<Element<'static, Message>> = vec![self.text(&label, 13.0)];
+        if let Some(sub) = subtitle {
+            label_items.push(self.text_secondary(&sub, 10.0));
+        }
+
+        let content = row![self.icon(icon), column(label_items).spacing(1)]
+            .spacing(10)
+            .align_y(iced::Alignment::Center);
+
+        button(content)
+            .style(
+                move |_theme: &iced::Theme, status: iced::widget::button::Status| {
+                    let hovered = matches!(status, iced::widget::button::Status::Hovered);
+                    let bg_alpha = if selected {
+                        0.15 * alpha
+                    } else if hovered {
+                        0.08 * alpha
+                    } else {
+                        0.0
+                    };
+                    iced::widget::button::Style {
+                        background: Some(Background::Color(Color {
+                            a: bg_alpha,
+                            ..palette.text
+                        })),
+                        text_color: Color {
+                            a: alpha,
+                            ..palette.text
+                        },
+                        border: Border {
+                            radius: RADIUS_SMALL.into(),
+                            width: 0.0,
+                            color: Color::TRANSPARENT,
+                        },
+                        shadow: iced::Shadow::default(),
+                        snap: false,
+                    }
+                },
+            )
+            .padding([6, 10])
+            .on_press(on_press)
+            .width(Length::Fill)
+            .into()
+    }
+}
+
 fn icon_by_name(name: &str) -> ShellIcon {
     match name.to_lowercase().as_str() {
         "bash" => ShellIcon {
@@ -100,25 +215,20 @@ impl App {
         )
         .on_press(Message::CloseShellPicker);
 
+        let style = PickerStyle {
+            alpha: progress,
+            palette,
+        };
+
         let mut items: Vec<Element<Message>> = Vec::new();
         let mut option_index = 0usize;
 
-        // Header
-        items.push(
-            text("Start New Session")
-                .size(15)
-                .color(Color {
-                    a: progress,
-                    ..palette.text
-                })
-                .into(),
-        );
-        items.push(divider_with_alpha(progress, palette));
+        items.push(style.text("Start New Session", 15.0));
+        items.push(style.divider());
 
-        // SSH section first: profiles should be visible without scrolling past system shells.
         let ssh_profiles = self.session_ssh_profiles();
         if !ssh_profiles.is_empty() {
-            items.push(section_label("SSH", progress, palette));
+            items.push(style.text_secondary("SSH", 11.0));
 
             for (i, profile) in ssh_profiles.iter().enumerate() {
                 let label = if profile.name.is_empty() {
@@ -135,25 +245,22 @@ impl App {
                     ))
                 };
                 let selected = self.shell_picker_selected == option_index;
-                items.push(picker_item(
-                    label,
-                    subtitle,
-                    selected,
-                    Message::CreateSshTab(i),
-                    progress,
-                    palette,
+                items.push(style.item_button(
                     ShellIcon {
                         handle: (*ICON_SSH).clone(),
                         color: Color::from_rgb8(0x4F, 0xC0, 0x8D),
                     },
+                    label,
+                    subtitle,
+                    selected,
+                    Message::CreateSshTab(i),
                 ));
                 option_index += 1;
             }
-            items.push(divider_with_alpha(progress, palette));
+            items.push(style.divider());
         }
 
-        // Shell section
-        items.push(section_label("Shells", progress, palette));
+        items.push(style.text_secondary("Shells", 11.0));
 
         for shell in &self.available_shells {
             let label = shell.display_name();
@@ -163,15 +270,12 @@ impl App {
                 ShellKind::Ssh(_) => None,
             };
             let selected = self.shell_picker_selected == option_index;
-            let icon = icon_for_shell(shell);
-            items.push(picker_item(
+            items.push(style.item_button(
+                icon_for_shell(shell),
                 label,
                 subtitle,
                 selected,
                 Message::CreateTab(shell.clone()),
-                progress,
-                palette,
-                icon,
             ));
             option_index += 1;
         }
@@ -268,127 +372,4 @@ impl App {
             .height(Length::Fill)
             .into()
     }
-}
-
-fn section_label(label: &str, alpha: f32, palette: Palette) -> Element<'_, Message> {
-    text(label)
-        .size(11)
-        .color(Color {
-            a: alpha * 0.7,
-            ..palette.text_secondary
-        })
-        .into()
-}
-
-fn divider_with_alpha(alpha: f32, palette: Palette) -> Element<'static, Message> {
-    container(text(""))
-        .width(Length::Fill)
-        .height(1)
-        .style(move |_theme: &iced::Theme| container::Style {
-            background: Some(Background::Color(Color {
-                a: 0.1 * alpha,
-                ..palette.text
-            })),
-            ..Default::default()
-        })
-        .into()
-}
-
-fn picker_item(
-    label: String,
-    subtitle: Option<String>,
-    selected: bool,
-    on_press: Message,
-    alpha: f32,
-    palette: Palette,
-    shell_icon: ShellIcon,
-) -> Element<'static, Message> {
-    let icon_color = shell_icon.color;
-    let icon = svg(shell_icon.handle)
-        .width(Length::Fixed(16.0))
-        .height(Length::Fixed(16.0))
-        .style(move |_theme: &iced::Theme, _status| svg::Style {
-            color: Some(Color {
-                a: alpha,
-                ..icon_color
-            }),
-        });
-
-    let mut label_items: Vec<Element<'static, Message>> = vec![
-        text(label)
-            .size(13)
-            .color(Color {
-                a: alpha,
-                ..palette.text
-            })
-            .into(),
-    ];
-
-    if let Some(sub) = subtitle {
-        label_items.push(
-            text(sub)
-                .size(10)
-                .color(Color {
-                    a: alpha * 0.7,
-                    ..palette.text_secondary
-                })
-                .into(),
-        );
-    }
-
-    let content = row![icon, column(label_items).spacing(1)]
-        .spacing(10)
-        .align_y(iced::Alignment::Center);
-
-    button(content)
-        .style(
-            move |_theme: &iced::Theme, status: iced::widget::button::Status| {
-                let hovered = matches!(status, iced::widget::button::Status::Hovered);
-                if selected {
-                    iced::widget::button::Style {
-                        background: Some(Background::Color(Color {
-                            a: 0.15 * alpha,
-                            ..palette.text
-                        })),
-                        text_color: Color {
-                            a: alpha,
-                            ..palette.text
-                        },
-                        border: Border {
-                            radius: RADIUS_SMALL.into(),
-                            width: 0.0,
-                            color: Color::TRANSPARENT,
-                        },
-                        shadow: iced::Shadow::default(),
-                        snap: false,
-                    }
-                } else {
-                    iced::widget::button::Style {
-                        background: Some(Background::Color(if hovered {
-                            Color {
-                                a: 0.08 * alpha,
-                                ..palette.text
-                            }
-                        } else {
-                            Color::TRANSPARENT
-                        })),
-                        text_color: Color {
-                            a: alpha,
-                            ..palette.text
-                        },
-                        border: Border {
-                            radius: RADIUS_SMALL.into(),
-                            width: 0.0,
-                            color: Color::TRANSPARENT,
-                        },
-                        shadow: iced::Shadow::default(),
-                        snap: false,
-                    }
-                }
-            },
-        )
-        .padding([6, 10])
-        .on_press(on_press)
-        .width(Length::Fill)
-        .into()
 }
