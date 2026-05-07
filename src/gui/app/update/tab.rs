@@ -3,6 +3,7 @@ use super::super::{App, Message, SETTINGS_TAB_INDEX};
 use crate::config::SshProfile;
 use crate::gui::settings::SettingsDraft;
 use crate::gui::tab::ShellKind;
+use crate::session_history::SessionKind;
 use crate::terminal::TerminalTheme;
 use iced::Task;
 use iced::keyboard::{Key, Modifiers};
@@ -18,9 +19,23 @@ impl App {
         let theme = TerminalTheme::from_config(&self.config);
         let tab_id = self.next_tab_id;
         self.next_tab_id = self.next_tab_id.wrapping_add(1);
+        let history_kind = match &shell {
+            ShellKind::Default => SessionKind::Default,
+            ShellKind::Shell { name, path } => SessionKind::Shell {
+                name: name.clone(),
+                path: path.clone(),
+            },
+            ShellKind::Ssh(p) => SessionKind::Ssh {
+                host: p.host.clone(),
+                port: p.port,
+                user: p.user.clone(),
+            },
+        };
+        let display_name = shell.display_name();
         let new_tab =
             crate::gui::tab::TerminalTab::from_shell(shell, cols, rows, theme, tab_id, sender);
         self.tabs.push(new_tab);
+        self.session_history.record(history_kind, display_name);
         self.active_tab = self.tabs.len() - 1;
         self.show_shell_picker = false;
         self.shell_picker_selected = 0;
