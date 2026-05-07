@@ -10,8 +10,9 @@ use super::{App, Message, SETTINGS_TAB_INDEX};
 use crate::gui::components::ime_wrapper::ImeEnabled;
 use crate::gui::components::{button_secondary, panel, tab_bar};
 use crate::gui::render::TerminalProgram;
-use iced::widget::{column, container, image, row, scrollable, stack, text};
-use iced::{Alignment, Element, Length};
+use crate::gui::theme::{RADIUS_SMALL, SPACING_SMALL};
+use iced::widget::{button, column, container, image, row, scrollable, stack, text};
+use iced::{Alignment, Background, Border, Color, Element, Length};
 use std::sync::LazyLock;
 
 static LOGO_HANDLE: LazyLock<image::Handle> =
@@ -57,21 +58,7 @@ impl App {
         } else if let Some(active_tab) = self.tabs.get(self.active_tab) {
             self.view_terminal(active_tab)
         } else {
-            let logo = image(LOGO_HANDLE.clone())
-                .width(Length::Fixed(96.0))
-                .height(Length::Fixed(96.0));
-            let version_label = text(format!("RabbiTTY v{}", env!("CARGO_PKG_VERSION")))
-                .size(13)
-                .color(iced::Color::from_rgba(1.0, 1.0, 1.0, 0.4));
-            let new_tab_btn =
-                button_secondary("New Tab", palette).on_press(Message::OpenShellPicker);
-            container(
-                column![logo, version_label, new_tab_btn]
-                    .spacing(12)
-                    .align_x(Alignment::Center),
-            )
-            .center(Length::Fill)
-            .into()
+            self.view_lobby(palette)
         };
 
         let panel_background = Some(self.theme_background_color());
@@ -176,5 +163,93 @@ impl App {
         ImeEnabled::new(terminal_view)
             .preedit(self.ime_preedit.clone())
             .into()
+    }
+
+    fn view_lobby(&self, palette: crate::gui::theme::Palette) -> Element<'_, Message> {
+        let logo = image(LOGO_HANDLE.clone())
+            .width(Length::Fixed(96.0))
+            .height(Length::Fixed(96.0));
+        let version_label = text(format!("RabbiTTY v{}", env!("CARGO_PKG_VERSION")))
+            .size(13)
+            .color(Color::from_rgba(1.0, 1.0, 1.0, 0.4));
+        let new_tab_btn =
+            button_secondary("New Tab", palette).on_press(Message::OpenShellPicker);
+
+        let mut content: Vec<Element<Message>> = vec![
+            logo.into(),
+            version_label.into(),
+            new_tab_btn.into(),
+        ];
+
+        if !self.session_history.entries.is_empty() {
+            content.push(
+                container(text(""))
+                    .width(Length::Fixed(240.0))
+                    .height(1)
+                    .style(move |_theme: &iced::Theme| container::Style {
+                        background: Some(Background::Color(Color {
+                            a: 0.1,
+                            ..palette.text
+                        })),
+                        ..Default::default()
+                    })
+                    .into(),
+            );
+            content.push(
+                text("Recent Sessions")
+                    .size(11)
+                    .color(Color { a: 0.5, ..palette.text_secondary })
+                    .into(),
+            );
+
+            for (i, entry) in self.session_history.entries.iter().enumerate() {
+                let name = entry.display_name.clone();
+                let kind_label = match &entry.kind {
+                    crate::session_history::SessionKind::Default => "Default Shell",
+                    crate::session_history::SessionKind::Shell { .. } => "Shell",
+                    crate::session_history::SessionKind::Ssh { .. } => "SSH",
+                };
+
+                let label_col = column![
+                    text(name).size(13).color(Color { a: 0.9, ..palette.text }),
+                    text(kind_label).size(10).color(Color { a: 0.5, ..palette.text_secondary }),
+                ]
+                .spacing(1);
+
+                content.push(
+                    button(label_col)
+                        .style(move |_theme: &iced::Theme, status: iced::widget::button::Status| {
+                            let hovered = matches!(status, iced::widget::button::Status::Hovered);
+                            iced::widget::button::Style {
+                                background: Some(Background::Color(if hovered {
+                                    Color { a: 0.08, ..palette.text }
+                                } else {
+                                    Color::TRANSPARENT
+                                })),
+                                text_color: palette.text,
+                                border: Border {
+                                    radius: RADIUS_SMALL.into(),
+                                    width: 0.0,
+                                    color: Color::TRANSPARENT,
+                                },
+                                shadow: iced::Shadow::default(),
+                                snap: false,
+                            }
+                        })
+                        .padding([6, 10])
+                        .width(Length::Fixed(240.0))
+                        .on_press(Message::LaunchFromHistory(i))
+                        .into(),
+                );
+            }
+        }
+
+        container(
+            column(content)
+                .spacing(SPACING_SMALL)
+                .align_x(Alignment::Center),
+        )
+        .center(Length::Fill)
+        .into()
     }
 }

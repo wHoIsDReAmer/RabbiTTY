@@ -4,6 +4,7 @@ use crate::gui::settings::{
 };
 use crate::gui::tab::{ShellKind, TerminalTab, discover_available_shells};
 use crate::session::OutputEvent;
+use crate::session_history::SessionHistory;
 use crate::terminal::font::discover_system_terminal_fonts;
 use iced::Animation;
 use iced::Size;
@@ -45,6 +46,7 @@ pub enum Message {
     CloseSshProfileModal,
     SaveSshProfileModal,
     CreateSshTab(usize),
+    LaunchFromHistory(usize),
     #[cfg(target_os = "macos")]
     ConfirmRestartForBlur,
     #[cfg(target_os = "macos")]
@@ -126,6 +128,7 @@ pub struct App {
     pub(super) palette: crate::gui::theme::Palette,
     pub(super) ime_active: bool,
     pub(super) ime_preedit: Option<(String, Option<std::ops::Range<usize>>)>,
+    pub(super) session_history: SessionHistory,
     pub(super) window_style_applied: bool,
     #[cfg(target_os = "macos")]
     pub(super) show_restart_confirm: bool,
@@ -170,6 +173,7 @@ impl App {
             resize_debounce_pending: false,
             resize_debounce_seq: 0,
             resize_debounce_spawned_seq: 0,
+            session_history: SessionHistory::load(),
             palette,
             ime_active: false,
             ime_preedit: None,

@@ -119,6 +119,28 @@ impl App {
                     return self.create_tab(shell);
                 }
             }
+            Message::LaunchFromHistory(index) => {
+                if let Some(entry) = self.session_history.entries.get(index).cloned() {
+                    use crate::session_history::SessionKind;
+                    let shell = match entry.kind {
+                        SessionKind::Default => ShellKind::Default,
+                        SessionKind::Shell { name, path } => ShellKind::Shell { name, path },
+                        SessionKind::Ssh { host, port, user } => {
+                            if let Some(profile) = self
+                                .config
+                                .ssh_profiles
+                                .iter()
+                                .find(|p| p.host == host && p.port == port && p.user == user)
+                            {
+                                ShellKind::Ssh(profile.clone())
+                            } else {
+                                return Task::none();
+                            }
+                        }
+                    };
+                    return self.create_tab(shell);
+                }
+            }
 
             // ── Settings ────────────────────────────────────────────
             Message::AddSshProfile => {

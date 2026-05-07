@@ -4,6 +4,7 @@ mod gui;
 mod keychain;
 mod platform;
 mod session;
+mod session_history;
 mod ssh;
 mod terminal;
 
