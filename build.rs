@@ -5,7 +5,7 @@ fn main() {
     println!("cargo:rerun-if-changed=locales/");
 
     let locales_dir = Path::new("locales");
-    let mut locales: Vec<(String, HashMap<String, String>)> = Vec::new();
+    let mut locales: Vec<(String, String, HashMap<String, String>)> = Vec::new();
 
     if let Ok(entries) = std::fs::read_dir(locales_dir) {
         let mut paths: Vec<_> = entries
@@ -18,8 +18,10 @@ fn main() {
             let path = entry.path();
             let locale = path.file_stem().unwrap().to_str().unwrap().to_string();
             let src = std::fs::read_to_string(&path).unwrap();
-            let map = parse_toml(&src);
-            locales.push((locale, map));
+            let mut map = parse_toml(&src);
+            let native_label = map.remove("meta.name").unwrap_or_else(|| locale.clone());
+            map.retain(|k, _| !k.starts_with("meta."));
+            locales.push((locale, native_label, map));
         }
     }
 
@@ -27,10 +29,11 @@ fn main() {
     let out_path = Path::new(&out_dir).join("translations.rs");
 
     let mut code = String::new();
+
     code.push_str("fn get_translation(locale: &str, key: &str) -> Option<&'static str> {\n");
     code.push_str("    match locale {\n");
 
-    for (locale, map) in &locales {
+    for (locale, _label, map) in &locales {
         if locale == "en" {
             continue;
         }
@@ -45,7 +48,7 @@ fn main() {
     }
 
     code.push_str("        _ => match key {\n");
-    if let Some((_, en_map)) = locales.iter().find(|(l, _)| l == "en") {
+    if let Some((_, _, en_map)) = locales.iter().find(|(l, _, _)| l == "en") {
         let mut keys: Vec<_> = en_map.keys().collect();
         keys.sort();
         for k in keys {
@@ -56,6 +59,15 @@ fn main() {
     code.push_str("        },\n");
     code.push_str("    }\n");
     code.push_str("}\n");
+
+    code.push_str("\npub const AVAILABLE_LOCALES: &[LocaleInfo] = &[\n");
+    for (locale, label, _map) in &locales {
+        code.push_str(&format!(
+            "    LocaleInfo {{ tag: {:?}, native_label: {:?} }},\n",
+            locale, label
+        ));
+    }
+    code.push_str("];\n");
 
     std::fs::write(out_path, code).unwrap();
 }

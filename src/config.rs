@@ -116,6 +116,8 @@ pub struct AppConfig {
 pub struct UiConfig {
     pub window_width: f32,
     pub window_height: f32,
+    /// `None` = follow `LANG` env; otherwise a tag from `AVAILABLE_LOCALES`.
+    pub language: Option<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -178,6 +180,7 @@ struct FileConfig {
 struct UiFileConfig {
     window_width: Option<f32>,
     window_height: Option<f32>,
+    language: Option<String>,
 }
 
 #[derive(Debug, Deserialize, Serialize)]
@@ -222,6 +225,8 @@ struct ShortcutsFileConfig {
 pub struct AppConfigUpdates {
     pub window_width: Option<f32>,
     pub window_height: Option<f32>,
+    /// `None` = no change; `Some("auto"|"")` = clear; `Some("<tag>")` = set.
+    pub language: Option<String>,
     pub terminal_font_selection: Option<String>,
     pub terminal_font_size: Option<f32>,
     pub terminal_padding_x: Option<f32>,
@@ -253,6 +258,7 @@ impl Default for AppConfig {
             ui: UiConfig {
                 window_width: DEFAULT_WINDOW_WIDTH,
                 window_height: DEFAULT_WINDOW_HEIGHT,
+                language: None,
             },
             terminal: TerminalConfig {
                 cell_width,
@@ -309,6 +315,9 @@ impl AppConfig {
         }
         if let Some(height) = updates.window_height {
             self.ui.window_height = sanitize_positive(height, self.ui.window_height);
+        }
+        if let Some(lang) = updates.language.as_deref() {
+            self.ui.language = sanitize_language(lang);
         }
         let old_font = self.terminal.font_selection.clone();
         if let Some(selection) = updates.terminal_font_selection {
@@ -414,6 +423,9 @@ impl AppConfig {
             }
             if let Some(height) = ui.window_height {
                 self.ui.window_height = sanitize_positive(height, self.ui.window_height);
+            }
+            if let Some(lang) = ui.language.as_deref() {
+                self.ui.language = sanitize_language(lang);
             }
         }
 
@@ -611,6 +623,15 @@ fn sanitize_padding(value: f32) -> f32 {
     }
 }
 
+fn sanitize_language(value: &str) -> Option<String> {
+    let trimmed = value.trim();
+    if crate::i18n::is_known_locale(trimmed) {
+        Some(trimmed.to_string())
+    } else {
+        None
+    }
+}
+
 fn sanitize_terminal_font_selection(value: &str) -> Option<String> {
     let selection = value.trim();
     if selection.is_empty() {
@@ -747,6 +768,7 @@ impl From<&AppConfig> for FileConfig {
             ui: Some(UiFileConfig {
                 window_width: Some(config.ui.window_width),
                 window_height: Some(config.ui.window_height),
+                language: config.ui.language.clone(),
             }),
             terminal: Some(TerminalFileConfig {
                 cell_width: None,
