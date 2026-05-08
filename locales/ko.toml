@@ -1,3 +1,6 @@
+[meta]
+name = "한국어"
+
 [shell_picker]
 title = "새 세션 시작"
 ssh = "SSH"
@@ -16,3 +19,19 @@ recent_sessions = "최근 세션"
 default_shell = "기본 셸"
 shell = "셸"
 ssh = "SSH"
+
+[settings.categories]
+ui = "UI"
+terminal = "터미널"
+theme = "테마"
+shortcuts = "단축키"
+ssh = "SSH"
+
+[settings.ui]
+window_section = "창"
+width = "너비"
+height = "높이"
+
+[settings.language]
+section_title = "언어"
+auto = "자동"

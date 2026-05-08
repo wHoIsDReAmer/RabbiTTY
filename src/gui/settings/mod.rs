@@ -26,6 +26,7 @@ impl fmt::Display for TerminalFontOption {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SettingsField {
+    UiLanguage,
     UiWindowWidth,
     UiWindowHeight,
     TerminalFontSelection,
@@ -80,11 +81,11 @@ impl SettingsCategory {
 
     pub fn label(self) -> &'static str {
         match self {
-            Self::Ui => "UI",
-            Self::Terminal => "Terminal",
-            Self::Theme => "Theme",
-            Self::Shortcuts => "Shortcuts",
-            Self::Ssh => "SSH",
+            Self::Ui => crate::t!("settings.categories.ui"),
+            Self::Terminal => crate::t!("settings.categories.terminal"),
+            Self::Theme => crate::t!("settings.categories.theme"),
+            Self::Shortcuts => crate::t!("settings.categories.shortcuts"),
+            Self::Ssh => crate::t!("settings.categories.ssh"),
         }
     }
 
@@ -207,6 +208,7 @@ impl SshProfileDraft {
 
 #[derive(Debug, Clone)]
 pub struct SettingsDraft {
+    pub language: String,
     pub window_width: String,
     pub window_height: String,
     pub terminal_font_selection: String,
@@ -237,6 +239,11 @@ pub struct SettingsDraft {
 impl SettingsDraft {
     pub fn from_config(config: &AppConfig) -> Self {
         Self {
+            language: config
+                .ui
+                .language
+                .clone()
+                .unwrap_or_else(|| "auto".to_string()),
             window_width: format!("{:.0}", config.ui.window_width),
             window_height: format!("{:.0}", config.ui.window_height),
             terminal_font_selection: config.terminal.font_selection.clone().unwrap_or_default(),
@@ -417,6 +424,7 @@ impl SettingsDraft {
 
     pub fn update(&mut self, field: SettingsField, value: String) {
         match field {
+            SettingsField::UiLanguage => self.language = value,
             SettingsField::UiWindowWidth => self.window_width = value,
             SettingsField::UiWindowHeight => self.window_height = value,
             SettingsField::TerminalFontSelection => self.terminal_font_selection = value,
@@ -454,6 +462,7 @@ impl SettingsDraft {
         let ansi_colors = crate::terminal::theme::find_preset(&self.color_scheme).map(|p| p.ansi);
 
         let mut updates = AppConfigUpdates {
+            language: Some(self.language.clone()),
             window_width: parse_f32(&self.window_width),
             window_height: parse_f32(&self.window_height),
             terminal_font_selection: Some(self.terminal_font_selection.clone()),

@@ -21,6 +21,7 @@ const DEJAVU_SANS: &[u8] = include_bytes!("../fonts/DejaVuSans.ttf");
 
 fn main() -> iced::Result {
     let app_config = AppConfig::load();
+    i18n::set_locale(app_config.ui.language.as_deref());
     let boot_config = app_config.clone();
 
     iced::application(

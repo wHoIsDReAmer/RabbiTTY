@@ -35,6 +35,7 @@ impl App {
 
     pub(super) fn apply_updates_to_runtime(&mut self, updates: AppConfigUpdates) -> Task<Message> {
         self.config.apply_updates(updates);
+        crate::i18n::set_locale(self.config.ui.language.as_deref());
         self.palette = crate::gui::theme::Palette::from_theme(&self.config.theme);
         self.settings_draft = SettingsDraft::from_config(&self.config);
 
