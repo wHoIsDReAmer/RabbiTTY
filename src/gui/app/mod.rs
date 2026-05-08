@@ -47,6 +47,7 @@ pub enum Message {
     SaveSshProfileModal,
     CreateSshTab(usize),
     LaunchFromHistory(usize),
+    DuplicateTab,
     #[cfg(target_os = "macos")]
     ConfirmRestartForBlur,
     #[cfg(target_os = "macos")]

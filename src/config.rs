@@ -58,6 +58,11 @@ pub const DEFAULT_SHORTCUT_FONT_SIZE_RESET: &str = "Command+0";
 #[cfg(not(target_os = "macos"))]
 pub const DEFAULT_SHORTCUT_FONT_SIZE_RESET: &str = "Ctrl+0";
 
+#[cfg(target_os = "macos")]
+pub const DEFAULT_SHORTCUT_DUPLICATE_TAB: &str = "Command+D";
+#[cfg(not(target_os = "macos"))]
+pub const DEFAULT_SHORTCUT_DUPLICATE_TAB: &str = "Ctrl+Shift+D";
+
 pub const DEFAULT_TERMINAL_FONT_SIZE: f32 = 14.0;
 pub const DEFAULT_TERMINAL_PADDING_X: f32 = 4.0;
 pub const DEFAULT_TERMINAL_PADDING_Y: f32 = 4.0;
@@ -146,6 +151,7 @@ pub struct ShortcutsConfig {
     pub font_size_increase: String,
     pub font_size_decrease: String,
     pub font_size_reset: String,
+    pub duplicate_tab: String,
 }
 
 #[derive(Debug, Deserialize, Serialize)]
@@ -209,6 +215,7 @@ struct ShortcutsFileConfig {
     font_size_increase: Option<String>,
     font_size_decrease: Option<String>,
     font_size_reset: Option<String>,
+    duplicate_tab: Option<String>,
 }
 
 #[derive(Debug, Default, Clone)]
@@ -236,6 +243,7 @@ pub struct AppConfigUpdates {
     pub shortcut_font_size_increase: Option<String>,
     pub shortcut_font_size_decrease: Option<String>,
     pub shortcut_font_size_reset: Option<String>,
+    pub shortcut_duplicate_tab: Option<String>,
 }
 
 impl Default for AppConfig {
@@ -274,6 +282,7 @@ impl Default for AppConfig {
                 font_size_increase: DEFAULT_SHORTCUT_FONT_SIZE_INCREASE.to_string(),
                 font_size_decrease: DEFAULT_SHORTCUT_FONT_SIZE_DECREASE.to_string(),
                 font_size_reset: DEFAULT_SHORTCUT_FONT_SIZE_RESET.to_string(),
+                duplicate_tab: DEFAULT_SHORTCUT_DUPLICATE_TAB.to_string(),
             },
             ssh_profiles: vec![],
         }
@@ -378,6 +387,9 @@ impl AppConfig {
         if let Some(value) = updates.shortcut_font_size_reset {
             self.shortcuts.font_size_reset =
                 sanitize_shortcut(&value, &self.shortcuts.font_size_reset);
+        }
+        if let Some(value) = updates.shortcut_duplicate_tab {
+            self.shortcuts.duplicate_tab = sanitize_shortcut(&value, &self.shortcuts.duplicate_tab);
         }
     }
 
@@ -511,6 +523,10 @@ impl AppConfig {
             if let Some(value) = shortcuts.font_size_reset.as_deref() {
                 self.shortcuts.font_size_reset =
                     sanitize_shortcut(value, &self.shortcuts.font_size_reset);
+            }
+            if let Some(value) = shortcuts.duplicate_tab.as_deref() {
+                self.shortcuts.duplicate_tab =
+                    sanitize_shortcut(value, &self.shortcuts.duplicate_tab);
             }
         }
 
@@ -782,6 +798,7 @@ impl From<&AppConfig> for FileConfig {
                 font_size_increase: Some(config.shortcuts.font_size_increase.clone()),
                 font_size_decrease: Some(config.shortcuts.font_size_decrease.clone()),
                 font_size_reset: Some(config.shortcuts.font_size_reset.clone()),
+                duplicate_tab: Some(config.shortcuts.duplicate_tab.clone()),
             }),
             ssh_profiles: if config.ssh_profiles.is_empty() {
                 None
@@ -832,7 +849,7 @@ fn ensure_config_file(path: &Path) -> std::io::Result<()> {
 
 fn default_config_toml() -> String {
     format!(
-        "[ui]\nwindow_width = {width}\nwindow_height = {height}\n\n[terminal]\nfont_selection = \"\"\nfont_size = {font_size:.1}\npadding_x = {padding_x:.1}\npadding_y = {padding_y:.1}\n\n[theme]\ncolor_scheme = \"Catppuccin Mocha\"\nforeground = \"#{fg:02x}{fg_g:02x}{fg_b:02x}\"\nbackground = \"#{bg:02x}{bg_g:02x}{bg_b:02x}\"\ncursor = \"#{cur:02x}{cur_g:02x}{cur_b:02x}\"\nbackground_opacity = {opacity:.2}\nblur_enabled = {blur_enabled}\nmacos_blur_radius = {macos_blur_radius}\n\n[shortcuts]\nnew_tab = \"{shortcut_new_tab}\"\nclose_tab = \"{shortcut_close_tab}\"\nopen_settings = \"{shortcut_open_settings}\"\nnext_tab = \"{shortcut_next_tab}\"\nprev_tab = \"{shortcut_prev_tab}\"\nquit = \"{shortcut_quit}\"\nfont_size_increase = \"{shortcut_font_size_increase}\"\nfont_size_decrease = \"{shortcut_font_size_decrease}\"\nfont_size_reset = \"{shortcut_font_size_reset}\"\n",
+        "[ui]\nwindow_width = {width}\nwindow_height = {height}\n\n[terminal]\nfont_selection = \"\"\nfont_size = {font_size:.1}\npadding_x = {padding_x:.1}\npadding_y = {padding_y:.1}\n\n[theme]\ncolor_scheme = \"Catppuccin Mocha\"\nforeground = \"#{fg:02x}{fg_g:02x}{fg_b:02x}\"\nbackground = \"#{bg:02x}{bg_g:02x}{bg_b:02x}\"\ncursor = \"#{cur:02x}{cur_g:02x}{cur_b:02x}\"\nbackground_opacity = {opacity:.2}\nblur_enabled = {blur_enabled}\nmacos_blur_radius = {macos_blur_radius}\n\n[shortcuts]\nnew_tab = \"{shortcut_new_tab}\"\nclose_tab = \"{shortcut_close_tab}\"\nopen_settings = \"{shortcut_open_settings}\"\nnext_tab = \"{shortcut_next_tab}\"\nprev_tab = \"{shortcut_prev_tab}\"\nquit = \"{shortcut_quit}\"\nfont_size_increase = \"{shortcut_font_size_increase}\"\nfont_size_decrease = \"{shortcut_font_size_decrease}\"\nfont_size_reset = \"{shortcut_font_size_reset}\"\nduplicate_tab = \"{shortcut_duplicate_tab}\"\n",
         width = DEFAULT_WINDOW_WIDTH as u32,
         height = DEFAULT_WINDOW_HEIGHT as u32,
         font_size = DEFAULT_TERMINAL_FONT_SIZE,
@@ -858,7 +875,8 @@ fn default_config_toml() -> String {
         shortcut_quit = DEFAULT_SHORTCUT_QUIT,
         shortcut_font_size_increase = DEFAULT_SHORTCUT_FONT_SIZE_INCREASE,
         shortcut_font_size_decrease = DEFAULT_SHORTCUT_FONT_SIZE_DECREASE,
-        shortcut_font_size_reset = DEFAULT_SHORTCUT_FONT_SIZE_RESET
+        shortcut_font_size_reset = DEFAULT_SHORTCUT_FONT_SIZE_RESET,
+        shortcut_duplicate_tab = DEFAULT_SHORTCUT_DUPLICATE_TAB
     )
 }
 

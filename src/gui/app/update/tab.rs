@@ -134,6 +134,7 @@ impl App {
             ShortcutAction::FontSizeReset => {
                 Some(self.set_font_size(crate::config::DEFAULT_TERMINAL_FONT_SIZE))
             }
+            ShortcutAction::DuplicateTab => Some(self.update(Message::DuplicateTab)),
         }
     }
 

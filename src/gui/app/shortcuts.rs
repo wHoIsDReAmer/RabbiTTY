@@ -73,6 +73,7 @@ pub(super) enum ShortcutAction {
     FontSizeIncrease,
     FontSizeDecrease,
     FontSizeReset,
+    DuplicateTab,
 }
 
 impl ShortcutAction {
@@ -107,6 +108,9 @@ impl ShortcutAction {
         }
         if shortcut_matches(&shortcuts.font_size_reset, key, modifiers) {
             return Some(Self::FontSizeReset);
+        }
+        if shortcut_matches(&shortcuts.duplicate_tab, key, modifiers) {
+            return Some(Self::DuplicateTab);
         }
         None
     }

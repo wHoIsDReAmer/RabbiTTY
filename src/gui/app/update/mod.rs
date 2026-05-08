@@ -126,6 +126,12 @@ impl App {
                     return self.create_tab(shell);
                 }
             }
+            Message::DuplicateTab => {
+                if let Some(tab) = self.tabs.get(self.active_tab) {
+                    let shell = tab.shell.clone();
+                    return self.create_tab(shell);
+                }
+            }
 
             // ── Settings ────────────────────────────────────────────
             Message::AddSshProfile => {
