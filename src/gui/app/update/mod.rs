@@ -229,12 +229,6 @@ impl App {
                     self.config.terminal.font_selection.as_deref(),
                 );
             }
-            Message::ApplySettings => {
-                return self.apply_settings(false);
-            }
-            Message::SaveSettings => {
-                return self.apply_settings(true);
-            }
             #[cfg(target_os = "macos")]
             Message::ConfirmRestartForBlur => {
                 return self.handle_confirm_restart();
@@ -249,6 +243,9 @@ impl App {
             // ── Terminal / PTY ──────────────────────────────────────
             Message::PtySenderReady(sender) => {
                 self.pty_sender = Some(sender);
+                if self.take_initial_shell_request() {
+                    return self.create_tab(ShellKind::Default);
+                }
             }
             Message::PtyOutput(event) => {
                 self.handle_pty_event(event);

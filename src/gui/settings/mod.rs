@@ -458,6 +458,7 @@ impl SettingsDraft {
         self.window_height = format!("{height:.0}");
     }
 
+    #[allow(dead_code)]
     pub fn to_updates(&self) -> AppConfigUpdates {
         let ansi_colors = crate::terminal::theme::find_preset(&self.color_scheme).map(|p| p.ansi);
 
@@ -502,6 +503,7 @@ impl SettingsDraft {
     }
 }
 
+#[allow(dead_code)]
 fn parse_f32(value: &str) -> Option<f32> {
     value.trim().parse::<f32>().ok()
 }
