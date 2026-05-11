@@ -1,9 +1,17 @@
 [package]
 name = "rabbitty"
-version = "0.1.0"
+version = "0.1.1"
 edition = "2024"
 authors = ["neverprogrammer@gmail.com"]
 rust-version = "1.92"
+description = "Fast, lean, cross-platform terminal emulator."
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/wHoIsDReAmer/RabbiTTY"
+homepage = "https://github.com/wHoIsDReAmer/RabbiTTY"
+readme = "README.md"
+keywords = ["terminal", "ssh", "emulator", "gui"]
+categories = ["command-line-utilities", "gui"]
+exclude = [".github/"]
 
 [profile.release]
 lto = true
