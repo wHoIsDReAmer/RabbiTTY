@@ -26,11 +26,15 @@ impl App {
 
         let resize_task = self.apply_updates_to_runtime(updates);
 
-        if save && let Err(err) = self.config.save() {
-            eprintln!("Failed to save config: {err}");
+        if save {
+            self.queue_config_save();
         }
 
         resize_task
+    }
+
+    pub(super) fn queue_config_save(&self) {
+        let _ = self.config_save_tx.send(self.config.clone());
     }
 
     pub(super) fn apply_updates_to_runtime(&mut self, updates: AppConfigUpdates) -> Task<Message> {

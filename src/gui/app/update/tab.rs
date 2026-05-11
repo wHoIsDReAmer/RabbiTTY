@@ -149,9 +149,7 @@ impl App {
             ..Default::default()
         };
         let task = self.apply_updates_to_runtime(updates);
-        if let Err(err) = self.config.save() {
-            eprintln!("Failed to save config: {err}");
-        }
+        self.queue_config_save();
         task
     }
 

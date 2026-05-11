@@ -102,11 +102,10 @@ impl App {
         self.config.apply_updates(updates);
         self.settings_draft
             .sync_window_size(self.config.ui.window_width, self.config.ui.window_height);
-        if ((self.config.ui.window_width - previous_width).abs() > f32::EPSILON
-            || (self.config.ui.window_height - previous_height).abs() > f32::EPSILON)
-            && let Err(err) = self.config.save()
+        if (self.config.ui.window_width - previous_width).abs() > f32::EPSILON
+            || (self.config.ui.window_height - previous_height).abs() > f32::EPSILON
         {
-            eprintln!("Failed to save config: {err}");
+            self.queue_config_save();
         }
 
         let (cols, rows) = self.grid_for_size(size);
