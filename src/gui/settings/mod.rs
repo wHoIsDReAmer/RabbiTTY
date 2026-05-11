@@ -276,18 +276,6 @@ impl SettingsDraft {
         }
     }
 
-    /// Load passwords from OS keychain into SSH profile drafts.
-    /// Call this only when the user opens SSH settings, not at app startup.
-    pub fn load_ssh_passwords_from_keychain(&mut self, profiles: &[SshProfile]) {
-        for (draft, profile) in self.ssh_profiles.iter_mut().zip(profiles.iter()) {
-            if draft.password.is_empty()
-                && let Some(pw) = crate::keychain::get_password(&profile.host, &profile.user)
-            {
-                draft.password = pw;
-            }
-        }
-    }
-
     #[cfg(test)]
     pub fn update_ssh_profile(&mut self, index: usize, field: SshProfileField, value: String) {
         self.ssh_profiles_error = None;
@@ -334,7 +322,14 @@ impl SettingsDraft {
         if let Some(profile) = self.ssh_profiles.get(index) {
             self.ssh_profiles_error = None;
             self.ssh_profile_modal_mode = Some(SshProfileModalMode::Edit(index));
-            self.ssh_profile_modal_draft = profile.clone();
+            let mut draft = profile.clone();
+            if matches!(draft.auth_method, SshAuthMethod::Password)
+                && draft.password.is_empty()
+                && let Some(pw) = crate::keychain::get_password(&draft.host, &draft.user)
+            {
+                draft.password = pw;
+            }
+            self.ssh_profile_modal_draft = draft;
             self.ssh_connection_test_status = SshConnectionTestStatus::Idle;
         }
     }
@@ -369,23 +364,23 @@ impl SettingsDraft {
         };
     }
 
-    pub fn save_ssh_profile_modal(&mut self) -> Result<(), String> {
+    pub fn save_ssh_profile_modal(&mut self) -> Result<Option<SshProfile>, String> {
         if self.ssh_profile_modal_mode.is_none() {
-            return Ok(());
+            return Ok(None);
         }
-        if self.ssh_profile_modal_draft.to_profile().is_none() {
+        let Some(profile) = self.ssh_profile_modal_draft.to_profile() else {
             let message = "SSH profile needs a Host before saving.".to_string();
             self.ssh_profiles_error = Some(message.clone());
             return Err(message);
-        }
+        };
 
         match self.ssh_profile_modal_mode {
             Some(SshProfileModalMode::Create) => {
                 self.ssh_profiles.push(self.ssh_profile_modal_draft.clone());
             }
             Some(SshProfileModalMode::Edit(index)) => {
-                if let Some(profile) = self.ssh_profiles.get_mut(index) {
-                    *profile = self.ssh_profile_modal_draft.clone();
+                if let Some(slot) = self.ssh_profiles.get_mut(index) {
+                    *slot = self.ssh_profile_modal_draft.clone();
                 }
             }
             None => {}
@@ -393,7 +388,7 @@ impl SettingsDraft {
 
         self.close_ssh_profile_modal();
         self.ssh_profiles_error = None;
-        Ok(())
+        Ok(Some(profile))
     }
 
     pub fn apply_ssh_profiles_to(&mut self, profiles: &mut Vec<SshProfile>) -> Result<(), String> {

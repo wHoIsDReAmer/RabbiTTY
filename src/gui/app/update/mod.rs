@@ -3,7 +3,7 @@ mod tab;
 mod terminal;
 
 use super::{App, Message, SETTINGS_TAB_INDEX};
-use crate::gui::settings::{SettingsCategory, SettingsDraft, SettingsField};
+use crate::gui::settings::{SettingsDraft, SettingsField};
 use crate::gui::tab::ShellKind;
 use iced::keyboard::{Key, key::Named};
 use iced::time::Instant;
@@ -28,8 +28,6 @@ impl App {
     }
 
     fn save_ssh_profiles(&mut self) {
-        self.settings_draft
-            .load_ssh_passwords_from_keychain(&self.config.ssh_profiles);
         if let Err(err) = self
             .settings_draft
             .apply_ssh_profiles_to(&mut self.config.ssh_profiles)
@@ -38,19 +36,9 @@ impl App {
             return;
         }
 
-        for profile in &self.config.ssh_profiles {
-            if let Some(ref pw) = profile.password {
-                crate::keychain::set_password(&profile.host, &profile.user, pw);
-            } else {
-                crate::keychain::delete_password(&profile.host, &profile.user);
-            }
-        }
-
         match self.config.save() {
             Ok(()) => {
                 self.settings_draft = SettingsDraft::from_config(&self.config);
-                self.settings_draft
-                    .load_ssh_passwords_from_keychain(&self.config.ssh_profiles);
                 self.settings_draft.set_ssh_profiles_saved();
             }
             Err(err) => {
@@ -187,17 +175,24 @@ impl App {
                 self.settings_draft.close_ssh_profile_modal();
             }
             Message::SaveSshProfileModal => match self.settings_draft.save_ssh_profile_modal() {
-                Ok(()) => self.save_ssh_profiles(),
+                Ok(Some(profile)) => {
+                    match profile.password.as_deref() {
+                        Some(pw) => {
+                            crate::keychain::set_password(&profile.host, &profile.user, pw);
+                        }
+                        None => {
+                            crate::keychain::delete_password(&profile.host, &profile.user);
+                        }
+                    }
+                    self.save_ssh_profiles();
+                }
+                Ok(None) => {}
                 Err(err) => eprintln!("Failed to update SSH profile draft: {err}"),
             },
             Message::OpenSettingsTab => {
                 self.settings_open = true;
                 self.active_tab = SETTINGS_TAB_INDEX;
                 self.settings_draft = SettingsDraft::from_config(&self.config);
-                if matches!(self.settings_category, SettingsCategory::Ssh) {
-                    self.settings_draft
-                        .load_ssh_passwords_from_keychain(&self.config.ssh_profiles);
-                }
             }
             Message::SelectSettingsCategory(category) => {
                 self.settings_category = category;
@@ -205,10 +200,6 @@ impl App {
                     self.settings_open = true;
                     self.active_tab = SETTINGS_TAB_INDEX;
                     self.settings_draft = SettingsDraft::from_config(&self.config);
-                }
-                if matches!(category, SettingsCategory::Ssh) {
-                    self.settings_draft
-                        .load_ssh_passwords_from_keychain(&self.config.ssh_profiles);
                 }
             }
             Message::SettingsInputChanged(field, value) => {
