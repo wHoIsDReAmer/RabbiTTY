@@ -72,7 +72,7 @@ jobs:
           - id: macos-arm64
             runner: macos-14
             target: aarch64-apple-darwin
-            archive: tar.gz
+            archive: app
             binary_name: rabbitty
     steps:
       - uses: actions/checkout@v4
@@ -85,8 +85,16 @@ jobs:
           rustup default 1.92
           rustup target add ${{ matrix.target }}
 
+      - name: Install cargo-bundle (macOS)
+        if: matrix.id == 'macos-arm64'
+        run: cargo install cargo-bundle --locked --version 0.6.0
+
       - name: Build release binary
         run: cargo build --locked --release --target ${{ matrix.target }}
+
+      - name: Build macOS .app bundle
+        if: matrix.id == 'macos-arm64'
+        run: cargo bundle --release --target ${{ matrix.target }}
 
       - name: Package archive (unix)
         id: package_unix
@@ -123,11 +131,31 @@ jobs:
 
           "archive=$archivePath" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
 
+      - name: Package macOS .app
+        id: package_macos_app
+        if: matrix.archive == 'app'
+        shell: bash
+        env:
+          RELEASE_TAG: ${{ needs.prepare.outputs.tag }}
+        run: |
+          set -euo pipefail
+          app_path="target/${{ matrix.target }}/release/bundle/osx/Rabbitty.app"
+          if [ ! -d "${app_path}" ]; then
+            echo "Bundle not found at ${app_path}" >&2
+            exit 1
+          fi
+          package_root="dist/${BIN_NAME}-${RELEASE_TAG}-${{ matrix.id }}"
+          mkdir -p "${package_root}"
+          cp -R "${app_path}" "${package_root}/"
+          archive_path="${package_root}.zip"
+          (cd "${package_root}" && zip -r "../$(basename ${archive_path})" Rabbitty.app)
+          echo "archive=${archive_path}" >> "$GITHUB_OUTPUT"
+
       - name: Upload workflow artifact
         uses: actions/upload-artifact@v4
         with:
           name: release-${{ matrix.id }}
-          path: ${{ steps.package_unix.outputs.archive || steps.package_windows.outputs.archive }}
+          path: ${{ steps.package_unix.outputs.archive || steps.package_windows.outputs.archive || steps.package_macos_app.outputs.archive }}
           if-no-files-found: error
           retention-days: 14
 
