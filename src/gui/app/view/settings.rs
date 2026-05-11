@@ -1,5 +1,4 @@
 use super::super::{App, Message};
-use crate::gui::components::{button_primary, button_secondary};
 use crate::gui::settings::{self, SettingsCategory};
 use crate::gui::theme::{RADIUS_NORMAL, SPACING_LARGE, SPACING_NORMAL, SPACING_SMALL};
 use iced::widget::{button, column, container, row, scrollable, text};
@@ -85,27 +84,11 @@ impl App {
         .align_y(iced::Alignment::Center)
         .spacing(SPACING_SMALL);
 
-        let header: Element<Message> = if matches!(self.settings_category, SettingsCategory::Ssh) {
-            row![breadcrumb, container("").width(Length::Fill),]
-                .align_y(iced::Alignment::Center)
-                .spacing(SPACING_NORMAL)
-                .width(Length::Fill)
-                .into()
-        } else {
-            row![
-                breadcrumb,
-                container("").width(Length::Fill),
-                row![
-                    button_secondary("Apply", palette).on_press(Message::ApplySettings),
-                    button_primary("Save", palette).on_press(Message::SaveSettings),
-                ]
-                .spacing(SPACING_SMALL)
-            ]
+        let header: Element<Message> = row![breadcrumb, container("").width(Length::Fill),]
             .align_y(iced::Alignment::Center)
             .spacing(SPACING_NORMAL)
             .width(Length::Fill)
-            .into()
-        };
+            .into();
 
         let body_content = container(settings::view_category(
             self.settings_category,

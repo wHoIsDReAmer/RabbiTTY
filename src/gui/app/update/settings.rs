@@ -5,6 +5,7 @@ use crate::terminal::TerminalTheme;
 use iced::{Size, Task, window};
 
 impl App {
+    #[allow(dead_code)]
     pub(super) fn apply_settings(&mut self, save: bool) -> Task<Message> {
         let updates = self.settings_draft.to_updates();
 

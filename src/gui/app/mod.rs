@@ -33,8 +33,6 @@ pub enum Message {
     SelectSettingsCategory(SettingsCategory),
     SettingsInputChanged(SettingsField, String),
     SettingsBlurToggled(bool),
-    ApplySettings,
-    SaveSettings,
     AddSshProfile,
     EditSshProfile(usize),
     RequestRemoveSshProfile(usize),
@@ -118,6 +116,7 @@ pub struct App {
     pub(super) available_shells: Vec<ShellKind>,
     pub(super) config: AppConfig,
     pub(super) pty_sender: Option<mpsc::UnboundedSender<OutputEvent>>,
+    pub(super) initial_shell_opened: bool,
     pub(super) next_tab_id: u64,
     pub(super) tab_bar_scroll_x: f32,
     pub(super) ignore_scrollable_sync: u8,
@@ -169,6 +168,7 @@ impl App {
             available_shells: discover_available_shells(),
             config,
             pty_sender: None,
+            initial_shell_opened: false,
             next_tab_id: 1,
             tab_bar_scroll_x: 0.0,
             ignore_scrollable_sync: 0,
@@ -226,6 +226,15 @@ impl App {
 
     pub(super) fn theme_text_color(&self) -> iced::Color {
         theme_color(self.config.theme.foreground, 1.0)
+    }
+
+    pub(in crate::gui) fn take_initial_shell_request(&mut self) -> bool {
+        if self.initial_shell_opened {
+            return false;
+        }
+
+        self.initial_shell_opened = true;
+        true
     }
 }
 
@@ -305,4 +314,17 @@ fn build_font_combo_state(
         .and_then(|v| filtered.iter().position(|o| o.value == v));
     let selection = selection_idx.map(|i| &filtered[i]);
     combo_box::State::with_selection(filtered.clone(), selection)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn initial_shell_request_is_consumed_once() {
+        let mut app = App::new(AppConfig::default());
+
+        assert!(app.take_initial_shell_request());
+        assert!(!app.take_initial_shell_request());
+    }
 }
