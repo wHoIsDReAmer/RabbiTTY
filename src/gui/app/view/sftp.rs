@@ -166,8 +166,12 @@ fn drawer_body<'a>(
             palette,
         );
     }
+
+    let parent_element =
+        sftp::parent_path(&state.current_path).map(|p| parent_row(tab_id, p, palette));
+
     if state.entries.is_empty() {
-        return centered_message(
+        let empty = centered_message(
             "Empty directory",
             Color {
                 a: 0.5,
@@ -175,11 +179,18 @@ fn drawer_body<'a>(
             },
             palette,
         );
+        return match parent_element {
+            Some(parent) => column(vec![parent, empty])
+                .width(Length::Fill)
+                .height(Length::Fill)
+                .into(),
+            None => empty,
+        };
     }
 
     let mut rows: Vec<Element<Message>> = Vec::with_capacity(state.entries.len() + 1);
-    if let Some(parent) = sftp::parent_path(&state.current_path) {
-        rows.push(parent_row(tab_id, parent, palette));
+    if let Some(parent) = parent_element {
+        rows.push(parent);
     }
     for entry in &state.entries {
         rows.push(entry_row(state, tab_id, entry, palette));
