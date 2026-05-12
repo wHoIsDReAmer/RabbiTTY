@@ -95,6 +95,57 @@ impl Selection {
     }
 }
 
+#[cfg(test)]
+mod selection_tests {
+    use super::{GridPos, Selection};
+
+    fn sel(start_row: usize, end_row: usize, anchor: usize) -> Selection {
+        Selection {
+            start: GridPos {
+                row: start_row,
+                col: 0,
+            },
+            end: GridPos {
+                row: end_row,
+                col: 9,
+            },
+            anchor_offset: anchor,
+        }
+    }
+
+    #[test]
+    fn highlight_follows_content_when_scrolling_up() {
+        // Anchored at offset 0, selection covers rows 5..10.
+        let s = sel(5, 10, 0);
+        // At offset 3 (scrolled up by 3) the content moved down by 3, so the
+        // highlight should now cover viewport rows 8..13.
+        assert!(!s.contains_at(7, 5, 3));
+        assert!(s.contains_at(8, 5, 3));
+        assert!(s.contains_at(13, 5, 3));
+        assert!(!s.contains_at(14, 5, 3));
+    }
+
+    #[test]
+    fn highlight_follows_content_when_scrolling_down() {
+        // Anchored at offset 5, selection covers rows 5..10.
+        let s = sel(5, 10, 5);
+        // Scrolling down to offset 2 (delta = -3) shifts highlight up by 3.
+        assert!(!s.contains_at(1, 5, 2));
+        assert!(s.contains_at(2, 5, 2));
+        assert!(s.contains_at(7, 5, 2));
+        assert!(!s.contains_at(8, 5, 2));
+    }
+
+    #[test]
+    fn highlight_drops_off_when_anchor_above_viewport() {
+        // delta=10, anchor row stored as 0. Viewport row 0 maps to -10 → false.
+        let s = sel(0, 2, 0);
+        assert!(!s.contains_at(0, 5, 10));
+        assert!(s.contains_at(10, 5, 10));
+        assert!(s.contains_at(12, 5, 10));
+    }
+}
+
 #[derive(Debug, Clone, Copy)]
 pub struct CellVisual {
     pub ch: char,
