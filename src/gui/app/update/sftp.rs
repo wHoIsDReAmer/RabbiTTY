@@ -80,6 +80,10 @@ pub(super) fn apply_sftp_event(state: &mut SftpDrawerState, event: sftp::Event) 
             if let Some(row) = state.transfers.iter_mut().find(|row| row.path == path) {
                 row.finished = true;
             }
+            if let Some(tx) = state.command_tx.clone() {
+                let _ = tx.unbounded_send(sftp::Command::List(state.current_path.clone()));
+                state.loading = true;
+            }
         }
         sftp::Event::Mutated { .. } => {
             if let Some(tx) = state.command_tx.clone() {
