@@ -1,3 +1,5 @@
+pub mod history;
+
 use alacritty_terminal::event::{OnResize, WindowSize};
 use alacritty_terminal::tty::{self, Options, Shell};
 #[cfg(windows)]

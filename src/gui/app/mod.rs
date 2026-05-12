@@ -4,7 +4,7 @@ use crate::gui::settings::{
 };
 use crate::gui::tab::{ShellKind, TerminalTab, discover_available_shells};
 use crate::session::OutputEvent;
-use crate::session_history::SessionHistory;
+use crate::session::history::SessionHistory;
 use crate::terminal::font::discover_system_terminal_fonts;
 use iced::Animation;
 use iced::Size;

@@ -251,11 +251,11 @@ impl App {
             for (i, entry) in self.session_history.entries.iter().enumerate() {
                 let name = entry.display_name.clone();
                 let kind_label = match &entry.kind {
-                    crate::session_history::SessionKind::Default => {
+                    crate::session::history::SessionKind::Default => {
                         t!("session_kind.default_shell")
                     }
-                    crate::session_history::SessionKind::Shell { .. } => t!("session_kind.shell"),
-                    crate::session_history::SessionKind::Ssh { .. } => t!("session_kind.ssh"),
+                    crate::session::history::SessionKind::Shell { .. } => t!("session_kind.shell"),
+                    crate::session::history::SessionKind::Ssh { .. } => t!("session_kind.ssh"),
                 };
 
                 let label_col = column![

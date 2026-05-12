@@ -1,3 +1,4 @@
+mod ansi;
 pub mod sftp;
 
 use crate::config::{SshAuthMethod, SshProfile};
@@ -14,8 +15,6 @@ use std::task::{Context, Poll};
 use tokio::io::{AsyncRead, AsyncWrite, ReadBuf};
 use tokio::process::{Child, ChildStdin, ChildStdout, Command};
 use tokio::sync::mpsc as tokio_mpsc;
-
-use crate::ansi;
 
 fn ssh_badge() -> String {
     ansi::badge("SSH")

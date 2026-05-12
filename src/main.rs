@@ -1,4 +1,3 @@
-mod ansi;
 mod config;
 #[macro_use]
 mod i18n;
@@ -6,7 +5,6 @@ mod gui;
 mod keychain;
 mod platform;
 mod session;
-mod session_history;
 mod ssh;
 mod terminal;
 
