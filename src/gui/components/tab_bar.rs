@@ -9,6 +9,7 @@ pub fn tab_bar<'a>(
     tabs: impl Iterator<Item = (&'a str, usize, bool)>,
     on_add: Message,
     on_settings: Message,
+    sftp_toggle: Option<(Message, bool)>,
     bar_alpha: f32,
     tab_alpha: f32,
     dragging_tab: Option<usize>,
@@ -83,6 +84,40 @@ pub fn tab_bar<'a>(
         .padding([6, 10])
         .style(icon_style);
 
+    let sftp_btn: Option<Element<Message>> = sftp_toggle.map(|(msg, active)| {
+        let label_color = if active {
+            palette.accent
+        } else {
+            palette.text_secondary
+        };
+        let sftp_style = move |_theme: &Theme, status: button::Status| button::Style {
+            background: Some(Background::Color(match status {
+                button::Status::Hovered => Color {
+                    a: 0.12,
+                    ..palette.text
+                },
+                _ if active => Color {
+                    a: 0.08,
+                    ..palette.accent
+                },
+                _ => Color::TRANSPARENT,
+            })),
+            text_color: if active { palette.accent } else { label_color },
+            border: Border {
+                radius: 6.0.into(),
+                width: 0.0,
+                color: Color::TRANSPARENT,
+            },
+            shadow: iced::Shadow::default(),
+            snap: true,
+        };
+        button(text("\u{21C5}").size(13))
+            .on_press(msg)
+            .padding([6, 10])
+            .style(sftp_style)
+            .into()
+    });
+
     let tabs_row = row(tab_elements)
         .spacing(2)
         .align_y(iced::Alignment::Center);
@@ -148,15 +183,27 @@ pub fn tab_bar<'a>(
         .spacing(0)
     };
 
+    let mut trailing: Vec<Element<Message>> = Vec::new();
+    if let Some(btn) = sftp_btn {
+        trailing.push(btn);
+    }
+    trailing.push(add_btn.into());
+    trailing.push(settings_btn.into());
+
     #[cfg(target_os = "windows")]
-    let content = row![tabs_scroll, add_btn, settings_btn, window_controls]
-        .spacing(2)
-        .align_y(iced::Alignment::Center);
+    let content = {
+        let mut items: Vec<Element<Message>> = vec![tabs_scroll.into()];
+        items.extend(trailing);
+        items.push(window_controls.into());
+        row(items).spacing(2).align_y(iced::Alignment::Center)
+    };
 
     #[cfg(not(target_os = "windows"))]
-    let content = row![tabs_scroll, add_btn, settings_btn]
-        .spacing(2)
-        .align_y(iced::Alignment::Center);
+    let content = {
+        let mut items: Vec<Element<Message>> = vec![tabs_scroll.into()];
+        items.extend(trailing);
+        row(items).spacing(2).align_y(iced::Alignment::Center)
+    };
 
     let bar_alpha = bar_alpha.clamp(0.0, 1.0);
     let tab_bar_container = container(content)

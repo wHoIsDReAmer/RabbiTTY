@@ -1,6 +1,7 @@
 #[cfg(target_os = "macos")]
 mod dialog;
 mod settings;
+mod sftp;
 mod shell_picker;
 
 #[cfg(target_os = "macos")]
@@ -43,10 +44,19 @@ impl App {
         let ui_alpha = self.config.theme.background_opacity;
         let bar_alpha = (ui_alpha * 0.9).clamp(0.0, 1.0);
         let tab_alpha = (ui_alpha * 0.6).clamp(0.0, 1.0);
+        let sftp_toggle = if self.active_tab != SETTINGS_TAB_INDEX {
+            self.tabs.get(self.active_tab).and_then(|tab| {
+                matches!(tab.shell, crate::gui::tab::ShellKind::Ssh(_))
+                    .then_some((Message::SftpToggleDrawer, tab.sftp.open))
+            })
+        } else {
+            None
+        };
         let tab_row = tab_bar(
             tabs_iter,
             Message::OpenShellPicker,
             Message::OpenSettingsTab,
+            sftp_toggle,
             bar_alpha,
             tab_alpha,
             self.dragging_tab,
@@ -165,7 +175,28 @@ impl App {
             terminal_widget.into()
         };
 
-        ImeEnabled::new(terminal_view)
+        let with_drawer: Element<Message> = if active_tab.sftp.open {
+            let height_ratio = active_tab.sftp.height_ratio.clamp(0.15, 0.85);
+            let bottom_portion = ((height_ratio * 1000.0).round() as u16).max(1);
+            let top_portion = 1000u16.saturating_sub(bottom_portion).max(1);
+            let drawer_panel = container(sftp::drawer(&active_tab.sftp, self.palette))
+                .width(Length::Fill)
+                .height(Length::FillPortion(bottom_portion));
+            let overlay = column![
+                iced::widget::Space::new().height(Length::FillPortion(top_portion)),
+                drawer_panel,
+            ]
+            .width(Length::Fill)
+            .height(Length::Fill);
+            stack![terminal_view, overlay]
+                .width(Length::Fill)
+                .height(Length::Fill)
+                .into()
+        } else {
+            terminal_view
+        };
+
+        ImeEnabled::new(with_drawer)
             .preedit(self.ime_preedit.clone())
             .into()
     }

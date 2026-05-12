@@ -123,6 +123,14 @@ impl App {
                     return self.create_tab(shell);
                 }
             }
+            Message::SftpToggleDrawer => {
+                if self.active_tab != SETTINGS_TAB_INDEX
+                    && let Some(tab) = self.tabs.get_mut(self.active_tab)
+                    && matches!(tab.shell, crate::gui::tab::ShellKind::Ssh(_))
+                {
+                    tab.sftp.open = !tab.sftp.open;
+                }
+            }
             Message::ShowTabContextMenu(index) => {
                 self.tab_context_menu = Some(index);
             }

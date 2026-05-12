@@ -48,6 +48,7 @@ pub enum Message {
     CreateSshTab(usize),
     LaunchFromHistory(usize),
     DuplicateTab,
+    SftpToggleDrawer,
     ShowTabContextMenu(usize),
     CloseTabContextMenu,
     CursorMoved(iced::Point),
