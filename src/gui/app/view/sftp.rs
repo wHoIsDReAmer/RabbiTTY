@@ -5,10 +5,10 @@ use crate::gui::sftp::{self, SftpDrawerState};
 use crate::gui::theme::{Palette, RADIUS_NORMAL, RADIUS_SMALL, SPACING_NORMAL, SPACING_SMALL};
 use crate::ssh::sftp::Entry;
 use iced::widget::{Space, button, column, container, row, scrollable, text};
-use iced::{Alignment, Background, Border, Color, Element, Length, Theme};
+use iced::{Alignment, Background, Border, Color, Element, Length, Shadow, Theme, Vector};
 
-const DRAWER_TOP_BORDER: f32 = 1.0;
-const ROW_HEIGHT: f32 = 26.0;
+const ROW_HEIGHT: f32 = 24.0;
+const HEADER_HEIGHT: f32 = 32.0;
 
 pub fn drawer<'a>(
     state: &'a SftpDrawerState,
@@ -16,29 +16,48 @@ pub fn drawer<'a>(
     palette: Palette,
 ) -> Element<'a, Message> {
     let header = drawer_header(state, palette);
+    let separator = container("")
+        .width(Length::Fill)
+        .height(Length::Fixed(1.0))
+        .style(move |_theme: &Theme| container::Style {
+            background: Some(Background::Color(Color {
+                a: 0.08,
+                ..palette.text
+            })),
+            ..Default::default()
+        });
     let body = drawer_body(state, tab_id, palette);
 
     container(
-        column(vec![header, body])
-            .spacing(SPACING_SMALL)
+        column(vec![header, separator.into(), body])
             .width(Length::Fill)
             .height(Length::Fill),
     )
-    .padding([SPACING_NORMAL, SPACING_NORMAL])
+    .padding([SPACING_SMALL, SPACING_NORMAL])
     .width(Length::Fill)
     .height(Length::Fill)
     .style(move |_theme: &Theme| container::Style {
         background: Some(Background::Color(Color {
-            a: 0.96,
+            a: 0.98,
             ..palette.surface
         })),
         border: Border {
-            radius: 0.0.into(),
-            width: DRAWER_TOP_BORDER,
-            color: Color {
-                a: 0.2,
-                ..palette.text
+            radius: iced::border::Radius {
+                top_left: RADIUS_NORMAL,
+                top_right: RADIUS_NORMAL,
+                bottom_right: 0.0,
+                bottom_left: 0.0,
             },
+            width: 0.0,
+            color: Color::TRANSPARENT,
+        },
+        shadow: Shadow {
+            color: Color {
+                a: 0.3,
+                ..Color::BLACK
+            },
+            offset: Vector::new(0.0, -2.0),
+            blur_radius: 12.0,
         },
         ..Default::default()
     })
@@ -46,23 +65,31 @@ pub fn drawer<'a>(
 }
 
 fn drawer_header<'a>(state: &'a SftpDrawerState, palette: Palette) -> Element<'a, Message> {
-    let path_label = text(if state.current_path.is_empty() {
-        "."
+    let path = if state.current_path.is_empty() {
+        "~"
     } else {
         state.current_path.as_str()
-    })
-    .size(13)
-    .color(palette.text);
+    };
+    let path_label = text(path).size(12).color(Color {
+        a: 0.8,
+        ..palette.text
+    });
 
     let status = if state.opening {
-        Some("Opening…")
+        Some("opening")
     } else if state.loading {
-        Some("Loading…")
+        Some("loading")
     } else {
         None
     };
-    let status_text: Element<Message> = match status {
-        Some(s) => text(s).size(12).color(palette.text_secondary).into(),
+    let status_el: Element<Message> = match status {
+        Some(s) => text(s)
+            .size(11)
+            .color(Color {
+                a: 0.5,
+                ..palette.text
+            })
+            .into(),
         None => Space::new()
             .width(Length::Shrink)
             .height(Length::Shrink)
@@ -72,40 +99,46 @@ fn drawer_header<'a>(state: &'a SftpDrawerState, palette: Palette) -> Element<'a
     let icon_style = move |_theme: &Theme, status: button::Status| button::Style {
         background: Some(Background::Color(match status {
             button::Status::Hovered => Color {
-                a: 0.12,
+                a: 0.08,
                 ..palette.text
             },
             _ => Color::TRANSPARENT,
         })),
-        text_color: palette.text_secondary,
+        text_color: Color {
+            a: 0.7,
+            ..palette.text
+        },
         border: Border {
-            radius: RADIUS_NORMAL.into(),
+            radius: RADIUS_SMALL.into(),
             width: 0.0,
             color: Color::TRANSPARENT,
         },
-        shadow: iced::Shadow::default(),
+        shadow: Shadow::default(),
         snap: true,
     };
-    let refresh_btn = button(text("\u{27F3}").size(13))
+    let refresh_btn = button(text("\u{27F3}").size(12))
         .on_press(Message::SftpRefresh)
-        .padding([4, 10])
+        .padding([3, 8])
         .style(icon_style);
-    let close_btn = button(text("\u{2715}").size(12))
+    let close_btn = button(text("\u{2715}").size(11))
         .on_press(Message::SftpToggleDrawer)
-        .padding([4, 10])
+        .padding([3, 8])
         .style(icon_style);
 
-    row![
-        text("SFTP").size(14).color(palette.accent),
-        path_label,
-        Space::new().width(Length::Fill),
-        status_text,
-        refresh_btn,
-        close_btn,
-    ]
-    .spacing(SPACING_NORMAL)
-    .align_y(Alignment::Center)
-    .width(Length::Fill)
+    container(
+        row![
+            path_label,
+            Space::new().width(Length::Fill),
+            status_el,
+            refresh_btn,
+            close_btn,
+        ]
+        .spacing(SPACING_SMALL)
+        .align_y(Alignment::Center)
+        .width(Length::Fill),
+    )
+    .height(Length::Fixed(HEADER_HEIGHT))
+    .center_y(Length::Fixed(HEADER_HEIGHT))
     .into()
 }
 
@@ -115,20 +148,30 @@ fn drawer_body<'a>(
     palette: Palette,
 ) -> Element<'a, Message> {
     if let Some(error) = state.error.as_deref() {
-        return container(text(error).size(12).color(palette.error))
-            .padding([SPACING_NORMAL, 0.0])
-            .into();
+        return centered_message(error, palette.error, palette);
     }
-
     if state.opening || (state.loading && state.entries.is_empty()) {
-        return container(text("Loading…").size(12).color(palette.text_secondary))
-            .padding([SPACING_NORMAL, 0.0])
-            .width(Length::Fill)
-            .into();
+        return centered_message(
+            "Loading…",
+            Color {
+                a: 0.5,
+                ..palette.text
+            },
+            palette,
+        );
+    }
+    if state.entries.is_empty() {
+        return centered_message(
+            "Empty directory",
+            Color {
+                a: 0.5,
+                ..palette.text
+            },
+            palette,
+        );
     }
 
     let mut rows: Vec<Element<Message>> = Vec::with_capacity(state.entries.len() + 1);
-
     if let Some(parent) = sftp::parent_path(&state.current_path) {
         rows.push(parent_row(tab_id, parent, palette));
     }
@@ -136,24 +179,32 @@ fn drawer_body<'a>(
         rows.push(entry_row(state, tab_id, entry, palette));
     }
 
-    scrollable(
-        column(rows)
-            .spacing(2)
-            .width(Length::Fill)
-            .padding([SPACING_SMALL, 0.0]),
-    )
-    .style(crate::gui::theme::scrollbar_style(palette))
-    .width(Length::Fill)
-    .height(Length::Fill)
-    .into()
+    scrollable(column(rows).width(Length::Fill).padding([4.0, 0.0]))
+        .style(crate::gui::theme::scrollbar_style(palette))
+        .width(Length::Fill)
+        .height(Length::Fill)
+        .into()
+}
+
+fn centered_message<'a>(msg: &'a str, color: Color, _palette: Palette) -> Element<'a, Message> {
+    container(text(msg).size(12).color(color))
+        .center_x(Length::Fill)
+        .center_y(Length::Fill)
+        .into()
 }
 
 fn parent_row<'a>(tab_id: u64, parent: String, palette: Palette) -> Element<'a, Message> {
     let row_style = row_style_factory(palette);
     button(
         row![
-            text("\u{2191}").size(13).color(palette.text_secondary),
-            text("..").size(13).color(palette.text),
+            text("\u{2190}").size(11).color(Color {
+                a: 0.55,
+                ..palette.text
+            }),
+            text("..").size(12).color(Color {
+                a: 0.7,
+                ..palette.text
+            }),
         ]
         .spacing(SPACING_NORMAL)
         .align_y(Alignment::Center),
@@ -162,8 +213,9 @@ fn parent_row<'a>(tab_id: u64, parent: String, palette: Palette) -> Element<'a, 
         tab_id,
         path: parent,
     })
-    .padding([4.0, SPACING_NORMAL])
+    .padding([3.0, SPACING_NORMAL])
     .width(Length::Fill)
+    .height(Length::Fixed(ROW_HEIGHT))
     .style(row_style)
     .into()
 }
@@ -174,29 +226,48 @@ fn entry_row<'a>(
     entry: &'a Entry,
     palette: Palette,
 ) -> Element<'a, Message> {
-    let icon = if entry.is_dir {
-        "\u{1F4C1}"
+    let marker = if entry.is_dir {
+        "\u{25B8}"
     } else if entry.is_symlink {
         "\u{2937}"
     } else {
-        "\u{2024}"
+        " "
     };
-    let name_color = if entry.is_dir {
-        palette.accent
+    let marker_color = if entry.is_dir {
+        Color {
+            a: 0.6,
+            ..palette.text
+        }
     } else {
-        palette.text
+        Color {
+            a: 0.35,
+            ..palette.text
+        }
+    };
+    let name_color = Color {
+        a: if entry.is_dir { 0.95 } else { 0.85 },
+        ..palette.text
     };
     let size_text = if entry.is_dir {
-        "—".to_string()
+        String::new()
     } else {
         humanize_bytes(entry.size)
     };
 
+    let name_with_suffix = if entry.is_dir {
+        format!("{}/", entry.name)
+    } else {
+        entry.name.clone()
+    };
+
     let row_content = row![
-        text(icon).size(13).color(palette.text_secondary),
-        text(entry.name.as_str()).size(13).color(name_color),
+        text(marker).size(11).color(marker_color),
+        text(name_with_suffix).size(12).color(name_color),
         Space::new().width(Length::Fill),
-        text(size_text).size(12).color(palette.text_secondary),
+        text(size_text).size(11).color(Color {
+            a: 0.5,
+            ..palette.text
+        }),
     ]
     .spacing(SPACING_NORMAL)
     .align_y(Alignment::Center);
@@ -210,10 +281,10 @@ fn entry_row<'a>(
     let row_style = row_style_factory(palette);
 
     let mut btn = button(row_content)
-        .padding([4.0, SPACING_NORMAL])
+        .padding([3.0, SPACING_NORMAL])
         .width(Length::Fill)
-        .style(row_style)
-        .height(Length::Fixed(ROW_HEIGHT));
+        .height(Length::Fixed(ROW_HEIGHT))
+        .style(row_style);
     if let Some(path) = target_path {
         btn = btn.on_press(Message::SftpNavigate { tab_id, path });
     }
@@ -224,7 +295,7 @@ fn row_style_factory(palette: Palette) -> impl Fn(&Theme, button::Status) -> but
     move |_theme: &Theme, status: button::Status| button::Style {
         background: Some(Background::Color(match status {
             button::Status::Hovered => Color {
-                a: 0.08,
+                a: 0.06,
                 ..palette.text
             },
             _ => Color::TRANSPARENT,
@@ -235,7 +306,7 @@ fn row_style_factory(palette: Palette) -> impl Fn(&Theme, button::Status) -> but
             width: 0.0,
             color: Color::TRANSPARENT,
         },
-        shadow: iced::Shadow::default(),
+        shadow: Shadow::default(),
         snap: true,
     }
 }
