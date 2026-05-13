@@ -151,7 +151,7 @@ impl App {
                 .width(Length::Fill)
                 .height(Length::Fixed(content_height));
 
-            let scroll_overlay = scrollable(scroll_content)
+            let scrollbar = scrollable(scroll_content)
                 .id(crate::gui::app::update::TERMINAL_SCROLLABLE_ID.clone())
                 .direction(scrollable::Direction::Vertical(
                     scrollable::Scrollbar::new().width(8).scroller_width(8),
@@ -162,16 +162,13 @@ impl App {
                     Message::TerminalScroll(rel.y)
                 })
                 .style(crate::gui::theme::scrollbar_style(self.palette))
-                .width(Length::Fixed(14.0))
+                .width(Length::Fixed(8.0))
                 .height(Length::Fill);
 
-            stack![
-                terminal_widget,
-                row![container("").width(Length::Fill), scroll_overlay].height(Length::Fill)
-            ]
-            .width(Length::Fill)
-            .height(Length::Fill)
-            .into()
+            row![terminal_widget, scrollbar]
+                .height(Length::Fill)
+                .width(Length::Fill)
+                .into()
         } else {
             terminal_widget.into()
         };
