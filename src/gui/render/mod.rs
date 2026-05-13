@@ -108,17 +108,15 @@ impl ShaderProgram<Message> for TerminalProgram {
                         let viewport_end = self.pixel_to_grid(pos, bounds);
                         // Translate the current viewport row back into the anchor frame
                         // so the selection follows content when the user scrolls.
-                        let delta =
-                            self.display_offset as isize - state.drag_anchor_offset as isize;
-                        let anchored_row = viewport_end.row as isize - delta;
-                        let end = GridPos {
-                            row: anchored_row.max(0) as usize,
-                            col: viewport_end.col,
-                        };
-                        if start != end {
+                        let delta = self.display_offset as i64 - state.drag_anchor_offset as i64;
+                        let anchored_row = viewport_end.row as i64 - delta;
+                        let start_row = start.row as i64;
+                        if start_row != anchored_row || start.col != viewport_end.col {
                             let sel = Selection {
-                                start,
-                                end,
+                                start_row,
+                                start_col: start.col,
+                                end_row: anchored_row,
+                                end_col: viewport_end.col,
                                 anchor_offset: state.drag_anchor_offset,
                             };
                             return Some(

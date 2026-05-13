@@ -41,84 +41,80 @@ pub struct GridPos {
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Selection {
-    pub start: GridPos,
-    pub end: GridPos,
-    /// `display_offset` at the moment the selection was anchored. Selection
-    /// rows are stored in this frame so they follow content during scrolls.
+    /// Anchor-frame row of the selection's start. Signed so the selection can
+    /// extend into scrollback (negative rows) once it crosses the top of the
+    /// viewport that was active when the drag started.
+    pub start_row: i64,
+    pub start_col: usize,
+    pub end_row: i64,
+    pub end_col: usize,
+    /// `display_offset` at the moment the selection was anchored.
     pub anchor_offset: usize,
 }
 
 impl Selection {
-    pub fn ordered(&self) -> (GridPos, GridPos) {
-        if self.start.row < self.end.row
-            || (self.start.row == self.end.row && self.start.col <= self.end.col)
+    pub fn ordered(&self) -> ((i64, usize), (i64, usize)) {
+        if self.start_row < self.end_row
+            || (self.start_row == self.end_row && self.start_col <= self.end_col)
         {
-            (self.start, self.end)
+            (
+                (self.start_row, self.start_col),
+                (self.end_row, self.end_col),
+            )
         } else {
-            (self.end, self.start)
+            (
+                (self.end_row, self.end_col),
+                (self.start_row, self.start_col),
+            )
         }
     }
 
-    /// Translate a current-viewport row back into the selection's anchor frame.
-    fn anchor_row(&self, viewport_row: usize, current_offset: usize) -> Option<usize> {
-        let delta = current_offset as isize - self.anchor_offset as isize;
-        let anchored = viewport_row as isize - delta;
-        if anchored < 0 {
-            None
-        } else {
-            Some(anchored as usize)
-        }
+    /// Map a current-viewport row back into the selection's anchor frame.
+    fn anchor_row(&self, viewport_row: usize, current_offset: usize) -> i64 {
+        let delta = current_offset as i64 - self.anchor_offset as i64;
+        viewport_row as i64 - delta
     }
 
     pub fn contains_at(&self, viewport_row: usize, col: usize, current_offset: usize) -> bool {
-        let Some(row) = self.anchor_row(viewport_row, current_offset) else {
-            return false;
-        };
-        let (start, end) = self.ordered();
-        if row < start.row || row > end.row {
+        let row = self.anchor_row(viewport_row, current_offset);
+        let ((start_row, start_col), (end_row, end_col)) = self.ordered();
+        if row < start_row || row > end_row {
             return false;
         }
-        if start.row == end.row {
-            return col >= start.col && col <= end.col;
+        if start_row == end_row {
+            return col >= start_col && col <= end_col;
         }
-        if row == start.row {
-            return col >= start.col;
+        if row == start_row {
+            return col >= start_col;
         }
-        if row == end.row {
-            return col <= end.col;
+        if row == end_row {
+            return col <= end_col;
         }
         true
     }
 
     pub fn is_empty(&self) -> bool {
-        self.start == self.end
+        self.start_row == self.end_row && self.start_col == self.end_col
     }
 }
 
 #[cfg(test)]
 mod selection_tests {
-    use super::{GridPos, Selection};
+    use super::Selection;
 
-    fn sel(start_row: usize, end_row: usize, anchor: usize) -> Selection {
+    fn sel(start_row: i64, end_row: i64, anchor: usize) -> Selection {
         Selection {
-            start: GridPos {
-                row: start_row,
-                col: 0,
-            },
-            end: GridPos {
-                row: end_row,
-                col: 9,
-            },
+            start_row,
+            start_col: 0,
+            end_row,
+            end_col: 9,
             anchor_offset: anchor,
         }
     }
 
     #[test]
     fn highlight_follows_content_when_scrolling_up() {
-        // Anchored at offset 0, selection covers rows 5..10.
         let s = sel(5, 10, 0);
-        // At offset 3 (scrolled up by 3) the content moved down by 3, so the
-        // highlight should now cover viewport rows 8..13.
         assert!(!s.contains_at(7, 5, 3));
         assert!(s.contains_at(8, 5, 3));
         assert!(s.contains_at(13, 5, 3));
@@ -127,9 +123,7 @@ mod selection_tests {
 
     #[test]
     fn highlight_follows_content_when_scrolling_down() {
-        // Anchored at offset 5, selection covers rows 5..10.
         let s = sel(5, 10, 5);
-        // Scrolling down to offset 2 (delta = -3) shifts highlight up by 3.
         assert!(!s.contains_at(1, 5, 2));
         assert!(s.contains_at(2, 5, 2));
         assert!(s.contains_at(7, 5, 2));
@@ -137,12 +131,25 @@ mod selection_tests {
     }
 
     #[test]
-    fn highlight_drops_off_when_anchor_above_viewport() {
-        // delta=10, anchor row stored as 0. Viewport row 0 maps to -10 → false.
-        let s = sel(0, 2, 0);
-        assert!(!s.contains_at(0, 5, 10));
-        assert!(s.contains_at(10, 5, 10));
-        assert!(s.contains_at(12, 5, 10));
+    fn highlight_extends_into_scrollback_for_negative_anchor_rows() {
+        // Drag started at (5, 9) and ended at (-3, 0) — natural diagonal
+        // selection sweeping up-left across the original viewport top.
+        let s = Selection {
+            start_row: 5,
+            start_col: 9,
+            end_row: -3,
+            end_col: 0,
+            anchor_offset: 0,
+        };
+        // At offset 0 the row -3 sits above the viewport so it isn't visible,
+        // but rows 0..5 are part of the selection.
+        assert!(s.contains_at(0, 5, 0));
+        assert!(s.contains_at(5, 5, 0));
+        assert!(!s.contains_at(6, 5, 0));
+        // Scrolled up by 3: anchor row -3 now sits at viewport row 0 and is
+        // the ordered-start of the selection (full row from col 0).
+        assert!(s.contains_at(0, 5, 3));
+        assert!(s.contains_at(8, 5, 3));
     }
 }
 
