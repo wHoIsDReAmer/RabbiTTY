@@ -1,4 +1,4 @@
-use crate::terminal::{CellVisual, GridPos, Selection, TerminalSize};
+use crate::terminal::{CellVisual, GridPos, Selection, SelectionPoint, TerminalSize};
 use iced::mouse;
 use iced::wgpu;
 use iced::widget::shader::Program as ShaderProgram;
@@ -26,6 +26,7 @@ pub struct TerminalProgram {
     pub clear_color: [f32; 4],
     pub selection: Option<Selection>,
     pub mouse_mode: bool,
+    pub display_offset: usize,
 }
 
 impl TerminalProgram {
@@ -53,9 +54,20 @@ impl TerminalProgram {
 pub struct TerminalShaderState {
     dragging: bool,
     drag_start: Option<GridPos>,
+    drag_anchor_offset: usize,
 }
 
 type Message = crate::gui::app::Message;
+
+/// Translate an absolute window-space cursor position into bounds-local
+/// coordinates clamped to the bounds rectangle. Used while dragging so a
+/// selection still updates after the cursor leaves the terminal area.
+fn clamp_to_bounds(absolute: Point, bounds: Rectangle) -> Point {
+    Point::new(
+        (absolute.x - bounds.x).clamp(0.0, bounds.width.max(0.0)),
+        (absolute.y - bounds.y).clamp(0.0, bounds.height.max(0.0)),
+    )
+}
 
 impl ShaderProgram<Message> for TerminalProgram {
     type State = TerminalShaderState;
@@ -84,12 +96,24 @@ impl ShaderProgram<Message> for TerminalProgram {
                     }
                     state.dragging = true;
                     state.drag_start = Some(grid_pos);
+                    state.drag_anchor_offset = self.display_offset;
                     return Some(Action::publish(Message::SelectionChanged(None)).and_capture());
                 }
             }
             Event::Mouse(mouse::Event::CursorMoved { .. }) => {
-                if let Some(pos) = cursor.position_in(bounds) {
-                    if self.mouse_mode && state.dragging {
+                // Use the absolute cursor position while dragging so the selection
+                // still extends after the cursor leaves the terminal bounds.
+                let pos_in = cursor.position_in(bounds);
+                let pos_dragging = state.dragging.then(|| {
+                    pos_in.unwrap_or_else(|| {
+                        cursor
+                            .position()
+                            .map(|p| clamp_to_bounds(p, bounds))
+                            .unwrap_or(Point::ORIGIN)
+                    })
+                });
+                if let Some(pos) = pos_dragging {
+                    if self.mouse_mode {
                         let grid_pos = self.pixel_to_grid(pos, bounds);
                         return Some(
                             Action::publish(Message::TerminalMouseDrag {
@@ -99,12 +123,25 @@ impl ShaderProgram<Message> for TerminalProgram {
                             .and_capture(),
                         );
                     }
-                    if state.dragging
-                        && let Some(start) = state.drag_start
-                    {
-                        let end = self.pixel_to_grid(pos, bounds);
+                    if let Some(drag_start) = state.drag_start {
+                        let viewport_end = self.pixel_to_grid(pos, bounds);
+                        // Translate the current viewport row back into the anchor frame
+                        // so the selection follows content when the user scrolls.
+                        let delta = self.display_offset as i64 - state.drag_anchor_offset as i64;
+                        let start = SelectionPoint {
+                            row: drag_start.row as i64,
+                            col: drag_start.col,
+                        };
+                        let end = SelectionPoint {
+                            row: viewport_end.row as i64 - delta,
+                            col: viewport_end.col,
+                        };
                         if start != end {
-                            let sel = Selection { start, end };
+                            let sel = Selection {
+                                start,
+                                end,
+                                anchor_offset: state.drag_anchor_offset,
+                            };
                             return Some(
                                 Action::publish(Message::SelectionChanged(Some(sel))).and_capture(),
                             );
@@ -158,6 +195,7 @@ impl ShaderProgram<Message> for TerminalProgram {
             terminal_font_selection: self.terminal_font_selection.clone(),
             terminal_font_size: self.terminal_font_size,
             selection: self.selection,
+            display_offset: self.display_offset,
         }
     }
 
@@ -187,6 +225,7 @@ pub struct TerminalPipeline {
     last_offset: [f32; 2],
     last_font_size: f32,
     last_selection: Option<Selection>,
+    last_display_offset: usize,
 }
 
 impl Pipeline for TerminalPipeline {
@@ -202,6 +241,7 @@ impl Pipeline for TerminalPipeline {
             last_offset: [0.0; 2],
             last_font_size: 0.0,
             last_selection: None,
+            last_display_offset: 0,
         }
     }
 }
@@ -216,6 +256,7 @@ pub struct TerminalPrimitive {
     terminal_font_selection: Option<String>,
     terminal_font_size: f32,
     selection: Option<Selection>,
+    display_offset: usize,
 }
 
 impl Primitive for TerminalPrimitive {
@@ -249,7 +290,8 @@ impl Primitive for TerminalPrimitive {
             && viewport == pipeline.last_viewport
             && offset == pipeline.last_offset
             && (font_size - pipeline.last_font_size).abs() < 0.01
-            && self.selection == pipeline.last_selection;
+            && self.selection == pipeline.last_selection
+            && self.display_offset == pipeline.last_display_offset;
 
         if unchanged {
             return;
@@ -262,24 +304,34 @@ impl Primitive for TerminalPrimitive {
         pipeline.last_offset = offset;
         pipeline.last_font_size = font_size;
         pipeline.last_selection = self.selection;
+        pipeline.last_display_offset = self.display_offset;
 
         let cells = self.cells.as_slice();
 
         pipeline
             .bg
             .update_uniforms(queue, cell_size, viewport, offset);
-        pipeline
-            .bg
-            .prepare_instances(device, queue, cells, self.selection.as_ref());
+        pipeline.bg.prepare_instances(
+            device,
+            queue,
+            cells,
+            self.selection.as_ref(),
+            self.display_offset,
+        );
 
         pipeline
             .text
             .apply_terminal_font_selection(device, self.terminal_font_selection.as_deref());
         pipeline.text.set_requested_font_size(font_size);
         pipeline.text.update_uniforms(queue, viewport, offset);
-        pipeline
-            .text
-            .prepare_instances(device, queue, cells, cell_size, self.selection.as_ref());
+        pipeline.text.prepare_instances(
+            device,
+            queue,
+            cells,
+            cell_size,
+            self.selection.as_ref(),
+            self.display_offset,
+        );
     }
 
     fn render(

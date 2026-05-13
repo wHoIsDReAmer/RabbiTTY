@@ -125,6 +125,7 @@ impl App {
 
         // identical to other panes (e.g. Settings) and avoids double blending.
         let clear_color = [0.0, 0.0, 0.0, 0.0];
+        let (display_offset, scroll_history) = active_tab.scroll_position();
         let terminal_widget = TerminalProgram {
             cells,
             grid_size,
@@ -137,12 +138,12 @@ impl App {
             clear_color,
             selection: active_tab.selection,
             mouse_mode: active_tab.mouse_mode(),
+            display_offset,
         }
         .widget()
         .width(Length::Fill)
         .height(Length::Fill);
 
-        let (_scroll_offset, scroll_history) = active_tab.scroll_position();
         let terminal_view: Element<Message> = if scroll_history > 0 {
             let cell_height = self.config.terminal.cell_height.max(1.0);
             let content_height = (scroll_history + dims.lines) as f32 * cell_height;

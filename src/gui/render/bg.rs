@@ -173,6 +173,7 @@ impl BackgroundPipeline {
         queue: &wgpu::Queue,
         cells: &[CellVisual],
         selection: Option<&Selection>,
+        display_offset: usize,
     ) {
         self.instances.clear();
         let needed = cells.len().saturating_sub(self.instances.capacity());
@@ -180,7 +181,8 @@ impl BackgroundPipeline {
             self.instances.reserve(needed);
         }
         self.instances.extend(cells.iter().map(|cell| {
-            let bg = if selection.is_some_and(|s| s.contains(cell.row, cell.col)) {
+            let bg = if selection.is_some_and(|s| s.contains_at(cell.row, cell.col, display_offset))
+            {
                 super::SELECTION_BG
             } else {
                 cell.bg
