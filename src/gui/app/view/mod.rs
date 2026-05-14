@@ -1,5 +1,5 @@
-#[cfg(target_os = "macos")]
 mod dialog;
+mod password_prompt;
 mod settings;
 mod sftp;
 mod shell_picker;
@@ -102,6 +102,10 @@ impl App {
                 Message::CancelRestartForBlur,
                 palette,
             );
+        }
+
+        if let Some(prompt) = self.password_prompt.as_ref() {
+            return password_prompt::password_prompt(base_layout, prompt, palette);
         }
 
         if self.show_shell_picker {
