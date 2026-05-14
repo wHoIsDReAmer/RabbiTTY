@@ -533,7 +533,18 @@ impl App {
                     && let Some(tab) = self.active_session_mut()
                     && let crate::gui::tab::TerminalSession::Active(session) = &tab.session
                 {
-                    let _ = session.send_bytes(text.as_bytes());
+                    // pasted contents cannot break out of bracketed-paste framing.
+                    let sanitized = text
+                        .replace("\r\n", "\r")
+                        .replace('\n', "\r")
+                        .replace("\x1b[200~", "")
+                        .replace("\x1b[201~", "");
+                    let payload = if tab.bracketed_paste() {
+                        format!("\x1b[200~{sanitized}\x1b[201~").into_bytes()
+                    } else {
+                        sanitized.into_bytes()
+                    };
+                    let _ = session.send_bytes(&payload);
                 }
             }
             Message::ImeStateChanged(active) => {

@@ -17,15 +17,16 @@ jobs:
           - stable
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v3
-
-      - uses: actions/cache@v3
-        with:
-          path: |
-            ~/.cargo
-            ./target
-          key: ${{ runner.os }}-cargo-${{ hashFiles('Cargo.toml') }}
+      - uses: actions/checkout@v4
 
       - run: rustup update ${{ matrix.toolchain }} && rustup default ${{ matrix.toolchain }}
+
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            ./target
+          key: ${{ runner.os }}-cargo-v2-${{ hashFiles('Cargo.lock') }}
 
       - run: cargo build

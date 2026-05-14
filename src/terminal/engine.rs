@@ -141,6 +141,12 @@ impl TerminalEngine {
         self.term.mode().contains(TermMode::ALT_SCREEN)
     }
 
+    /// Returns true when the running program has enabled bracketed paste
+    /// (`\e[?2004h`).
+    pub fn bracketed_paste(&self) -> bool {
+        self.term.mode().contains(TermMode::BRACKETED_PASTE)
+    }
+
     /// Current text cursor as `(col, row)` in viewport coordinates.
     pub fn cursor_position(&self) -> (usize, usize) {
         let point = self.term.grid().cursor.point;

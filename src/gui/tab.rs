@@ -179,6 +179,11 @@ impl TerminalTab {
         self.engine.alt_screen()
     }
 
+    /// Returns true when the running program has enabled bracketed paste.
+    pub fn bracketed_paste(&self) -> bool {
+        self.engine.bracketed_paste()
+    }
+
     /// Send scroll as arrow key sequences (for alt screen without mouse mode).
     pub fn send_scroll_as_arrows(&self, lines: i32) {
         let TerminalSession::Active(session) = &self.session else {
