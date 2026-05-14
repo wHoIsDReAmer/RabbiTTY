@@ -86,10 +86,6 @@ pub enum Message {
         tab_id: u64,
         path: String,
     },
-    SshPasswordPromptChanged(String),
-    SshPasswordPromptToggleSave(bool),
-    SshPasswordPromptSubmit,
-    SshPasswordPromptCancel,
     ShowTabContextMenu(usize),
     CloseTabContextMenu,
     CursorMoved(iced::Point),
@@ -190,19 +186,6 @@ pub struct App {
     #[cfg(target_os = "macos")]
     pub(super) pending_save_on_restart: bool,
     pub(super) config_save_tx: std_mpsc::Sender<AppConfig>,
-    /// Profiles parsed from `~/.ssh/config`, merged into shell/SSH lists at
-    /// runtime so users do not have to re-enter them in Settings.
-    pub(super) ssh_config_profiles: Vec<crate::config::SshProfile>,
-    /// In-flight password prompt deferred from an SSH tab creation.
-    pub(super) password_prompt: Option<PasswordPromptState>,
-}
-
-#[derive(Debug, Clone)]
-pub struct PasswordPromptState {
-    pub profile: crate::config::SshProfile,
-    pub draft: String,
-    pub save_to_keychain: bool,
-    pub error: Option<String>,
 }
 
 fn spawn_config_save_worker() -> std_mpsc::Sender<AppConfig> {
@@ -276,8 +259,6 @@ impl App {
             #[cfg(target_os = "macos")]
             pending_save_on_restart: false,
             config_save_tx: spawn_config_save_worker(),
-            ssh_config_profiles: crate::ssh::user_config::load(),
-            password_prompt: None,
         }
     }
 

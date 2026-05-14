@@ -100,23 +100,20 @@ impl App {
             Message::CloseShellPicker => {
                 self.shell_picker_anim.go_mut(false, Instant::now());
             }
-            Message::CreateTab(shell) => match shell {
-                ShellKind::Ssh(profile) => return self.request_ssh_tab(profile),
-                shell => return self.create_tab(shell),
-            },
+            Message::CreateTab(shell) => {
+                return self.create_tab(shell);
+            }
             Message::CreateSshTab(profile_index) => {
-                if let Some(profile) = self.session_ssh_profiles().get(profile_index).cloned() {
-                    return self.request_ssh_tab(profile);
+                if let Some(profile) = self.session_ssh_profiles().get(profile_index) {
+                    let shell = ShellKind::Ssh(profile.clone());
+                    return self.create_tab(shell);
                 }
             }
             Message::LaunchFromHistory(index) => {
                 if let Some(entry) = self.session_history.entries.get(index).cloned()
                     && let Some(shell) = entry.kind.to_shell_kind(&self.config.ssh_profiles)
                 {
-                    return match shell {
-                        ShellKind::Ssh(profile) => self.request_ssh_tab(profile),
-                        shell => self.create_tab(shell),
-                    };
+                    return self.create_tab(shell);
                 }
             }
             Message::DuplicateTab => {
@@ -194,30 +191,6 @@ impl App {
                         .transfers
                         .retain(|t| !(t.finished && t.path == path));
                 }
-            }
-            Message::SshPasswordPromptChanged(value) => {
-                if let Some(prompt) = self.password_prompt.as_mut() {
-                    prompt.draft = value;
-                    prompt.error = None;
-                }
-            }
-            Message::SshPasswordPromptToggleSave(save) => {
-                if let Some(prompt) = self.password_prompt.as_mut() {
-                    prompt.save_to_keychain = save;
-                }
-            }
-            Message::SshPasswordPromptSubmit => {
-                if let Some(prompt) = self.password_prompt.take() {
-                    let mut profile = prompt.profile;
-                    profile.password = Some(prompt.draft.clone());
-                    if prompt.save_to_keychain {
-                        crate::keychain::set_password(&profile.host, &profile.user, &prompt.draft);
-                    }
-                    return self.create_tab(crate::gui::tab::ShellKind::Ssh(profile));
-                }
-            }
-            Message::SshPasswordPromptCancel => {
-                self.password_prompt = None;
             }
             Message::SftpNavigate { tab_id, path } => {
                 if let Some(tab) = self.tabs.iter_mut().find(|t| t.id == tab_id)

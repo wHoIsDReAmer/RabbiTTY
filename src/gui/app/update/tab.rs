@@ -8,26 +8,6 @@ use iced::Task;
 use iced::keyboard::{Key, Modifiers};
 
 impl App {
-    /// Request an SSH tab for `profile`. Defers tab creation through the
-    /// password prompt when password auth is required but no credential is
-    /// available yet.
-    pub(in crate::gui) fn request_ssh_tab(&mut self, profile: SshProfile) -> Task<Message> {
-        use crate::config::SshAuthMethod;
-        if matches!(profile.auth_method, SshAuthMethod::Password)
-            && profile.password.is_none()
-            && crate::keychain::get_password(&profile.host, &profile.user).is_none()
-        {
-            self.password_prompt = Some(crate::gui::app::PasswordPromptState {
-                profile,
-                draft: String::new(),
-                save_to_keychain: true,
-                error: None,
-            });
-            return Task::none();
-        }
-        self.create_tab(ShellKind::Ssh(profile))
-    }
-
     pub(in crate::gui) fn create_tab(&mut self, shell: ShellKind) -> Task<Message> {
         let Some(sender) = self.pty_sender.clone() else {
             eprintln!("PTY output channel not ready");
@@ -76,30 +56,19 @@ impl App {
     }
 
     pub(in crate::gui) fn session_ssh_profiles(&self) -> Vec<SshProfile> {
-        let mut profiles: Vec<SshProfile> = if self.settings_open {
-            let draft: Vec<SshProfile> = self
+        if self.settings_open {
+            let draft_profiles: Vec<SshProfile> = self
                 .settings_draft
                 .ssh_profiles
                 .iter()
                 .filter_map(|profile| profile.to_profile())
                 .collect();
-            if draft.is_empty() {
-                self.config.ssh_profiles.clone()
-            } else {
-                draft
-            }
-        } else {
-            self.config.ssh_profiles.clone()
-        };
-
-        // ~/.ssh/config-derived hosts join the list, but a user-created profile
-        // with the same name wins.
-        for cfg_profile in &self.ssh_config_profiles {
-            if !profiles.iter().any(|p| p.name == cfg_profile.name) {
-                profiles.push(cfg_profile.clone());
+            if !draft_profiles.is_empty() {
+                return draft_profiles;
             }
         }
-        profiles
+
+        self.config.ssh_profiles.clone()
     }
 
     pub(super) fn shift_shell_picker_selection(&mut self, delta: isize) {
@@ -118,9 +87,7 @@ impl App {
 
         if selected < ssh_profiles.len() {
             let profile = ssh_profiles[selected].clone();
-            self.show_shell_picker = false;
-            self.shell_picker_selected = 0;
-            return self.request_ssh_tab(profile);
+            return self.create_tab(crate::gui::tab::ShellKind::Ssh(profile));
         }
 
         let shell_index = selected - ssh_profiles.len();
