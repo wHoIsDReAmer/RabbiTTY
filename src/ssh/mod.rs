@@ -1,6 +1,5 @@
 mod ansi;
 pub mod sftp;
-pub mod user_config;
 
 use crate::config::{SshAuthMethod, SshProfile};
 use crate::session::OutputEvent;
