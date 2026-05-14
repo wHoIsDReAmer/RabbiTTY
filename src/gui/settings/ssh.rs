@@ -10,8 +10,12 @@ use iced::widget::{
 };
 use iced::{Alignment, Background, Border, Color, Element, Length};
 
-pub fn view(draft: &SettingsDraft, palette: Palette) -> Element<'_, Message> {
-    content(draft, palette)
+pub fn view<'a>(
+    draft: &'a SettingsDraft,
+    ssh_config_profiles: &'a [crate::config::SshProfile],
+    palette: Palette,
+) -> Element<'a, Message> {
+    content(draft, ssh_config_profiles, palette)
 }
 
 pub fn modal_overlay<'a>(
@@ -90,7 +94,11 @@ fn delete_confirm_overlay<'a>(
     .into()
 }
 
-fn content(draft: &SettingsDraft, palette: Palette) -> Element<'_, Message> {
+fn content<'a>(
+    draft: &'a SettingsDraft,
+    ssh_config_profiles: &'a [crate::config::SshProfile],
+    palette: Palette,
+) -> Element<'a, Message> {
     let mut items: Vec<Element<Message>> = Vec::new();
 
     items.push(
@@ -117,10 +125,90 @@ fn content(draft: &SettingsDraft, palette: Palette) -> Element<'_, Message> {
         }
     }
 
+    if !ssh_config_profiles.is_empty() {
+        items.push(
+            row![
+                text("From SSH config")
+                    .size(13)
+                    .color(palette.text_secondary),
+                container("").width(Length::Fill),
+            ]
+            .padding([SPACING_NORMAL, 0.0])
+            .align_y(Alignment::Center)
+            .width(Length::Fill)
+            .into(),
+        );
+        for (index, profile) in ssh_config_profiles.iter().enumerate() {
+            items.push(config_profile_row(index, profile, palette));
+        }
+    }
+
     column(items)
         .spacing(SPACING_NORMAL)
         .width(Length::Fill)
         .into()
+}
+
+fn config_profile_row<'a>(
+    index: usize,
+    profile: &'a crate::config::SshProfile,
+    palette: Palette,
+) -> Element<'a, Message> {
+    let title = if !profile.name.is_empty() {
+        profile.name.clone()
+    } else if !profile.user.is_empty() {
+        format!("{}@{}", profile.user, profile.host)
+    } else {
+        profile.host.clone()
+    };
+    let endpoint = if profile.user.is_empty() {
+        format!("{}:{}", profile.host, profile.port)
+    } else {
+        format!("{}@{}:{}", profile.user, profile.host, profile.port)
+    };
+    let auth = match profile.auth_method {
+        crate::config::SshAuthMethod::KeyFile => profile
+            .identity_file
+            .clone()
+            .unwrap_or_else(|| "<key>".into()),
+        crate::config::SshAuthMethod::Password => "password".into(),
+    };
+    let subtitle = format!("{endpoint}  •  {auth}");
+
+    container(
+        row![
+            column![
+                text(title).size(14).color(palette.text),
+                text(subtitle).size(12).color(palette.text_secondary),
+            ]
+            .spacing(4)
+            .width(Length::Fill),
+            row![icon_button("\u{25b6}", palette).on_press(Message::CreateSshTabFromConfig(index)),]
+                .spacing(6)
+                .align_y(Alignment::Center),
+        ]
+        .spacing(SPACING_NORMAL)
+        .align_y(Alignment::Center)
+        .width(Length::Fill),
+    )
+    .padding([12, 14])
+    .width(Length::Fill)
+    .style(move |_theme: &iced::Theme| container::Style {
+        background: Some(Background::Color(Color {
+            a: 0.06,
+            ..palette.surface
+        })),
+        border: Border {
+            radius: RADIUS_SMALL.into(),
+            width: 1.0,
+            color: Color {
+                a: 0.06,
+                ..palette.text
+            },
+        },
+        ..Default::default()
+    })
+    .into()
 }
 
 fn empty_state(palette: Palette) -> Element<'static, Message> {

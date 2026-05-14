@@ -510,6 +510,7 @@ fn update_ssh_profile_draft(draft: &mut SshProfileDraft, field: SshProfileField,
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 pub fn view_category<'a>(
     category: SettingsCategory,
     config: &'a AppConfig,
@@ -517,6 +518,7 @@ pub fn view_category<'a>(
     font_combo_state: &'a iced::widget::combo_box::State<TerminalFontOption>,
     show_all_fonts: bool,
     all_font_options: &'a [TerminalFontOption],
+    ssh_config_profiles: &'a [SshProfile],
     palette: Palette,
 ) -> Element<'a, Message> {
     match category {
@@ -536,7 +538,7 @@ pub fn view_category<'a>(
         }
         SettingsCategory::Theme => theme::view(config, draft, palette),
         SettingsCategory::Shortcuts => shortcuts::view(config, draft, palette),
-        SettingsCategory::Ssh => ssh::view(draft, palette),
+        SettingsCategory::Ssh => ssh::view(draft, ssh_config_profiles, palette),
     }
 }
 

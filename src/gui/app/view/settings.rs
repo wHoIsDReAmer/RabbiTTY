@@ -97,6 +97,7 @@ impl App {
             &self.font_combo_state,
             self.show_all_fonts,
             &self.all_font_options,
+            &self.ssh_config_profiles,
             palette,
         ))
         .padding([0, 12])

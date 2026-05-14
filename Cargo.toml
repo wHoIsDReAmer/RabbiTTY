@@ -48,6 +48,7 @@ fontdb = "0.23"
 russh = "0.48"
 russh-keys = "0.48"
 russh-sftp = "2.1"
+ssh2-config = "0.7"
 async-trait = "0.1"
 rfd = { version = "0.15", default-features = false, features = ["xdg-portal", "tokio"] }
 tokio = { version = "1", default-features = false, features = ["io-util", "process", "sync", "fs", "rt"] }
