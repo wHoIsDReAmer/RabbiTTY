@@ -67,6 +67,8 @@ pub const DEFAULT_TERMINAL_FONT_SIZE: f32 = 14.0;
 pub const DEFAULT_TERMINAL_PADDING_X: f32 = 4.0;
 pub const DEFAULT_TERMINAL_PADDING_Y: f32 = 4.0;
 pub const DEFAULT_TERMINAL_SCROLLBACK: usize = 10_000;
+pub const DEFAULT_BRACKETED_PASTE: bool = true;
+pub const DEFAULT_MULTILINE_PASTE_CONFIRM: bool = false;
 const DEJAVU_SANS_MONO: &[u8] = include_bytes!("../fonts/DejaVuSansMono.ttf");
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize, Default)]
@@ -130,6 +132,8 @@ pub struct TerminalConfig {
     pub padding_x: f32,
     pub padding_y: f32,
     pub scrollback_lines: usize,
+    pub bracketed_paste: bool,
+    pub multiline_paste_confirm: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -196,6 +200,8 @@ struct TerminalFileConfig {
     padding_x: Option<f32>,
     padding_y: Option<f32>,
     scrollback_lines: Option<usize>,
+    bracketed_paste: Option<bool>,
+    multiline_paste_confirm: Option<bool>,
 }
 
 #[derive(Debug, Deserialize, Serialize)]
@@ -253,6 +259,8 @@ pub struct AppConfigUpdates {
     pub shortcut_font_size_reset: Option<String>,
     pub shortcut_duplicate_tab: Option<String>,
     pub terminal_scrollback: Option<usize>,
+    pub terminal_bracketed_paste: Option<bool>,
+    pub terminal_multiline_paste_confirm: Option<bool>,
 }
 
 impl Default for AppConfig {
@@ -272,6 +280,8 @@ impl Default for AppConfig {
                 padding_x: DEFAULT_TERMINAL_PADDING_X,
                 padding_y: DEFAULT_TERMINAL_PADDING_Y,
                 scrollback_lines: DEFAULT_TERMINAL_SCROLLBACK,
+                bracketed_paste: DEFAULT_BRACKETED_PASTE,
+                multiline_paste_confirm: DEFAULT_MULTILINE_PASTE_CONFIRM,
             },
             theme: ThemeConfig {
                 color_scheme: "Catppuccin Mocha".to_string(),
@@ -349,6 +359,12 @@ impl AppConfig {
         if let Some(lines) = updates.terminal_scrollback {
             self.terminal.scrollback_lines =
                 sanitize_scrollback(lines, self.terminal.scrollback_lines);
+        }
+        if let Some(enabled) = updates.terminal_bracketed_paste {
+            self.terminal.bracketed_paste = enabled;
+        }
+        if let Some(enabled) = updates.terminal_multiline_paste_confirm {
+            self.terminal.multiline_paste_confirm = enabled;
         }
         if let Some(scheme) = updates.color_scheme {
             self.theme.color_scheme = scheme;
@@ -466,6 +482,12 @@ impl AppConfig {
             if let Some(lines) = term.scrollback_lines {
                 self.terminal.scrollback_lines =
                     sanitize_scrollback(lines, self.terminal.scrollback_lines);
+            }
+            if let Some(enabled) = term.bracketed_paste {
+                self.terminal.bracketed_paste = enabled;
+            }
+            if let Some(enabled) = term.multiline_paste_confirm {
+                self.terminal.multiline_paste_confirm = enabled;
             }
         }
 
@@ -800,6 +822,8 @@ impl From<&AppConfig> for FileConfig {
                 padding_x: Some(config.terminal.padding_x),
                 padding_y: Some(config.terminal.padding_y),
                 scrollback_lines: Some(config.terminal.scrollback_lines),
+                bracketed_paste: Some(config.terminal.bracketed_paste),
+                multiline_paste_confirm: Some(config.terminal.multiline_paste_confirm),
             }),
             theme: Some(ThemeFileConfig {
                 color_scheme: if config.theme.color_scheme.is_empty() {

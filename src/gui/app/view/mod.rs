@@ -1,11 +1,9 @@
-#[cfg(target_os = "macos")]
 mod dialog;
 mod password_prompt;
 mod settings;
 mod sftp;
 mod shell_picker;
 
-#[cfg(target_os = "macos")]
 pub(in crate::gui) use dialog::{DialogButton, confirm_dialog};
 
 use super::{App, Message, SETTINGS_TAB_INDEX};
@@ -101,6 +99,30 @@ impl App {
                     },
                 ],
                 Message::CancelRestartForBlur,
+                palette,
+            );
+        }
+
+        if let Some(text) = self.pending_paste.as_deref() {
+            let line_count = text.lines().count().max(1);
+            let description = format!("This will paste {} lines.", line_count);
+            return confirm_dialog(
+                base_layout,
+                "Paste multiple lines?",
+                &description,
+                vec![
+                    DialogButton {
+                        label: "Cancel".into(),
+                        message: Message::CancelMultilinePaste,
+                        primary: false,
+                    },
+                    DialogButton {
+                        label: "Paste".into(),
+                        message: Message::ConfirmMultilinePaste,
+                        primary: true,
+                    },
+                ],
+                Message::CancelMultilinePaste,
                 palette,
             );
         }

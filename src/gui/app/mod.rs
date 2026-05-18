@@ -35,6 +35,8 @@ pub enum Message {
     SettingsInputChanged(SettingsField, String),
     SettingsInputCommitted(SettingsField, String),
     SettingsBlurToggled(bool),
+    SettingsBracketedPasteToggled(bool),
+    SettingsMultilinePasteConfirmToggled(bool),
     AddSshProfile,
     EditSshProfile(usize),
     RequestRemoveSshProfile(usize),
@@ -123,6 +125,8 @@ pub enum Message {
         row: usize,
     },
     PasteClipboard(String),
+    ConfirmMultilinePaste,
+    CancelMultilinePaste,
     ImeStateChanged(bool),
     ImeCommit(String),
     ImePreedit(String, Option<std::ops::Range<usize>>),
@@ -196,6 +200,8 @@ pub struct App {
     pub(super) ssh_config_profiles: Vec<crate::config::SshProfile>,
     /// In-flight password prompt deferred from an SSH tab creation.
     pub(super) password_prompt: Option<PasswordPromptState>,
+    /// Text waiting for multiline-paste confirmation.
+    pub(super) pending_paste: Option<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -279,6 +285,7 @@ impl App {
             config_save_tx: spawn_config_save_worker(),
             ssh_config_profiles: crate::ssh::user_config::load(),
             password_prompt: None,
+            pending_paste: None,
         }
     }
 

@@ -448,6 +448,14 @@ impl App {
                 self.settings_draft.blur_enabled = enabled;
                 return self.apply_settings(true);
             }
+            Message::SettingsBracketedPasteToggled(enabled) => {
+                self.settings_draft.bracketed_paste = enabled;
+                return self.apply_settings(true);
+            }
+            Message::SettingsMultilinePasteConfirmToggled(enabled) => {
+                self.settings_draft.multiline_paste_confirm = enabled;
+                return self.apply_settings(true);
+            }
             Message::FontSelected(option) => {
                 self.settings_draft
                     .update(SettingsField::TerminalFontSelection, option.value);
@@ -529,23 +537,22 @@ impl App {
                 }
             }
             Message::PasteClipboard(text) => {
-                if !text.is_empty()
-                    && let Some(tab) = self.active_session_mut()
-                    && let crate::gui::tab::TerminalSession::Active(session) = &tab.session
-                {
-                    // pasted contents cannot break out of bracketed-paste framing.
-                    let sanitized = text
-                        .replace("\r\n", "\r")
-                        .replace('\n', "\r")
-                        .replace("\x1b[200~", "")
-                        .replace("\x1b[201~", "");
-                    let payload = if tab.bracketed_paste() {
-                        format!("\x1b[200~{sanitized}\x1b[201~").into_bytes()
+                if !text.is_empty() {
+                    let is_multiline = text.contains('\n') || text.contains('\r');
+                    if self.config.terminal.multiline_paste_confirm && is_multiline {
+                        self.pending_paste = Some(text);
                     } else {
-                        sanitized.into_bytes()
-                    };
-                    let _ = session.send_bytes(&payload);
+                        self.perform_paste(text);
+                    }
                 }
+            }
+            Message::ConfirmMultilinePaste => {
+                if let Some(text) = self.pending_paste.take() {
+                    self.perform_paste(text);
+                }
+            }
+            Message::CancelMultilinePaste => {
+                self.pending_paste = None;
             }
             Message::ImeStateChanged(active) => {
                 self.ime_active = active;
@@ -778,6 +785,26 @@ impl App {
         self.scroll_follow_bottom = true;
         self.ignore_scrollable_sync = IGNORE_SCROLL_SYNC_COUNT;
         self.sync_terminal_scrollable()
+    }
+
+    fn perform_paste(&mut self, text: String) {
+        let config_bracketed_paste = self.config.terminal.bracketed_paste;
+        if let Some(tab) = self.active_session_mut()
+            && let crate::gui::tab::TerminalSession::Active(session) = &tab.session
+        {
+            // pasted contents cannot break out of bracketed-paste framing.
+            let sanitized = text
+                .replace("\r\n", "\r")
+                .replace('\n', "\r")
+                .replace("\x1b[200~", "")
+                .replace("\x1b[201~", "");
+            let payload = if config_bracketed_paste && tab.bracketed_paste() {
+                format!("\x1b[200~{sanitized}\x1b[201~").into_bytes()
+            } else {
+                sanitized.into_bytes()
+            };
+            let _ = session.send_bytes(&payload);
+        }
     }
 
     fn handle_apply_window_style(&mut self) -> Task<Message> {

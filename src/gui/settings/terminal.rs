@@ -4,7 +4,7 @@ use crate::gui::settings::{
     SettingsDraft, SettingsField, TerminalFontOption, hint_text, input_row_with_suffix, section,
 };
 use crate::gui::theme::{Palette, SPACING_NORMAL};
-use iced::widget::{checkbox, column, combo_box, row, text};
+use iced::widget::{checkbox, column, combo_box, row, text, toggler};
 use iced::{Alignment, Element, Length};
 
 pub fn view<'a>(
@@ -101,8 +101,45 @@ pub fn view<'a>(
         palette,
     );
 
-    column(vec![font_section, padding_section, scrollback_section])
+    let label_width = Length::Fixed(160.0);
+
+    let paste_section = section(
+        "Paste",
+        column(vec![
+            row![
+                text("Bracketed paste").size(13).width(label_width),
+                toggler(draft.bracketed_paste)
+                    .on_toggle(Message::SettingsBracketedPasteToggled)
+                    .size(18),
+            ]
+            .align_y(Alignment::Center)
+            .spacing(SPACING_NORMAL)
+            .width(Length::Fill)
+            .into(),
+            row![
+                text("Confirm multi-line paste").size(13).width(label_width),
+                toggler(draft.multiline_paste_confirm)
+                    .on_toggle(Message::SettingsMultilinePasteConfirmToggled)
+                    .size(18),
+            ]
+            .align_y(Alignment::Center)
+            .spacing(SPACING_NORMAL)
+            .width(Length::Fill)
+            .into(),
+        ])
         .spacing(SPACING_NORMAL)
         .width(Length::Fill)
-        .into()
+        .into(),
+        palette,
+    );
+
+    column(vec![
+        font_section,
+        padding_section,
+        scrollback_section,
+        paste_section,
+    ])
+    .spacing(SPACING_NORMAL)
+    .width(Length::Fill)
+    .into()
 }
