@@ -156,8 +156,7 @@ impl App {
         let cursor = active_tab
             .cursor_cell()
             .map(|(col, row)| [col as u32, row as u32]);
-        let cursor_visible =
-            !self.config.terminal.cursor_blink || self.cursor_blink_on;
+        let cursor_visible = !self.config.terminal.cursor_blink || self.cursor_blink_on;
         let terminal_widget = TerminalProgram {
             cells,
             grid_size,
