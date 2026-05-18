@@ -78,13 +78,10 @@ pub fn view<'a>(
 
     let blur_section = section(
         "Blur",
-        column(vec![
-            toggle_row("Enable blur", draft.blur_enabled),
-            hint_text("On macOS, changing this requires restart.", palette),
-        ])
-        .spacing(SPACING_NORMAL)
-        .width(Length::Fill)
-        .into(),
+        column(vec![toggle_row("Enable blur", draft.blur_enabled)])
+            .spacing(SPACING_NORMAL)
+            .width(Length::Fill)
+            .into(),
         palette,
     );
 
