@@ -139,3 +139,13 @@ pub fn apply_style(
         }
     }
 }
+
+/// Play the Windows system beep (default `MB_OK` sound).
+pub fn ring_bell() {
+    use windows::Win32::System::Diagnostics::Debug::MessageBeep;
+    use windows::Win32::UI::WindowsAndMessaging::MB_OK;
+
+    unsafe {
+        let _ = MessageBeep(MB_OK);
+    }
+}

@@ -1,4 +1,4 @@
-use crate::config::{AppConfig, CursorShape};
+use crate::config::{AppConfig, BellMode, CursorShape};
 use crate::gui::app::Message;
 use crate::gui::settings::{
     SettingsDraft, SettingsField, TerminalFontOption, hint_text, input_row_with_suffix, section,
@@ -175,11 +175,35 @@ pub fn view<'a>(
         palette,
     );
 
+    let bell_section = section(
+        "Bell",
+        column(vec![
+            row![
+                text("Behavior").size(13).width(label_width),
+                pick_list(
+                    BellMode::ALL,
+                    Some(draft.bell_mode),
+                    Message::SettingsBellModeSelected,
+                )
+                .text_size(13),
+            ]
+            .align_y(Alignment::Center)
+            .spacing(SPACING_NORMAL)
+            .width(Length::Fill)
+            .into(),
+        ])
+        .spacing(SPACING_NORMAL)
+        .width(Length::Fill)
+        .into(),
+        palette,
+    );
+
     column(vec![
         font_section,
         padding_section,
         scrollback_section,
         cursor_section,
+        bell_section,
         paste_section,
     ])
     .spacing(SPACING_NORMAL)

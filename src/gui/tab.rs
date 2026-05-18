@@ -98,11 +98,13 @@ impl TerminalTab {
         }
     }
 
-    pub fn feed_bytes(&mut self, bytes: &[u8]) {
+    /// Feeds PTY bytes to the terminal engine. Returns `true` if a bell rang.
+    pub fn feed_bytes(&mut self, bytes: &[u8]) -> bool {
         self.engine.feed_bytes(bytes);
         if let Some(new_title) = self.engine.take_title() {
             self.title = new_title;
         }
+        self.engine.take_bell()
     }
 
     pub fn render_cells(&self) -> std::sync::Arc<Vec<CellVisual>> {

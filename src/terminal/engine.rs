@@ -10,6 +10,7 @@ use alacritty_terminal::term::{
 use alacritty_terminal::vte::ansi::{CursorShape, Processor};
 use std::cell::{Cell, RefCell};
 use std::io::Write;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 
 pub struct TerminalEngine {
@@ -21,6 +22,7 @@ pub struct TerminalEngine {
     cache_dirty: Cell<bool>,
     cache_size: Cell<TerminalSize>,
     title: Arc<Mutex<Option<String>>>,
+    bell_pending: Arc<AtomicBool>,
 }
 
 impl TerminalEngine {
@@ -35,6 +37,7 @@ impl TerminalEngine {
             ..Default::default()
         };
         let title: Arc<Mutex<Option<String>>> = Arc::new(Mutex::new(None));
+        let bell_pending: Arc<AtomicBool> = Arc::new(AtomicBool::new(false));
         let term = Term::new(
             config,
             &size,
@@ -42,6 +45,7 @@ impl TerminalEngine {
                 writer: Arc::clone(&writer),
                 size,
                 title: Arc::clone(&title),
+                bell_pending: Arc::clone(&bell_pending),
             },
         );
 
@@ -54,6 +58,7 @@ impl TerminalEngine {
             cache_dirty: Cell::new(true),
             cache_size: Cell::new(size),
             title,
+            bell_pending,
         }
     }
 
@@ -63,6 +68,11 @@ impl TerminalEngine {
 
     pub fn take_title(&self) -> Option<String> {
         self.title.lock().ok()?.take()
+    }
+
+    /// Returns true once if a bell rang since the last call.
+    pub fn take_bell(&self) -> bool {
+        self.bell_pending.swap(false, Ordering::Relaxed)
     }
 
     pub fn feed_bytes(&mut self, bytes: &[u8]) {
@@ -276,6 +286,7 @@ struct PtyEventProxy {
     writer: Arc<Mutex<Box<dyn Write + Send>>>,
     size: TerminalSize,
     title: Arc<Mutex<Option<String>>>,
+    bell_pending: Arc<AtomicBool>,
 }
 
 impl EventListener for PtyEventProxy {
@@ -304,6 +315,9 @@ impl EventListener for PtyEventProxy {
                 if let Ok(mut guard) = self.title.lock() {
                     *guard = Some(new_title);
                 }
+            }
+            Event::Bell => {
+                self.bell_pending.store(true, Ordering::Relaxed);
             }
             _ => {}
         }

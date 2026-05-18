@@ -106,6 +106,31 @@ impl std::fmt::Display for CursorShape {
     }
 }
 
+/// Behavior when the terminal receives a bell (`\a`, 0x07).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum BellMode {
+    Off,
+    #[default]
+    Visual,
+    Sound,
+}
+
+impl BellMode {
+    pub const ALL: [Self; 3] = [Self::Off, Self::Visual, Self::Sound];
+}
+
+impl std::fmt::Display for BellMode {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let label = match self {
+            Self::Off => "Off",
+            Self::Visual => "Visual flash",
+            Self::Sound => "Sound",
+        };
+        f.write_str(label)
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct SshProfile {
     pub name: String,
@@ -164,6 +189,7 @@ pub struct TerminalConfig {
     pub scroll_multiplier: f32,
     pub cursor_shape: CursorShape,
     pub cursor_blink: bool,
+    pub bell_mode: BellMode,
 }
 
 #[derive(Debug, Clone)]
@@ -235,6 +261,7 @@ struct TerminalFileConfig {
     scroll_multiplier: Option<f32>,
     cursor_shape: Option<CursorShape>,
     cursor_blink: Option<bool>,
+    bell_mode: Option<BellMode>,
 }
 
 #[derive(Debug, Deserialize, Serialize)]
@@ -297,6 +324,7 @@ pub struct AppConfigUpdates {
     pub terminal_scroll_multiplier: Option<f32>,
     pub terminal_cursor_shape: Option<CursorShape>,
     pub terminal_cursor_blink: Option<bool>,
+    pub terminal_bell_mode: Option<BellMode>,
 }
 
 impl Default for AppConfig {
@@ -321,6 +349,7 @@ impl Default for AppConfig {
                 scroll_multiplier: DEFAULT_TERMINAL_SCROLL_MULTIPLIER,
                 cursor_shape: CursorShape::default(),
                 cursor_blink: DEFAULT_CURSOR_BLINK,
+                bell_mode: BellMode::default(),
             },
             theme: ThemeConfig {
                 color_scheme: "Catppuccin Mocha".to_string(),
@@ -414,6 +443,9 @@ impl AppConfig {
         }
         if let Some(enabled) = updates.terminal_cursor_blink {
             self.terminal.cursor_blink = enabled;
+        }
+        if let Some(mode) = updates.terminal_bell_mode {
+            self.terminal.bell_mode = mode;
         }
         if let Some(scheme) = updates.color_scheme {
             self.theme.color_scheme = scheme;
@@ -547,6 +579,9 @@ impl AppConfig {
             }
             if let Some(enabled) = term.cursor_blink {
                 self.terminal.cursor_blink = enabled;
+            }
+            if let Some(mode) = term.bell_mode {
+                self.terminal.bell_mode = mode;
             }
         }
 
@@ -894,6 +929,7 @@ impl From<&AppConfig> for FileConfig {
                 scroll_multiplier: Some(config.terminal.scroll_multiplier),
                 cursor_shape: Some(config.terminal.cursor_shape),
                 cursor_blink: Some(config.terminal.cursor_blink),
+                bell_mode: Some(config.terminal.bell_mode),
             }),
             theme: Some(ThemeFileConfig {
                 color_scheme: if config.theme.color_scheme.is_empty() {

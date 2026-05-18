@@ -1,5 +1,5 @@
 use crate::config::{
-    AppConfig, AppConfigUpdates, CursorShape, SshAuthMethod, SshProfile, parse_hex_color,
+    AppConfig, AppConfigUpdates, BellMode, CursorShape, SshAuthMethod, SshProfile, parse_hex_color,
 };
 use crate::gui::app::Message;
 use crate::gui::theme::{Palette, RADIUS_NORMAL, RADIUS_SMALL, SPACING_NORMAL};
@@ -221,6 +221,7 @@ pub struct SettingsDraft {
     pub multiline_paste_confirm: bool,
     pub cursor_shape: CursorShape,
     pub cursor_blink: bool,
+    pub bell_mode: BellMode,
     pub color_scheme: String,
     pub foreground: String,
     pub background: String,
@@ -260,6 +261,7 @@ impl SettingsDraft {
             multiline_paste_confirm: config.terminal.multiline_paste_confirm,
             cursor_shape: config.terminal.cursor_shape,
             cursor_blink: config.terminal.cursor_blink,
+            bell_mode: config.terminal.bell_mode,
             color_scheme: config.theme.color_scheme.clone(),
             foreground: format_rgb(config.theme.foreground),
             background: format_rgb(config.theme.background),
@@ -474,6 +476,7 @@ impl SettingsDraft {
             terminal_multiline_paste_confirm: Some(self.multiline_paste_confirm),
             terminal_cursor_shape: Some(self.cursor_shape),
             terminal_cursor_blink: Some(self.cursor_blink),
+            terminal_bell_mode: Some(self.bell_mode),
             color_scheme: Some(self.color_scheme.clone()),
             foreground: parse_hex_color(&self.foreground),
             background: parse_hex_color(&self.background),

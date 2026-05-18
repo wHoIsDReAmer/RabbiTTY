@@ -20,6 +20,11 @@ pub fn apply_style(handle: WindowHandle<'_>, theme: &ThemeConfig) {
     apply_style_inner(handle, theme);
 }
 
+/// Play the macOS system beep.
+pub fn ring_bell() {
+    objc2_app_kit::NSBeep();
+}
+
 const APP_ICON_PNG: &[u8] = include_bytes!("../../assets/logo.png");
 
 pub fn set_app_icon_once() {

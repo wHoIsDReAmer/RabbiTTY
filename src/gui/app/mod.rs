@@ -39,6 +39,7 @@ pub enum Message {
     SettingsMultilinePasteConfirmToggled(bool),
     SettingsCursorShapeSelected(crate::config::CursorShape),
     SettingsCursorBlinkToggled(bool),
+    SettingsBellModeSelected(crate::config::BellMode),
     AddSshProfile,
     EditSshProfile(usize),
     RequestRemoveSshProfile(usize),
@@ -207,7 +208,12 @@ pub struct App {
     pub(super) pending_paste: Option<String>,
     /// Current on/off phase of the blinking cursor.
     pub(super) cursor_blink_on: bool,
+    /// Start time of an active visual bell flash, if any.
+    pub(super) bell_flash_start: Option<std::time::Instant>,
 }
+
+/// Duration of the visual bell flash overlay.
+pub(super) const BELL_FLASH_DURATION: std::time::Duration = std::time::Duration::from_millis(150);
 
 #[derive(Debug, Clone)]
 pub struct PasswordPromptState {
@@ -292,6 +298,7 @@ impl App {
             password_prompt: None,
             pending_paste: None,
             cursor_blink_on: true,
+            bell_flash_start: None,
         }
     }
 

@@ -239,6 +239,33 @@ impl App {
             terminal_view
         };
 
+        // Visual bell: a translucent flash that fades out over its duration.
+        let with_flash: Element<Message> = if let Some(progress) = self
+            .bell_flash_start
+            .map(|start| start.elapsed())
+            .filter(|elapsed| *elapsed < super::BELL_FLASH_DURATION)
+            .map(|elapsed| elapsed.as_secs_f32() / super::BELL_FLASH_DURATION.as_secs_f32())
+        {
+            let alpha = 0.5 * (1.0 - progress).clamp(0.0, 1.0);
+            let flash_color = Color {
+                a: alpha,
+                ..self.theme_text_color()
+            };
+            let flash = container("")
+                .width(Length::Fill)
+                .height(Length::Fill)
+                .style(move |_theme: &iced::Theme| container::Style {
+                    background: Some(Background::Color(flash_color)),
+                    ..Default::default()
+                });
+            stack![with_drawer, flash]
+                .width(Length::Fill)
+                .height(Length::Fill)
+                .into()
+        } else {
+            with_drawer
+        };
+
         let (cursor_col, cursor_row) = active_tab.cursor_position();
         let cursor_cell = crate::gui::components::ime_wrapper::CursorCell {
             col: cursor_col,
@@ -251,7 +278,7 @@ impl App {
             ],
         };
 
-        ImeEnabled::new(with_drawer)
+        ImeEnabled::new(with_flash)
             .preedit(self.ime_preedit.clone())
             .cursor_cell(Some(cursor_cell))
             .text_size(self.config.terminal.font_size)

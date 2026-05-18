@@ -1,6 +1,6 @@
 use super::super::{App, Message, SETTINGS_TAB_INDEX};
 use super::{TAB_BAR_SCROLLABLE_ID, TERMINAL_SCROLLABLE_ID};
-use crate::config::AppConfigUpdates;
+use crate::config::{AppConfigUpdates, BellMode};
 use crate::session::OutputEvent;
 use iced::widget::operation::{scroll_to, snap_to};
 use iced::widget::scrollable;
@@ -11,7 +11,10 @@ impl App {
         match event {
             OutputEvent::Data { tab_id, bytes } => {
                 if let Some(tab) = self.tabs.iter_mut().find(|t| t.id == tab_id) {
-                    tab.feed_bytes(&bytes);
+                    let bell = tab.feed_bytes(&bytes);
+                    if bell {
+                        self.handle_bell(tab_id);
+                    }
                 }
             }
             OutputEvent::Closed { tab_id } => {
@@ -20,6 +23,25 @@ impl App {
                     if self.active_tab >= self.tabs.len() && !self.tabs.is_empty() {
                         self.active_tab = self.tabs.len() - 1;
                     }
+                }
+            }
+        }
+    }
+
+    /// Reacts to a terminal bell from the tab identified by `tab_id`,
+    /// according to the configured bell mode.
+    fn handle_bell(&mut self, tab_id: u64) {
+        match self.config.terminal.bell_mode {
+            BellMode::Off => {}
+            BellMode::Sound => crate::platform::ring_bell(),
+            BellMode::Visual => {
+                let is_active = self.active_tab != SETTINGS_TAB_INDEX
+                    && self
+                        .tabs
+                        .get(self.active_tab)
+                        .is_some_and(|t| t.id == tab_id);
+                if is_active {
+                    self.bell_flash_start = Some(std::time::Instant::now());
                 }
             }
         }

@@ -464,6 +464,10 @@ impl App {
                 self.settings_draft.cursor_blink = enabled;
                 return self.apply_settings(true);
             }
+            Message::SettingsBellModeSelected(mode) => {
+                self.settings_draft.bell_mode = mode;
+                return self.apply_settings(true);
+            }
             Message::FontSelected(option) => {
                 self.settings_draft
                     .update(SettingsField::TerminalFontSelection, option.value);
@@ -657,6 +661,11 @@ impl App {
                     if !tab.sftp.anim.is_animating(now) && !tab.sftp.anim.value() {
                         tab.sftp.open = false;
                     }
+                }
+                if let Some(start) = self.bell_flash_start
+                    && start.elapsed() >= super::BELL_FLASH_DURATION
+                {
+                    self.bell_flash_start = None;
                 }
             }
             Message::CursorBlink => {
