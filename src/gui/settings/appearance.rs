@@ -1,4 +1,4 @@
-use crate::config::{AppConfig, CursorShape};
+use crate::config::AppConfig;
 use crate::gui::app::Message;
 use crate::gui::settings::{
     SettingsDraft, SettingsField, TerminalFontOption, hint_text, input_row_with_suffix, section,
@@ -96,26 +96,6 @@ pub fn view<'a>(
         palette,
     );
 
-    let cursor_section = section(
-        crate::t!("settings.terminal.cursor_section"),
-        segmented_control(
-            crate::t!("settings.terminal.shape"),
-            CursorShape::ALL
-                .iter()
-                .map(|&shape| {
-                    (
-                        cursor_shape_label(shape),
-                        Message::SettingsCursorShapeSelected(shape),
-                        draft.cursor_shape == shape,
-                    )
-                })
-                .collect(),
-            palette,
-            config.ui.animations_enabled,
-        ),
-        palette,
-    );
-
     let animations_section = section(
         crate::t!("settings.appearance.animations_section"),
         row![
@@ -138,19 +118,10 @@ pub fn view<'a>(
         animations_section,
         font_section,
         padding_section,
-        cursor_section,
     ])
     .spacing(SPACING_NORMAL)
     .width(Length::Fill)
     .into()
-}
-
-fn cursor_shape_label(shape: CursorShape) -> &'static str {
-    match shape {
-        CursorShape::Block => crate::t!("settings.terminal.cursor_shape.block"),
-        CursorShape::Bar => crate::t!("settings.terminal.cursor_shape.bar"),
-        CursorShape::Underline => crate::t!("settings.terminal.cursor_shape.underline"),
-    }
 }
 
 fn language_picker<'a>(

@@ -1,4 +1,4 @@
-use crate::config::{AppConfig, BellMode};
+use crate::config::{AppConfig, BellMode, CursorShape};
 use crate::gui::app::Message;
 use crate::gui::settings::{
     SettingsDraft, SettingsField, input_row_with_suffix, section, segmented_control,
@@ -74,15 +74,35 @@ pub fn view<'a>(
 
     let cursor_section = section(
         crate::t!("settings.terminal.cursor_section"),
-        row![
-            text(crate::t!("settings.terminal.blink"))
-                .size(13)
-                .width(label_width),
-            toggler(draft.cursor_blink)
-                .on_toggle(Message::SettingsCursorBlinkToggled)
-                .size(18),
-        ]
-        .align_y(Alignment::Center)
+        column(vec![
+            segmented_control(
+                crate::t!("settings.terminal.shape"),
+                CursorShape::ALL
+                    .iter()
+                    .map(|&shape| {
+                        (
+                            cursor_shape_label(shape),
+                            Message::SettingsCursorShapeSelected(shape),
+                            draft.cursor_shape == shape,
+                        )
+                    })
+                    .collect(),
+                palette,
+                config.ui.animations_enabled,
+            ),
+            row![
+                text(crate::t!("settings.terminal.blink"))
+                    .size(13)
+                    .width(label_width),
+                toggler(draft.cursor_blink)
+                    .on_toggle(Message::SettingsCursorBlinkToggled)
+                    .size(18),
+            ]
+            .align_y(Alignment::Center)
+            .spacing(SPACING_NORMAL)
+            .width(Length::Fill)
+            .into(),
+        ])
         .spacing(SPACING_NORMAL)
         .width(Length::Fill)
         .into(),
@@ -118,6 +138,15 @@ pub fn view<'a>(
     .spacing(SPACING_NORMAL)
     .width(Length::Fill)
     .into()
+}
+
+/// Glyphs that visually represent each cursor shape in the segmented control.
+fn cursor_shape_label(shape: CursorShape) -> &'static str {
+    match shape {
+        CursorShape::Block => "█",
+        CursorShape::Bar => "▎",
+        CursorShape::Underline => "▁",
+    }
 }
 
 fn bell_mode_label(mode: BellMode) -> &'static str {
