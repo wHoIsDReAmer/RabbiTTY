@@ -255,7 +255,7 @@ impl App {
             shell_picker_selected: 0,
             window_size: Size::new(config.ui.window_width, config.ui.window_height),
             settings_open: false,
-            settings_category: SettingsCategory::Ui,
+            settings_category: SettingsCategory::Appearance,
             settings_draft: SettingsDraft::from_config(&config),
             font_combo_state,
             show_all_fonts,

@@ -3,15 +3,15 @@ use crate::config::{
 };
 use crate::gui::app::Message;
 use crate::gui::theme::{Palette, RADIUS_NORMAL, RADIUS_SMALL, SPACING_NORMAL};
-use iced::widget::{column, container, row, rule, text, text_input, toggler};
+use iced::widget::{button, column, container, row, rule, text, text_input, toggler};
 use iced::{Alignment, Background, Border, Color, Element, Length};
 use std::fmt;
 
+pub mod appearance;
 pub mod shortcuts;
 pub mod ssh;
 pub mod terminal;
 pub mod theme;
-pub mod ui;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TerminalFontOption {
@@ -28,7 +28,7 @@ impl fmt::Display for TerminalFontOption {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SettingsField {
-    UiLanguage,
+    AppearanceLanguage,
     TerminalFontSelection,
     TerminalFontSize,
     TerminalPaddingX,
@@ -65,7 +65,7 @@ pub enum SshProfileField {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SettingsCategory {
-    Ui,
+    Appearance,
     Terminal,
     Theme,
     Shortcuts,
@@ -74,7 +74,7 @@ pub enum SettingsCategory {
 
 impl SettingsCategory {
     pub const ALL: [Self; 5] = [
-        Self::Ui,
+        Self::Appearance,
         Self::Terminal,
         Self::Theme,
         Self::Shortcuts,
@@ -83,7 +83,7 @@ impl SettingsCategory {
 
     pub fn label(self) -> &'static str {
         match self {
-            Self::Ui => crate::t!("settings.categories.ui"),
+            Self::Appearance => crate::t!("settings.categories.appearance"),
             Self::Terminal => crate::t!("settings.categories.terminal"),
             Self::Theme => crate::t!("settings.categories.theme"),
             Self::Shortcuts => crate::t!("settings.categories.shortcuts"),
@@ -93,7 +93,7 @@ impl SettingsCategory {
 
     pub fn icon(self) -> &'static str {
         match self {
-            Self::Ui => "◫",
+            Self::Appearance => "◫",
             Self::Terminal => "▣",
             Self::Theme => "◑",
             Self::Shortcuts => "⌘",
@@ -433,7 +433,7 @@ impl SettingsDraft {
 
     pub fn update(&mut self, field: SettingsField, value: String) {
         match field {
-            SettingsField::UiLanguage => self.language = value,
+            SettingsField::AppearanceLanguage => self.language = value,
             SettingsField::TerminalFontSelection => self.terminal_font_selection = value,
             SettingsField::TerminalFontSize => self.terminal_font_size = value,
             SettingsField::TerminalPaddingX => self.terminal_padding_x = value,
@@ -551,12 +551,11 @@ pub fn view_category<'a>(
     palette: Palette,
 ) -> Element<'a, Message> {
     match category {
-        SettingsCategory::Ui => ui::view(config, draft, palette),
-        SettingsCategory::Terminal => {
+        SettingsCategory::Appearance => {
             let selected_font = all_font_options
                 .iter()
                 .find(|o| o.value == draft.terminal_font_selection);
-            terminal::view(
+            appearance::view(
                 config,
                 draft,
                 font_combo_state,
@@ -565,6 +564,7 @@ pub fn view_category<'a>(
                 palette,
             )
         }
+        SettingsCategory::Terminal => terminal::view(config, draft, palette),
         SettingsCategory::Theme => theme::view(config, draft, palette),
         SettingsCategory::Shortcuts => shortcuts::view(config, draft, palette),
         SettingsCategory::Ssh => ssh::view(draft, ssh_config_profiles, palette),
@@ -675,6 +675,72 @@ pub fn toggle_row<'a>(label: &'a str, value: bool) -> Element<'a, Message> {
     .align_y(Alignment::Center)
     .spacing(SPACING_NORMAL)
     .width(Length::Fill)
+    .into()
+}
+
+/// A labeled segmented control: a fixed-width label followed by a row of
+/// mutually-exclusive buttons. The selected segment is accent-styled, others
+/// are dim. Each segment supplies its own pre-built `Message`.
+pub fn segmented_control<'a>(
+    label: &'a str,
+    segments: Vec<(&'a str, Message, bool)>,
+    palette: Palette,
+) -> Element<'a, Message> {
+    let buttons: Vec<Element<'a, Message>> = segments
+        .into_iter()
+        .map(|(segment_label, message, selected)| {
+            segment_button(segment_label, message, selected, palette)
+        })
+        .collect();
+
+    row![
+        text(label).size(13).width(Length::Fixed(LABEL_WIDTH)),
+        row(buttons).spacing(8),
+    ]
+    .align_y(Alignment::Center)
+    .spacing(SPACING_NORMAL)
+    .width(Length::Fill)
+    .into()
+}
+
+fn segment_button<'a>(
+    label: &'a str,
+    message: Message,
+    selected: bool,
+    palette: Palette,
+) -> Element<'a, Message> {
+    let accent = palette.accent;
+    let text_color = palette.text;
+    let surface = palette.surface;
+
+    button(
+        text(label)
+            .size(13)
+            .color(if selected { accent } else { text_color }),
+    )
+    .on_press(message)
+    .padding([6, 14])
+    .style(move |_theme: &iced::Theme, _status| button::Style {
+        background: Some(Background::Color(Color {
+            a: if selected { 0.25 } else { 0.12 },
+            ..surface
+        })),
+        text_color: if selected { accent } else { text_color },
+        border: Border {
+            radius: RADIUS_SMALL.into(),
+            width: if selected { 1.5 } else { 1.0 },
+            color: if selected {
+                accent
+            } else {
+                Color {
+                    a: 0.15,
+                    ..text_color
+                }
+            },
+        },
+        shadow: Default::default(),
+        snap: true,
+    })
     .into()
 }
 

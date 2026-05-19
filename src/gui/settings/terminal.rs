@@ -1,93 +1,17 @@
-use crate::config::{AppConfig, BellMode, CursorShape};
+use crate::config::{AppConfig, BellMode};
 use crate::gui::app::Message;
 use crate::gui::settings::{
-    SettingsDraft, SettingsField, TerminalFontOption, hint_text, input_row_with_suffix, section,
+    SettingsDraft, SettingsField, input_row_with_suffix, section, segmented_control,
 };
 use crate::gui::theme::{Palette, SPACING_NORMAL};
-use iced::widget::{checkbox, column, combo_box, pick_list, row, text, toggler};
+use iced::widget::{column, row, text, toggler};
 use iced::{Alignment, Element, Length};
 
 pub fn view<'a>(
     _config: &'a AppConfig,
     draft: &'a SettingsDraft,
-    font_combo_state: &'a combo_box::State<TerminalFontOption>,
-    show_all_fonts: bool,
-    selected_font: Option<&'a TerminalFontOption>,
     palette: Palette,
 ) -> Element<'a, Message> {
-    let font_section = section(
-        crate::t!("settings.terminal.font_section"),
-        column(vec![
-            input_row_with_suffix(
-                crate::t!("settings.terminal.size"),
-                &draft.terminal_font_size,
-                SettingsField::TerminalFontSize,
-                "pt",
-                palette,
-            ),
-            row![
-                text(crate::t!("settings.terminal.font_family"))
-                    .size(13)
-                    .width(Length::Fixed(160.0)),
-                combo_box(
-                    font_combo_state,
-                    crate::t!("settings.terminal.font_search_placeholder"),
-                    selected_font,
-                    Message::FontSelected,
-                )
-                .width(Length::Fill),
-            ]
-            .align_y(Alignment::Center)
-            .spacing(SPACING_NORMAL)
-            .width(Length::Fill)
-            .into(),
-            row![
-                checkbox(show_all_fonts)
-                    .label(crate::t!("settings.terminal.show_all_fonts"))
-                    .on_toggle(Message::ToggleShowAllFonts)
-                    .size(14)
-                    .text_size(13),
-            ]
-            .into(),
-            hint_text(
-                if draft.terminal_font_selection.is_empty() {
-                    crate::t!("settings.terminal.font_hint_bundled")
-                } else {
-                    crate::t!("settings.terminal.font_hint_monospace")
-                },
-                palette,
-            ),
-        ])
-        .spacing(SPACING_NORMAL)
-        .width(Length::Fill)
-        .into(),
-        palette,
-    );
-
-    let padding_section = section(
-        crate::t!("settings.terminal.padding_section"),
-        column(vec![
-            input_row_with_suffix(
-                crate::t!("settings.terminal.horizontal"),
-                &draft.terminal_padding_x,
-                SettingsField::TerminalPaddingX,
-                "px",
-                palette,
-            ),
-            input_row_with_suffix(
-                crate::t!("settings.terminal.vertical"),
-                &draft.terminal_padding_y,
-                SettingsField::TerminalPaddingY,
-                "px",
-                palette,
-            ),
-        ])
-        .spacing(SPACING_NORMAL)
-        .width(Length::Fill)
-        .into(),
-        palette,
-    );
-
     let scrollback_section = section(
         crate::t!("settings.terminal.scrolling_section"),
         column(vec![
@@ -150,35 +74,15 @@ pub fn view<'a>(
 
     let cursor_section = section(
         crate::t!("settings.terminal.cursor_section"),
-        column(vec![
-            row![
-                text(crate::t!("settings.terminal.shape"))
-                    .size(13)
-                    .width(label_width),
-                pick_list(
-                    CursorShape::ALL,
-                    Some(draft.cursor_shape),
-                    Message::SettingsCursorShapeSelected,
-                )
-                .text_size(13),
-            ]
-            .align_y(Alignment::Center)
-            .spacing(SPACING_NORMAL)
-            .width(Length::Fill)
-            .into(),
-            row![
-                text(crate::t!("settings.terminal.blink"))
-                    .size(13)
-                    .width(label_width),
-                toggler(draft.cursor_blink)
-                    .on_toggle(Message::SettingsCursorBlinkToggled)
-                    .size(18),
-            ]
-            .align_y(Alignment::Center)
-            .spacing(SPACING_NORMAL)
-            .width(Length::Fill)
-            .into(),
-        ])
+        row![
+            text(crate::t!("settings.terminal.blink"))
+                .size(13)
+                .width(label_width),
+            toggler(draft.cursor_blink)
+                .on_toggle(Message::SettingsCursorBlinkToggled)
+                .size(18),
+        ]
+        .align_y(Alignment::Center)
         .spacing(SPACING_NORMAL)
         .width(Length::Fill)
         .into(),
@@ -187,38 +91,38 @@ pub fn view<'a>(
 
     let bell_section = section(
         crate::t!("settings.terminal.bell_section"),
-        column(vec![
-            row![
-                text(crate::t!("settings.terminal.behavior"))
-                    .size(13)
-                    .width(label_width),
-                pick_list(
-                    BellMode::ALL,
-                    Some(draft.bell_mode),
-                    Message::SettingsBellModeSelected,
-                )
-                .text_size(13),
-            ]
-            .align_y(Alignment::Center)
-            .spacing(SPACING_NORMAL)
-            .width(Length::Fill)
-            .into(),
-        ])
-        .spacing(SPACING_NORMAL)
-        .width(Length::Fill)
-        .into(),
+        segmented_control(
+            crate::t!("settings.terminal.behavior"),
+            BellMode::ALL
+                .iter()
+                .map(|&mode| {
+                    (
+                        bell_mode_label(mode),
+                        Message::SettingsBellModeSelected(mode),
+                        draft.bell_mode == mode,
+                    )
+                })
+                .collect(),
+            palette,
+        ),
         palette,
     );
 
     column(vec![
-        font_section,
-        padding_section,
         scrollback_section,
+        paste_section,
         cursor_section,
         bell_section,
-        paste_section,
     ])
     .spacing(SPACING_NORMAL)
     .width(Length::Fill)
     .into()
+}
+
+fn bell_mode_label(mode: BellMode) -> &'static str {
+    match mode {
+        BellMode::Off => crate::t!("settings.terminal.bell_mode.off"),
+        BellMode::Visual => crate::t!("settings.terminal.bell_mode.visual"),
+        BellMode::Sound => crate::t!("settings.terminal.bell_mode.sound"),
+    }
 }

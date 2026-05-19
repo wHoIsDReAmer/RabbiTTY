@@ -21,7 +21,7 @@ shell = "Shell"
 ssh = "SSH"
 
 [settings.categories]
-ui = "UI"
+appearance = "Appearance"
 terminal = "Terminal"
 theme = "Theme"
 shortcuts = "Shortcuts"
