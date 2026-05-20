@@ -1,5 +1,6 @@
 use crate::config::{AppConfig, BellMode, CursorShape};
 use crate::gui::app::Message;
+use crate::gui::components::accent_toggler_style;
 use crate::gui::settings::{
     SettingsDraft, SettingsField, input_row_with_suffix, section, segmented_control,
 };
@@ -47,7 +48,8 @@ pub fn view<'a>(
                     .width(label_width),
                 toggler(draft.bracketed_paste)
                     .on_toggle(Message::SettingsBracketedPasteToggled)
-                    .size(18),
+                    .size(18)
+                    .style(accent_toggler_style(palette)),
             ]
             .align_y(Alignment::Center)
             .spacing(SPACING_NORMAL)
@@ -59,7 +61,8 @@ pub fn view<'a>(
                     .width(label_width),
                 toggler(draft.multiline_paste_confirm)
                     .on_toggle(Message::SettingsMultilinePasteConfirmToggled)
-                    .size(18),
+                    .size(18)
+                    .style(accent_toggler_style(palette)),
             ]
             .align_y(Alignment::Center)
             .spacing(SPACING_NORMAL)
@@ -96,7 +99,8 @@ pub fn view<'a>(
                     .width(label_width),
                 toggler(draft.cursor_blink)
                     .on_toggle(Message::SettingsCursorBlinkToggled)
-                    .size(18),
+                    .size(18)
+                    .style(accent_toggler_style(palette)),
             ]
             .align_y(Alignment::Center)
             .spacing(SPACING_NORMAL)

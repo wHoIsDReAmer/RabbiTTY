@@ -2,6 +2,7 @@ use crate::config::{
     AppConfig, AppConfigUpdates, BellMode, CursorShape, SshAuthMethod, SshProfile, parse_hex_color,
 };
 use crate::gui::app::Message;
+use crate::gui::components::accent_toggler_style;
 use crate::gui::theme::{Palette, RADIUS_NORMAL, RADIUS_SMALL, SPACING_NORMAL};
 use iced::widget::{button, column, container, row, rule, text, text_input, toggler};
 use iced::{Alignment, Background, Border, Color, Element, Length};
@@ -668,12 +669,13 @@ pub fn color_input_row<'a>(
     .into()
 }
 
-pub fn toggle_row<'a>(label: &'a str, value: bool) -> Element<'a, Message> {
+pub fn toggle_row<'a>(label: &'a str, value: bool, palette: Palette) -> Element<'a, Message> {
     row![
         text(label).size(13).width(Length::Fixed(LABEL_WIDTH)),
         toggler(value)
             .on_toggle(Message::SettingsBlurToggled)
             .size(18)
+            .style(accent_toggler_style(palette))
     ]
     .align_y(Alignment::Center)
     .spacing(SPACING_NORMAL)

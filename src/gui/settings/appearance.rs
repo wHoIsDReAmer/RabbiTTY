@@ -1,5 +1,8 @@
 use crate::config::AppConfig;
 use crate::gui::app::Message;
+use crate::gui::components::{
+    accent_combo_box_input_style, accent_combo_box_menu_style, accent_toggler_style,
+};
 use crate::gui::settings::{
     SettingsDraft, SettingsField, TerminalFontOption, hint_text, input_row_with_suffix, section,
     segmented_control,
@@ -43,7 +46,9 @@ pub fn view<'a>(
                     selected_font,
                     Message::FontSelected,
                 )
-                .width(Length::Fill),
+                .width(Length::Fill)
+                .input_style(accent_combo_box_input_style(palette))
+                .menu_style(accent_combo_box_menu_style(palette)),
             ]
             .align_y(Alignment::Center)
             .spacing(SPACING_NORMAL)
@@ -104,7 +109,8 @@ pub fn view<'a>(
                 .width(Length::Fixed(160.0)),
             toggler(draft.animations_enabled)
                 .on_toggle(Message::SettingsAnimationsToggled)
-                .size(18),
+                .size(18)
+                .style(accent_toggler_style(palette)),
         ]
         .align_y(Alignment::Center)
         .spacing(SPACING_NORMAL)

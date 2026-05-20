@@ -81,6 +81,7 @@ pub fn view<'a>(
         column(vec![toggle_row(
             crate::t!("settings.theme.enable_blur"),
             draft.blur_enabled,
+            palette,
         )])
         .spacing(SPACING_NORMAL)
         .width(Length::Fill)
