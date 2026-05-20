@@ -15,6 +15,7 @@ impl App {
             .is_some_and(|start| start.elapsed() < super::BELL_FLASH_DURATION);
         let has_animation = self.shell_picker_anim.is_animating(now)
             || self.tabs.iter().any(|tab| tab.sftp.anim.is_animating(now))
+            || self.settings_category_transition.is_animating(now)
             || bell_flashing;
 
         let animation_tick = if has_animation {

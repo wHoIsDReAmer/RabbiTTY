@@ -404,11 +404,18 @@ impl App {
                 self.settings_draft = SettingsDraft::from_config(&self.config);
             }
             Message::SelectSettingsCategory(category) => {
-                self.settings_category = category;
                 if !self.settings_open {
                     self.settings_open = true;
                     self.active_tab = SETTINGS_TAB_INDEX;
                     self.settings_draft = SettingsDraft::from_config(&self.config);
+                }
+                if let Some(immediate) = self.settings_category_transition.request_switch(
+                    category,
+                    self.settings_category,
+                    self.config.ui.animations_enabled,
+                    Instant::now(),
+                ) {
+                    self.settings_category = immediate;
                 }
             }
             Message::SettingsInputChanged(field, value) => {
@@ -665,6 +672,9 @@ impl App {
                     if !tab.sftp.anim.is_animating(now) && !tab.sftp.anim.value() {
                         tab.sftp.open = false;
                     }
+                }
+                if let Some(cat) = self.settings_category_transition.tick(now) {
+                    self.settings_category = cat;
                 }
                 if let Some(start) = self.bell_flash_start
                     && start.elapsed() >= super::BELL_FLASH_DURATION

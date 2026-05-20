@@ -186,6 +186,7 @@ pub struct App {
     pub(super) settings_debounce_seq: u64,
     pub(super) settings_debounce_spawned_seq: u64,
     pub(super) shell_picker_anim: Animation<bool>,
+    pub(super) settings_category_transition: crate::gui::components::CategoryTransition,
     pub(super) palette: crate::gui::theme::Palette,
     pub(super) ime_active: bool,
     pub(super) ime_preedit: Option<(String, Option<std::ops::Range<usize>>)>,
@@ -287,6 +288,7 @@ impl App {
             shell_picker_anim: Animation::new(false)
                 .duration(std::time::Duration::from_millis(250))
                 .easing(iced::animation::Easing::EaseOutQuint),
+            settings_category_transition: crate::gui::components::CategoryTransition::new(),
             window_style_applied: false,
             #[cfg(target_os = "macos")]
             show_restart_confirm: false,
