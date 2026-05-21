@@ -1,6 +1,6 @@
 [package]
 name = "rabbitty"
-version = "0.1.1"
+version = "0.1.2"
 edition = "2024"
 authors = ["neverprogrammer@gmail.com"]
 rust-version = "1.92"
@@ -83,7 +83,7 @@ image = { version = "0.25", default-features = false, features = ["png"] }
 name = "Rabbitty"
 identifier = "io.github.rabbitty"
 icon = ["assets/icon.icns"]
-version = "0.1.1"
+version = "0.1.2"
 copyright = "Copyright 2026 RabbiTTY contributors"
 category = "public.app-category.utilities"
 short_description = "Fast, lean terminal emulator."
