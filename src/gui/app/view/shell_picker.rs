@@ -30,6 +30,7 @@ struct ShellIcon {
 struct PickerStyle {
     alpha: f32,
     palette: Palette,
+    animations_enabled: bool,
 }
 
 impl PickerStyle {
@@ -102,22 +103,13 @@ impl PickerStyle {
             .spacing(10)
             .align_y(iced::Alignment::Center);
 
-        button(content)
+        // Background painted by `hover_fade` behind the button so the hover
+        // transition matches the rest of the app.
+        let inner = button(content)
             .style(
-                move |_theme: &iced::Theme, status: iced::widget::button::Status| {
-                    let hovered = matches!(status, iced::widget::button::Status::Hovered);
-                    let bg_alpha = if selected {
-                        0.15 * alpha
-                    } else if hovered {
-                        0.08 * alpha
-                    } else {
-                        0.0
-                    };
+                move |_theme: &iced::Theme, _status: iced::widget::button::Status| {
                     iced::widget::button::Style {
-                        background: Some(Background::Color(Color {
-                            a: bg_alpha,
-                            ..palette.text
-                        })),
+                        background: Some(Background::Color(Color::TRANSPARENT)),
                         text_color: Color {
                             a: alpha,
                             ..palette.text
@@ -134,8 +126,34 @@ impl PickerStyle {
             )
             .padding([6, 10])
             .on_press(on_press)
-            .width(Length::Fill)
-            .into()
+            .width(Length::Fill);
+
+        let rest = crate::gui::components::HoverStyle {
+            background: if selected {
+                Color {
+                    a: 0.15 * alpha,
+                    ..palette.text
+                }
+            } else {
+                Color::TRANSPARENT
+            },
+            border_color: Color::TRANSPARENT,
+            border_width: 0.0,
+            radius: RADIUS_SMALL,
+        };
+        let hover = if selected {
+            rest
+        } else {
+            crate::gui::components::HoverStyle {
+                background: Color {
+                    a: 0.08 * alpha,
+                    ..palette.text
+                },
+                ..rest
+            }
+        };
+
+        crate::gui::components::hover_fade(inner, rest, hover, self.animations_enabled).into()
     }
 }
 
@@ -216,6 +234,7 @@ impl App {
         let style = PickerStyle {
             alpha: progress,
             palette,
+            animations_enabled: self.config.ui.animations_enabled,
         };
 
         let mut items: Vec<Element<Message>> = Vec::new();

@@ -9,7 +9,7 @@ pub(in crate::gui) use dialog::{DialogButton, confirm_dialog};
 use super::{App, Message, SETTINGS_TAB_INDEX};
 use crate::gui::components::context_menu::{ContextMenuItem, context_menu};
 use crate::gui::components::ime_wrapper::ImeEnabled;
-use crate::gui::components::{button_secondary, panel, tab_bar};
+use crate::gui::components::{panel, secondary as button_secondary, tab_bar};
 use crate::gui::render::TerminalProgram;
 use crate::gui::theme::{RADIUS_SMALL, SPACING_SMALL};
 use iced::widget::{button, column, container, image, row, scrollable, stack, text};
@@ -101,6 +101,7 @@ impl App {
                 ],
                 Message::CancelRestartForBlur,
                 palette,
+                self.config.ui.animations_enabled,
             );
         }
 
@@ -125,6 +126,7 @@ impl App {
                 ],
                 Message::CancelMultilinePaste,
                 palette,
+                self.config.ui.animations_enabled,
             );
         }
 
@@ -221,11 +223,15 @@ impl App {
             let effective = (height_ratio * drawer_progress).clamp(0.0, height_ratio);
             let bottom_portion = ((effective * 1000.0).round() as u16).max(1);
             let top_portion = 1000u16.saturating_sub(bottom_portion).max(1);
-            let drawer_panel =
-                container(sftp::drawer(&active_tab.sftp, active_tab.id, self.palette))
-                    .width(Length::Fill)
-                    .height(Length::FillPortion(bottom_portion))
-                    .clip(true);
+            let drawer_panel = container(sftp::drawer(
+                &active_tab.sftp,
+                active_tab.id,
+                self.palette,
+                self.config.ui.animations_enabled,
+            ))
+            .width(Length::Fill)
+            .height(Length::FillPortion(bottom_portion))
+            .clip(true);
             let overlay = column![
                 iced::widget::Space::new().height(Length::FillPortion(top_portion)),
                 drawer_panel,
@@ -293,11 +299,15 @@ impl App {
         let version_label = text(format!("RabbiTTY v{}", env!("CARGO_PKG_VERSION")))
             .size(13)
             .color(Color::from_rgba(1.0, 1.0, 1.0, 0.4));
-        let new_tab_btn =
-            button_secondary(t!("lobby.new_tab"), palette).on_press(Message::OpenShellPicker);
+        let new_tab_btn = button_secondary(
+            t!("lobby.new_tab"),
+            Some(Message::OpenShellPicker),
+            palette,
+            self.config.ui.animations_enabled,
+        );
 
         let mut content: Vec<Element<Message>> =
-            vec![logo.into(), version_label.into(), new_tab_btn.into()];
+            vec![logo.into(), version_label.into(), new_tab_btn];
 
         if !self.session_history.entries.is_empty() {
             content.push(
@@ -422,6 +432,7 @@ impl App {
             self.cursor_position,
             Message::CloseTabContextMenu,
             self.palette,
+            self.config.ui.animations_enabled,
         )
     }
 }

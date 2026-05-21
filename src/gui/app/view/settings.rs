@@ -167,7 +167,12 @@ impl App {
             .into();
 
         if matches!(self.settings_category, SettingsCategory::Ssh) {
-            settings::ssh::modal_overlay(settings_layout, &self.settings_draft, palette)
+            settings::ssh::modal_overlay(
+                settings_layout,
+                &self.settings_draft,
+                palette,
+                animations_enabled,
+            )
         } else {
             settings_layout
         }

@@ -1,6 +1,7 @@
 use crate::gui::app::Message;
+use crate::gui::components::menu_item;
 use crate::gui::theme::{Palette, RADIUS_SMALL};
-use iced::widget::{button, column, container, mouse_area, stack, text};
+use iced::widget::{column, container, mouse_area, stack, text};
 use iced::{Background, Border, Color, Element, Length, Padding};
 
 pub struct ContextMenuItem {
@@ -14,38 +15,11 @@ pub fn context_menu<'a>(
     position: iced::Point,
     on_dismiss: Message,
     palette: Palette,
+    animations_enabled: bool,
 ) -> Element<'a, Message> {
     let menu_items: Vec<Element<Message>> = items
         .into_iter()
-        .map(|item| {
-            button(text(item.label).size(13))
-                .on_press(item.message)
-                .padding([7, 14])
-                .width(Length::Fill)
-                .style(
-                    move |_theme: &iced::Theme, status: button::Status| button::Style {
-                        background: Some(Background::Color(
-                            if matches!(status, button::Status::Hovered) {
-                                Color {
-                                    a: 0.1,
-                                    ..palette.text
-                                }
-                            } else {
-                                Color::TRANSPARENT
-                            },
-                        )),
-                        text_color: palette.text,
-                        border: Border {
-                            radius: RADIUS_SMALL.into(),
-                            width: 0.0,
-                            color: Color::TRANSPARENT,
-                        },
-                        shadow: iced::Shadow::default(),
-                        snap: false,
-                    },
-                )
-                .into()
-        })
+        .map(|item| menu_item(item.label, item.message, palette, animations_enabled))
         .collect();
 
     let menu = container(column(menu_items).padding([4, 4]))

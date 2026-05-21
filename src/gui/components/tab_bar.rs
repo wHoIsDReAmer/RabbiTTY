@@ -1,5 +1,5 @@
 use crate::gui::app::Message;
-use crate::gui::components::{HoverStyle, hover_fade};
+use crate::gui::components::{HoverStyle, button as button_factory, hover_fade};
 use crate::gui::theme::Palette;
 use iced::widget::mouse_area;
 use iced::widget::{button, container, row, scrollable, text};
@@ -61,109 +61,11 @@ pub fn tab_bar<'a>(
         tab_elements.push(tab_item.into());
     }
 
-    // Background is painted by `hover_fade` behind the button so it can
-    // cross-fade on hover; the button itself stays transparent.
-    let icon_style = move |_theme: &Theme, status: button::Status| button::Style {
-        background: Some(Background::Color(Color::TRANSPARENT)),
-        text_color: match status {
-            button::Status::Hovered => palette.text,
-            _ => palette.text_secondary,
-        },
-        border: Border {
-            radius: 6.0.into(),
-            width: 0.0,
-            color: Color::TRANSPARENT,
-        },
-        shadow: iced::Shadow::default(),
-        snap: true,
-    };
-    let icon_rest = HoverStyle {
-        background: Color::TRANSPARENT,
-        border_color: Color::TRANSPARENT,
-        border_width: 0.0,
-        radius: 6.0,
-    };
-    let icon_hover = HoverStyle {
-        background: Color {
-            a: 0.1,
-            ..palette.text
-        },
-        ..icon_rest
-    };
-
-    let add_btn = hover_fade(
-        button(text("+").size(13))
-            .on_press(on_add)
-            .padding([6, 10])
-            .style(icon_style),
-        icon_rest,
-        icon_hover,
-        animations_enabled,
-    );
-    let settings_btn = hover_fade(
-        button(text("\u{2699}").size(13))
-            .on_press(on_settings)
-            .padding([6, 10])
-            .style(icon_style),
-        icon_rest,
-        icon_hover,
-        animations_enabled,
-    );
+    let add_btn = button_factory::icon("+", on_add, palette, animations_enabled);
+    let settings_btn = button_factory::icon("\u{2699}", on_settings, palette, animations_enabled);
 
     let sftp_btn: Option<Element<Message>> = sftp_toggle.map(|(msg, active)| {
-        let label_color = if active {
-            palette.accent
-        } else {
-            palette.text_secondary
-        };
-        let sftp_style = move |_theme: &Theme, status: button::Status| button::Style {
-            background: Some(Background::Color(Color::TRANSPARENT)),
-            text_color: if active {
-                palette.accent
-            } else {
-                match status {
-                    button::Status::Hovered => palette.text,
-                    _ => label_color,
-                }
-            },
-            border: Border {
-                radius: 6.0.into(),
-                width: 0.0,
-                color: Color::TRANSPARENT,
-            },
-            shadow: iced::Shadow::default(),
-            snap: true,
-        };
-        let sftp_rest = HoverStyle {
-            background: if active {
-                Color {
-                    a: 0.08,
-                    ..palette.accent
-                }
-            } else {
-                Color::TRANSPARENT
-            },
-            border_color: Color::TRANSPARENT,
-            border_width: 0.0,
-            radius: 6.0,
-        };
-        let sftp_hover = HoverStyle {
-            background: Color {
-                a: 0.12,
-                ..palette.text
-            },
-            ..sftp_rest
-        };
-        hover_fade(
-            button(text("\u{21C5}").size(13))
-                .on_press(msg)
-                .padding([6, 10])
-                .style(sftp_style),
-            sftp_rest,
-            sftp_hover,
-            animations_enabled,
-        )
-        .into()
+        button_factory::icon_toggle("\u{21C5}", msg, active, palette, animations_enabled)
     });
 
     let tabs_row = row(tab_elements)
@@ -235,8 +137,8 @@ pub fn tab_bar<'a>(
     if let Some(btn) = sftp_btn {
         trailing.push(btn);
     }
-    trailing.push(add_btn.into());
-    trailing.push(settings_btn.into());
+    trailing.push(add_btn);
+    trailing.push(settings_btn);
 
     #[cfg(target_os = "windows")]
     let content = {
