@@ -1,6 +1,7 @@
 use super::super::Message;
-use crate::gui::theme::{Palette, RADIUS_NORMAL, RADIUS_SMALL, SPACING_NORMAL, SPACING_SMALL};
-use iced::widget::{button, center, column, container, mouse_area, row, stack, text};
+use crate::gui::components::{primary, secondary};
+use crate::gui::theme::{Palette, RADIUS_NORMAL, SPACING_NORMAL, SPACING_SMALL};
+use iced::widget::{center, column, container, mouse_area, row, stack, text};
 use iced::{Background, Border, Color, Element, Length};
 
 pub(in crate::gui) struct DialogButton {
@@ -9,6 +10,7 @@ pub(in crate::gui) struct DialogButton {
     pub primary: bool,
 }
 
+#[allow(clippy::too_many_arguments)]
 pub(in crate::gui) fn confirm_dialog<'a>(
     base_layout: impl Into<Element<'a, Message>>,
     title: &str,
@@ -16,6 +18,7 @@ pub(in crate::gui) fn confirm_dialog<'a>(
     buttons: Vec<DialogButton>,
     on_dismiss: Message,
     palette: Palette,
+    animations_enabled: bool,
 ) -> Element<'a, Message> {
     let backdrop = mouse_area(
         container(text(""))
@@ -36,56 +39,11 @@ pub(in crate::gui) fn confirm_dialog<'a>(
     let button_row: Vec<Element<Message>> = buttons
         .into_iter()
         .map(|btn| {
-            let is_primary = btn.primary;
-            button(text(btn.label).size(13))
-                .style(
-                    move |_theme: &iced::Theme, status: iced::widget::button::Status| {
-                        let hovered = matches!(status, iced::widget::button::Status::Hovered);
-                        if is_primary {
-                            iced::widget::button::Style {
-                                background: Some(Background::Color(if hovered {
-                                    Color {
-                                        a: 0.9,
-                                        ..palette.accent
-                                    }
-                                } else {
-                                    palette.accent
-                                })),
-                                text_color: palette.background,
-                                border: Border {
-                                    radius: RADIUS_SMALL.into(),
-                                    ..Default::default()
-                                },
-                                shadow: iced::Shadow::default(),
-                                snap: true,
-                            }
-                        } else {
-                            iced::widget::button::Style {
-                                background: Some(Background::Color(if hovered {
-                                    Color {
-                                        a: 0.15,
-                                        ..palette.text
-                                    }
-                                } else {
-                                    Color {
-                                        a: 0.08,
-                                        ..palette.text
-                                    }
-                                })),
-                                text_color: palette.text,
-                                border: Border {
-                                    radius: RADIUS_SMALL.into(),
-                                    ..Default::default()
-                                },
-                                shadow: iced::Shadow::default(),
-                                snap: true,
-                            }
-                        }
-                    },
-                )
-                .padding([6, 14])
-                .on_press(btn.message)
-                .into()
+            if btn.primary {
+                primary(btn.label, btn.message, palette, animations_enabled)
+            } else {
+                secondary(btn.label, Some(btn.message), palette, animations_enabled)
+            }
         })
         .collect();
 

@@ -1,6 +1,7 @@
 //! SFTP drawer rendering.
 
 use crate::gui::app::Message;
+use crate::gui::components::{HoverStyle, hover_fade};
 use crate::gui::sftp::{self, SftpDrawerState, TransferRow};
 use crate::gui::theme::{Palette, RADIUS_NORMAL, RADIUS_SMALL, SPACING_NORMAL, SPACING_SMALL};
 use crate::ssh::sftp::Entry;
@@ -14,8 +15,9 @@ pub fn drawer<'a>(
     state: &'a SftpDrawerState,
     tab_id: u64,
     palette: Palette,
+    animations_enabled: bool,
 ) -> Element<'a, Message> {
-    let header = drawer_header(state, palette);
+    let header = drawer_header(state, palette, animations_enabled);
     let separator = container("")
         .width(Length::Fill)
         .height(Length::Fixed(1.0))
@@ -26,11 +28,11 @@ pub fn drawer<'a>(
             })),
             ..Default::default()
         });
-    let body = drawer_body(state, tab_id, palette);
+    let body = drawer_body(state, tab_id, palette, animations_enabled);
 
     let mut layers: Vec<Element<Message>> = vec![header, separator.into(), body];
     if !state.transfers.is_empty() {
-        layers.push(transfer_strip(state, palette));
+        layers.push(transfer_strip(state, palette, animations_enabled));
     }
 
     container(column(layers).width(Length::Fill).height(Length::Fill))
@@ -65,7 +67,11 @@ pub fn drawer<'a>(
         .into()
 }
 
-fn drawer_header<'a>(state: &'a SftpDrawerState, palette: Palette) -> Element<'a, Message> {
+fn drawer_header<'a>(
+    state: &'a SftpDrawerState,
+    palette: Palette,
+    animations_enabled: bool,
+) -> Element<'a, Message> {
     let path = if state.current_path.is_empty() {
         "~"
     } else {
@@ -97,38 +103,24 @@ fn drawer_header<'a>(state: &'a SftpDrawerState, palette: Palette) -> Element<'a
             .into(),
     };
 
-    let icon_style = move |_theme: &Theme, status: button::Status| button::Style {
-        background: Some(Background::Color(match status {
-            button::Status::Hovered => Color {
-                a: 0.08,
-                ..palette.text
-            },
-            _ => Color::TRANSPARENT,
-        })),
-        text_color: Color {
-            a: 0.7,
-            ..palette.text
-        },
-        border: Border {
-            radius: RADIUS_SMALL.into(),
-            width: 0.0,
-            color: Color::TRANSPARENT,
-        },
-        shadow: Shadow::default(),
-        snap: true,
-    };
-    let upload_btn = button(text("\u{2191}").size(12))
-        .on_press(Message::SftpRequestUpload)
-        .padding([3, 8])
-        .style(icon_style);
-    let refresh_btn = button(text("\u{27F3}").size(12))
-        .on_press(Message::SftpRefresh)
-        .padding([3, 8])
-        .style(icon_style);
-    let close_btn = button(text("\u{2715}").size(11))
-        .on_press(Message::SftpToggleDrawer)
-        .padding([3, 8])
-        .style(icon_style);
+    let upload_btn = drawer_icon_button(
+        "\u{2191}",
+        Message::SftpRequestUpload,
+        palette,
+        animations_enabled,
+    );
+    let refresh_btn = drawer_icon_button(
+        "\u{27F3}",
+        Message::SftpRefresh,
+        palette,
+        animations_enabled,
+    );
+    let close_btn = drawer_icon_button(
+        "\u{2715}",
+        Message::SftpToggleDrawer,
+        palette,
+        animations_enabled,
+    );
 
     container(
         row![
@@ -148,10 +140,54 @@ fn drawer_header<'a>(state: &'a SftpDrawerState, palette: Palette) -> Element<'a
     .into()
 }
 
+/// Small icon button used by the SFTP drawer header. Uses a slightly tighter
+/// padding than the global `icon` factory so it fits the header height.
+fn drawer_icon_button<'a>(
+    glyph: &'a str,
+    on_press: Message,
+    palette: Palette,
+    animations_enabled: bool,
+) -> Element<'a, Message> {
+    let inner = button(text(glyph.to_string()).size(12))
+        .on_press(on_press)
+        .padding([3, 8])
+        .style(
+            move |_theme: &Theme, _status: button::Status| button::Style {
+                background: Some(Background::Color(Color::TRANSPARENT)),
+                text_color: Color {
+                    a: 0.7,
+                    ..palette.text
+                },
+                border: Border {
+                    radius: RADIUS_SMALL.into(),
+                    width: 0.0,
+                    color: Color::TRANSPARENT,
+                },
+                shadow: Shadow::default(),
+                snap: true,
+            },
+        );
+    let rest = HoverStyle {
+        background: Color::TRANSPARENT,
+        border_color: Color::TRANSPARENT,
+        border_width: 0.0,
+        radius: RADIUS_SMALL,
+    };
+    let hover = HoverStyle {
+        background: Color {
+            a: 0.08,
+            ..palette.text
+        },
+        ..rest
+    };
+    hover_fade(inner, rest, hover, animations_enabled).into()
+}
+
 fn drawer_body<'a>(
     state: &'a SftpDrawerState,
     tab_id: u64,
     palette: Palette,
+    animations_enabled: bool,
 ) -> Element<'a, Message> {
     if let Some(error) = state.error.as_deref() {
         return centered_message(error, palette.error, palette);
@@ -167,8 +203,8 @@ fn drawer_body<'a>(
         );
     }
 
-    let parent_element =
-        sftp::parent_path(&state.current_path).map(|p| parent_row(tab_id, p, palette));
+    let parent_element = sftp::parent_path(&state.current_path)
+        .map(|p| parent_row(tab_id, p, palette, animations_enabled));
 
     if state.entries.is_empty() {
         let empty = centered_message(
@@ -193,7 +229,7 @@ fn drawer_body<'a>(
         rows.push(parent);
     }
     for entry in &state.entries {
-        rows.push(entry_row(state, tab_id, entry, palette));
+        rows.push(entry_row(state, tab_id, entry, palette, animations_enabled));
     }
 
     scrollable(column(rows).width(Length::Fill).padding(iced::Padding {
@@ -215,9 +251,14 @@ fn centered_message<'a>(msg: &'a str, color: Color, _palette: Palette) -> Elemen
         .into()
 }
 
-fn parent_row<'a>(tab_id: u64, parent: String, palette: Palette) -> Element<'a, Message> {
+fn parent_row<'a>(
+    tab_id: u64,
+    parent: String,
+    palette: Palette,
+    animations_enabled: bool,
+) -> Element<'a, Message> {
     let row_style = row_style_factory(palette);
-    button(
+    let inner = button(
         row![
             text("\u{2190}").size(11).color(Color {
                 a: 0.55,
@@ -238,7 +279,13 @@ fn parent_row<'a>(tab_id: u64, parent: String, palette: Palette) -> Element<'a, 
     .padding([3.0, SPACING_NORMAL])
     .width(Length::Fill)
     .height(Length::Fixed(ROW_HEIGHT))
-    .style(row_style)
+    .style(row_style);
+    hover_fade(
+        inner,
+        row_rest_style(),
+        row_hover_style(palette),
+        animations_enabled,
+    )
     .into()
 }
 
@@ -247,6 +294,7 @@ fn entry_row<'a>(
     tab_id: u64,
     entry: &'a Entry,
     palette: Palette,
+    animations_enabled: bool,
 ) -> Element<'a, Message> {
     let marker = if entry.is_dir {
         "\u{25B8}"
@@ -319,18 +367,41 @@ fn entry_row<'a>(
     if let Some(msg) = press_msg {
         btn = btn.on_press(msg);
     }
-    btn.into()
+    hover_fade(
+        btn,
+        row_rest_style(),
+        row_hover_style(palette),
+        animations_enabled,
+    )
+    .into()
+}
+
+fn row_rest_style() -> HoverStyle {
+    HoverStyle {
+        background: Color::TRANSPARENT,
+        border_color: Color::TRANSPARENT,
+        border_width: 0.0,
+        radius: RADIUS_SMALL,
+    }
+}
+
+fn row_hover_style(palette: Palette) -> HoverStyle {
+    HoverStyle {
+        background: Color {
+            a: 0.06,
+            ..palette.text
+        },
+        border_color: Color::TRANSPARENT,
+        border_width: 0.0,
+        radius: RADIUS_SMALL,
+    }
 }
 
 fn row_style_factory(palette: Palette) -> impl Fn(&Theme, button::Status) -> button::Style + Copy {
-    move |_theme: &Theme, status: button::Status| button::Style {
-        background: Some(Background::Color(match status {
-            button::Status::Hovered => Color {
-                a: 0.06,
-                ..palette.text
-            },
-            _ => Color::TRANSPARENT,
-        })),
+    // Background is painted by `hover_fade` behind the button; the button
+    // itself stays transparent so the cross-fade can show through.
+    move |_theme: &Theme, _status: button::Status| button::Style {
+        background: Some(Background::Color(Color::TRANSPARENT)),
         text_color: palette.text,
         border: Border {
             radius: RADIUS_SMALL.into(),
@@ -342,7 +413,11 @@ fn row_style_factory(palette: Palette) -> impl Fn(&Theme, button::Status) -> but
     }
 }
 
-fn transfer_strip<'a>(state: &'a SftpDrawerState, palette: Palette) -> Element<'a, Message> {
+fn transfer_strip<'a>(
+    state: &'a SftpDrawerState,
+    palette: Palette,
+    animations_enabled: bool,
+) -> Element<'a, Message> {
     let separator = container("")
         .width(Length::Fill)
         .height(Length::Fixed(1.0))
@@ -357,7 +432,7 @@ fn transfer_strip<'a>(state: &'a SftpDrawerState, palette: Palette) -> Element<'
     let rows: Vec<Element<Message>> = state
         .transfers
         .iter()
-        .map(|row| transfer_row(row, palette))
+        .map(|row| transfer_row(row, palette, animations_enabled))
         .collect();
 
     column![
@@ -371,7 +446,11 @@ fn transfer_strip<'a>(state: &'a SftpDrawerState, palette: Palette) -> Element<'
     .into()
 }
 
-fn transfer_row<'a>(row_state: &'a TransferRow, palette: Palette) -> Element<'a, Message> {
+fn transfer_row<'a>(
+    row_state: &'a TransferRow,
+    palette: Palette,
+    animations_enabled: bool,
+) -> Element<'a, Message> {
     let name = row_state.path.rsplit('/').next().unwrap_or(&row_state.path);
     let progress = if row_state.total > 0 {
         (row_state.transferred as f32 / row_state.total as f32).clamp(0.0, 1.0)
@@ -415,14 +494,8 @@ fn transfer_row<'a>(row_state: &'a TransferRow, palette: Palette) -> Element<'a,
             })
             .into()
     } else {
-        let cancel_style = move |_theme: &Theme, status: button::Status| button::Style {
-            background: Some(Background::Color(match status {
-                button::Status::Hovered => Color {
-                    a: 0.12,
-                    ..palette.text
-                },
-                _ => Color::TRANSPARENT,
-            })),
+        let cancel_style = move |_theme: &Theme, _status: button::Status| button::Style {
+            background: Some(Background::Color(Color::TRANSPARENT)),
             text_color: Color {
                 a: 0.55,
                 ..palette.text
@@ -435,11 +508,24 @@ fn transfer_row<'a>(row_state: &'a TransferRow, palette: Palette) -> Element<'a,
             shadow: Shadow::default(),
             snap: true,
         };
-        button(text("\u{2715}").size(10))
+        let cancel_btn = button(text("\u{2715}").size(10))
             .on_press(Message::SftpCancelTransfer)
             .padding([2, 6])
-            .style(cancel_style)
-            .into()
+            .style(cancel_style);
+        let cancel_rest = HoverStyle {
+            background: Color::TRANSPARENT,
+            border_color: Color::TRANSPARENT,
+            border_width: 0.0,
+            radius: RADIUS_SMALL,
+        };
+        let cancel_hover = HoverStyle {
+            background: Color {
+                a: 0.12,
+                ..palette.text
+            },
+            ..cancel_rest
+        };
+        hover_fade(cancel_btn, cancel_rest, cancel_hover, animations_enabled).into()
     };
 
     container(

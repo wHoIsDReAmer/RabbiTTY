@@ -554,6 +554,7 @@ pub fn view_category<'a>(
     ssh_config_profiles: &'a [SshProfile],
     palette: Palette,
 ) -> Element<'a, Message> {
+    let animations_enabled = config.ui.animations_enabled;
     match category {
         SettingsCategory::Appearance => {
             let selected_font = all_font_options
@@ -571,7 +572,7 @@ pub fn view_category<'a>(
         SettingsCategory::Terminal => terminal::view(config, draft, palette),
         SettingsCategory::Theme => theme::view(config, draft, palette),
         SettingsCategory::Shortcuts => shortcuts::view(config, draft, palette),
-        SettingsCategory::Ssh => ssh::view(draft, ssh_config_profiles, palette),
+        SettingsCategory::Ssh => ssh::view(draft, ssh_config_profiles, palette, animations_enabled),
     }
 }
 

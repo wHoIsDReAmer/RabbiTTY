@@ -7,22 +7,7 @@ pub mod ime_wrapper;
 pub mod tab_bar;
 pub mod widget_styles;
 
-use crate::gui::theme::Palette;
-
-pub fn button_primary(
-    text: &str,
-    palette: Palette,
-) -> iced::widget::button::Button<'_, crate::gui::app::Message> {
-    button::primary(text, palette)
-}
-
-pub fn button_secondary(
-    text: &str,
-    palette: Palette,
-) -> iced::widget::button::Button<'_, crate::gui::app::Message> {
-    button::secondary(text, palette)
-}
-
+pub use button::{icon as button_icon, menu_item, primary, secondary};
 pub use category_transition::CategoryTransition;
 pub use container::panel;
 pub use hover_fade::{HoverStyle, hover_fade};
