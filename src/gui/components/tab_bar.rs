@@ -61,14 +61,10 @@ pub fn tab_bar<'a>(
         tab_elements.push(tab_item.into());
     }
 
+    // Background is painted by `hover_fade` behind the button so it can
+    // cross-fade on hover; the button itself stays transparent.
     let icon_style = move |_theme: &Theme, status: button::Status| button::Style {
-        background: Some(Background::Color(match status {
-            button::Status::Hovered => Color {
-                a: 0.1,
-                ..palette.text
-            },
-            _ => Color::TRANSPARENT,
-        })),
+        background: Some(Background::Color(Color::TRANSPARENT)),
         text_color: match status {
             button::Status::Hovered => palette.text,
             _ => palette.text_secondary,
@@ -81,15 +77,38 @@ pub fn tab_bar<'a>(
         shadow: iced::Shadow::default(),
         snap: true,
     };
+    let icon_rest = HoverStyle {
+        background: Color::TRANSPARENT,
+        border_color: Color::TRANSPARENT,
+        border_width: 0.0,
+        radius: 6.0,
+    };
+    let icon_hover = HoverStyle {
+        background: Color {
+            a: 0.1,
+            ..palette.text
+        },
+        ..icon_rest
+    };
 
-    let add_btn = button(text("+").size(13))
-        .on_press(on_add)
-        .padding([6, 10])
-        .style(icon_style);
-    let settings_btn = button(text("\u{2699}").size(13))
-        .on_press(on_settings)
-        .padding([6, 10])
-        .style(icon_style);
+    let add_btn = hover_fade(
+        button(text("+").size(13))
+            .on_press(on_add)
+            .padding([6, 10])
+            .style(icon_style),
+        icon_rest,
+        icon_hover,
+        animations_enabled,
+    );
+    let settings_btn = hover_fade(
+        button(text("\u{2699}").size(13))
+            .on_press(on_settings)
+            .padding([6, 10])
+            .style(icon_style),
+        icon_rest,
+        icon_hover,
+        animations_enabled,
+    );
 
     let sftp_btn: Option<Element<Message>> = sftp_toggle.map(|(msg, active)| {
         let label_color = if active {
@@ -98,18 +117,15 @@ pub fn tab_bar<'a>(
             palette.text_secondary
         };
         let sftp_style = move |_theme: &Theme, status: button::Status| button::Style {
-            background: Some(Background::Color(match status {
-                button::Status::Hovered => Color {
-                    a: 0.12,
-                    ..palette.text
-                },
-                _ if active => Color {
-                    a: 0.08,
-                    ..palette.accent
-                },
-                _ => Color::TRANSPARENT,
-            })),
-            text_color: if active { palette.accent } else { label_color },
+            background: Some(Background::Color(Color::TRANSPARENT)),
+            text_color: if active {
+                palette.accent
+            } else {
+                match status {
+                    button::Status::Hovered => palette.text,
+                    _ => label_color,
+                }
+            },
             border: Border {
                 radius: 6.0.into(),
                 width: 0.0,
@@ -118,11 +134,36 @@ pub fn tab_bar<'a>(
             shadow: iced::Shadow::default(),
             snap: true,
         };
-        button(text("\u{21C5}").size(13))
-            .on_press(msg)
-            .padding([6, 10])
-            .style(sftp_style)
-            .into()
+        let sftp_rest = HoverStyle {
+            background: if active {
+                Color {
+                    a: 0.08,
+                    ..palette.accent
+                }
+            } else {
+                Color::TRANSPARENT
+            },
+            border_color: Color::TRANSPARENT,
+            border_width: 0.0,
+            radius: 6.0,
+        };
+        let sftp_hover = HoverStyle {
+            background: Color {
+                a: 0.12,
+                ..palette.text
+            },
+            ..sftp_rest
+        };
+        hover_fade(
+            button(text("\u{21C5}").size(13))
+                .on_press(msg)
+                .padding([6, 10])
+                .style(sftp_style),
+            sftp_rest,
+            sftp_hover,
+            animations_enabled,
+        )
+        .into()
     });
 
     let tabs_row = row(tab_elements)
@@ -264,18 +305,13 @@ fn browser_tab<'a>(
     });
     let tab_text = text(display_title).size(12);
 
-    let close_btn = button(text("\u{2715}").size(9))
+    // Background painted by `hover_fade` behind the button.
+    let close_btn_inner = button(text("\u{2715}").size(9))
         .on_press(Message::CloseTab(index))
         .padding([2, 5])
         .style(
             move |_theme: &Theme, status: button::Status| button::Style {
-                background: match status {
-                    button::Status::Hovered => Some(Background::Color(Color {
-                        a: 0.15,
-                        ..palette.text
-                    })),
-                    _ => Some(Background::Color(Color::TRANSPARENT)),
-                },
+                background: Some(Background::Color(Color::TRANSPARENT)),
                 text_color: match status {
                     button::Status::Hovered => palette.text,
                     _ => Color {
@@ -292,6 +328,20 @@ fn browser_tab<'a>(
                 snap: true,
             },
         );
+    let close_rest = HoverStyle {
+        background: Color::TRANSPARENT,
+        border_color: Color::TRANSPARENT,
+        border_width: 0.0,
+        radius: 4.0,
+    };
+    let close_hover = HoverStyle {
+        background: Color {
+            a: 0.15,
+            ..palette.text
+        },
+        ..close_rest
+    };
+    let close_btn = hover_fade(close_btn_inner, close_rest, close_hover, animations_enabled);
 
     let tab_content = row![index_label, tab_text, close_btn]
         .spacing(6)
