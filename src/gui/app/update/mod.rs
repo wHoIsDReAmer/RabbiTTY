@@ -887,6 +887,7 @@ impl App {
             return Task::none();
         }
         let col = self.selection_autoscroll_col;
+        let step = (self.config.terminal.scroll_multiplier.round() as i32).max(1);
         let offset = {
             let Some(tab) = self.tabs.get_mut(self.active_tab) else {
                 self.selection_autoscroll = None;
@@ -897,7 +898,7 @@ impl App {
                 return Task::none();
             };
             let lines = tab.size().lines;
-            tab.scroll(if up { 1 } else { -1 });
+            tab.scroll(if up { step } else { -step });
             let (offset, _) = tab.scroll_position();
             let edge_row = if up {
                 0i64
@@ -914,7 +915,7 @@ impl App {
         };
         self.scroll_follow_bottom = offset == 0;
         self.ignore_scrollable_sync = IGNORE_SCROLL_SYNC_COUNT;
-        self.sync_terminal_scrollable()
+        self.sync_terminal_scrollable_forced()
     }
 
     fn perform_paste(&mut self, text: String) {
