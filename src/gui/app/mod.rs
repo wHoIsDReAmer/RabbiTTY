@@ -41,6 +41,7 @@ pub enum Message {
     SettingsCursorShapeSelected(crate::config::CursorShape),
     SettingsCursorBlinkToggled(bool),
     SettingsBellModeSelected(crate::config::BellMode),
+    SettingsRightClickActionSelected(crate::config::RightClickAction),
     AddSshProfile,
     EditSshProfile(usize),
     RequestRemoveSshProfile(usize),
@@ -99,6 +100,10 @@ pub enum Message {
     CreateSshTabFromConfig(usize),
     ShowTabContextMenu(usize),
     CloseTabContextMenu,
+    TerminalRightClick,
+    CloseTerminalContextMenu,
+    TerminalContextPaste,
+    TerminalContextCopy,
     CursorMoved(iced::Point),
     #[cfg(target_os = "macos")]
     ConfirmRestartForBlur,
@@ -193,6 +198,8 @@ pub struct App {
     pub(super) session_history: SessionHistory,
     pub(super) window_style_applied: bool,
     pub(super) tab_context_menu: Option<usize>,
+    /// Whether the terminal right-click context menu is currently shown.
+    pub(super) terminal_context_menu: bool,
     pub(super) cursor_position: iced::Point,
     #[cfg(target_os = "macos")]
     pub(super) show_restart_confirm: bool,
@@ -282,6 +289,7 @@ impl App {
             session_history: SessionHistory::load(),
             palette,
             tab_context_menu: None,
+            terminal_context_menu: false,
             cursor_position: iced::Point::ORIGIN,
             ime_active: false,
             ime_preedit: None,

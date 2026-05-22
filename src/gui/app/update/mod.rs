@@ -338,8 +338,38 @@ impl App {
             Message::CloseTabContextMenu => {
                 self.tab_context_menu = None;
             }
+            Message::TerminalRightClick => {
+                use crate::config::RightClickAction;
+                match self.config.terminal.right_click_action {
+                    RightClickAction::Paste => {
+                        return iced::clipboard::read()
+                            .map(|content| Message::PasteClipboard(content.unwrap_or_default()));
+                    }
+                    RightClickAction::Menu => {
+                        self.terminal_context_menu = true;
+                    }
+                    RightClickAction::None => {}
+                }
+            }
+            Message::CloseTerminalContextMenu => {
+                self.terminal_context_menu = false;
+            }
+            Message::TerminalContextPaste => {
+                self.terminal_context_menu = false;
+                return iced::clipboard::read()
+                    .map(|content| Message::PasteClipboard(content.unwrap_or_default()));
+            }
+            Message::TerminalContextCopy => {
+                self.terminal_context_menu = false;
+                if let Some(tab) = self.tabs.get_mut(self.active_tab)
+                    && let Some(text) = tab.selected_text()
+                {
+                    tab.clear_selection();
+                    return iced::clipboard::write(text);
+                }
+            }
             Message::CursorMoved(point) => {
-                if self.tab_context_menu.is_none() {
+                if self.tab_context_menu.is_none() && !self.terminal_context_menu {
                     self.cursor_position = point;
                 }
             }
@@ -477,6 +507,10 @@ impl App {
             }
             Message::SettingsBellModeSelected(mode) => {
                 self.settings_draft.bell_mode = mode;
+                return self.apply_settings(true);
+            }
+            Message::SettingsRightClickActionSelected(action) => {
+                self.settings_draft.right_click_action = action;
                 return self.apply_settings(true);
             }
             Message::FontSelected(option) => {
@@ -732,6 +766,17 @@ impl App {
         modifiers: iced::keyboard::Modifiers,
         text: Option<String>,
     ) -> Task<Message> {
+        // The multi-line paste confirmation is the topmost overlay; while it is
+        // shown, Enter confirms, Escape cancels, and all other keys are swallowed.
+        if self.pending_paste.is_some() {
+            match key {
+                Key::Named(Named::Enter) => return self.update(Message::ConfirmMultilinePaste),
+                Key::Named(Named::Escape) => return self.update(Message::CancelMultilinePaste),
+                _ => {}
+            }
+            return Task::none();
+        }
+
         if self.show_shell_picker {
             match key {
                 Key::Named(Named::Escape) => {
