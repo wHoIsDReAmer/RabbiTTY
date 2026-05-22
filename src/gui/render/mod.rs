@@ -104,6 +104,11 @@ impl ShaderProgram<Message> for TerminalProgram {
                     return Some(Action::publish(Message::SelectionChanged(None)).and_capture());
                 }
             }
+            Event::Mouse(mouse::Event::ButtonPressed(mouse::Button::Right)) => {
+                if cursor.is_over(bounds) {
+                    return Some(Action::publish(Message::TerminalRightClick).and_capture());
+                }
+            }
             Event::Mouse(mouse::Event::CursorMoved { .. }) => {
                 // Use the absolute cursor position while dragging so the selection
                 // still extends after the cursor leaves the terminal bounds.

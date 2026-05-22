@@ -10,6 +10,14 @@ default = "기본"
 [context_menu]
 duplicate = "복제"
 close = "닫기"
+paste = "붙여넣기"
+copy = "복사"
+
+[dialog]
+paste_multiline_title = "여러 줄을 붙여넣을까요?"
+paste_multiline_body = "{count}개의 줄을 붙여넣습니다."
+paste = "붙여넣기"
+cancel = "취소"
 
 [lobby]
 new_tab = "새 탭"
@@ -58,6 +66,8 @@ shape = "모양"
 blink = "깜빡임"
 bell_section = "벨"
 behavior = "동작"
+mouse_section = "마우스"
+right_click = "우클릭"
 
 [settings.terminal.cursor_shape]
 block = "블록"
@@ -68,6 +78,11 @@ underline = "밑줄"
 off = "끔"
 visual = "시각적 플래시"
 sound = "소리"
+
+[settings.terminal.right_click_action]
+paste = "붙여넣기"
+menu = "메뉴"
+none = "없음"
 
 [settings.theme]
 color_scheme_section = "색 구성표"

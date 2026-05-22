@@ -10,6 +10,14 @@ default = "Default"
 [context_menu]
 duplicate = "Duplicate"
 close = "Close"
+paste = "Paste"
+copy = "Copy"
+
+[dialog]
+paste_multiline_title = "Paste multiple lines?"
+paste_multiline_body = "This will paste {count} lines."
+paste = "Paste"
+cancel = "Cancel"
 
 [lobby]
 new_tab = "New Tab"
@@ -58,6 +66,8 @@ shape = "Shape"
 blink = "Blink"
 bell_section = "Bell"
 behavior = "Behavior"
+mouse_section = "Mouse"
+right_click = "Right-click"
 
 [settings.terminal.cursor_shape]
 block = "Block"
@@ -68,6 +78,11 @@ underline = "Underline"
 off = "Off"
 visual = "Visual flash"
 sound = "Sound"
+
+[settings.terminal.right_click_action]
+paste = "Paste"
+menu = "Menu"
+none = "None"
 
 [settings.theme]
 color_scheme_section = "Color Scheme"

@@ -1,5 +1,6 @@
 use crate::config::{
-    AppConfig, AppConfigUpdates, BellMode, CursorShape, SshAuthMethod, SshProfile, parse_hex_color,
+    AppConfig, AppConfigUpdates, BellMode, CursorShape, RightClickAction, SshAuthMethod,
+    SshProfile, parse_hex_color,
 };
 use crate::gui::app::Message;
 use crate::gui::components::accent_toggler_style;
@@ -223,6 +224,7 @@ pub struct SettingsDraft {
     pub cursor_shape: CursorShape,
     pub cursor_blink: bool,
     pub bell_mode: BellMode,
+    pub right_click_action: RightClickAction,
     pub color_scheme: String,
     pub foreground: String,
     pub background: String,
@@ -264,6 +266,7 @@ impl SettingsDraft {
             cursor_shape: config.terminal.cursor_shape,
             cursor_blink: config.terminal.cursor_blink,
             bell_mode: config.terminal.bell_mode,
+            right_click_action: config.terminal.right_click_action,
             color_scheme: config.theme.color_scheme.clone(),
             foreground: format_rgb(config.theme.foreground),
             background: format_rgb(config.theme.background),
@@ -483,6 +486,7 @@ impl SettingsDraft {
             terminal_cursor_shape: Some(self.cursor_shape),
             terminal_cursor_blink: Some(self.cursor_blink),
             terminal_bell_mode: Some(self.bell_mode),
+            terminal_right_click_action: Some(self.right_click_action),
             color_scheme: Some(self.color_scheme.clone()),
             foreground: parse_hex_color(&self.foreground),
             background: parse_hex_color(&self.background),

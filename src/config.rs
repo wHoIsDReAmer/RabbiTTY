@@ -132,6 +132,31 @@ impl std::fmt::Display for BellMode {
     }
 }
 
+/// Action taken when the terminal area is right-clicked.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum RightClickAction {
+    #[default]
+    Paste,
+    Menu,
+    None,
+}
+
+impl RightClickAction {
+    pub const ALL: [Self; 3] = [Self::Paste, Self::Menu, Self::None];
+}
+
+impl std::fmt::Display for RightClickAction {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let label = match self {
+            Self::Paste => crate::t!("settings.terminal.right_click_action.paste"),
+            Self::Menu => crate::t!("settings.terminal.right_click_action.menu"),
+            Self::None => crate::t!("settings.terminal.right_click_action.none"),
+        };
+        f.write_str(label)
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct SshProfile {
     pub name: String,
@@ -193,6 +218,7 @@ pub struct TerminalConfig {
     pub cursor_shape: CursorShape,
     pub cursor_blink: bool,
     pub bell_mode: BellMode,
+    pub right_click_action: RightClickAction,
 }
 
 #[derive(Debug, Clone)]
@@ -266,6 +292,7 @@ struct TerminalFileConfig {
     cursor_shape: Option<CursorShape>,
     cursor_blink: Option<bool>,
     bell_mode: Option<BellMode>,
+    right_click_action: Option<RightClickAction>,
 }
 
 #[derive(Debug, Deserialize, Serialize)]
@@ -330,6 +357,7 @@ pub struct AppConfigUpdates {
     pub terminal_cursor_shape: Option<CursorShape>,
     pub terminal_cursor_blink: Option<bool>,
     pub terminal_bell_mode: Option<BellMode>,
+    pub terminal_right_click_action: Option<RightClickAction>,
 }
 
 impl Default for AppConfig {
@@ -356,6 +384,7 @@ impl Default for AppConfig {
                 cursor_shape: CursorShape::default(),
                 cursor_blink: DEFAULT_CURSOR_BLINK,
                 bell_mode: BellMode::default(),
+                right_click_action: RightClickAction::default(),
             },
             theme: ThemeConfig {
                 color_scheme: "Catppuccin Mocha".to_string(),
@@ -455,6 +484,9 @@ impl AppConfig {
         }
         if let Some(mode) = updates.terminal_bell_mode {
             self.terminal.bell_mode = mode;
+        }
+        if let Some(action) = updates.terminal_right_click_action {
+            self.terminal.right_click_action = action;
         }
         if let Some(scheme) = updates.color_scheme {
             self.theme.color_scheme = scheme;
@@ -594,6 +626,9 @@ impl AppConfig {
             }
             if let Some(mode) = term.bell_mode {
                 self.terminal.bell_mode = mode;
+            }
+            if let Some(action) = term.right_click_action {
+                self.terminal.right_click_action = action;
             }
         }
 
@@ -943,6 +978,7 @@ impl From<&AppConfig> for FileConfig {
                 cursor_shape: Some(config.terminal.cursor_shape),
                 cursor_blink: Some(config.terminal.cursor_blink),
                 bell_mode: Some(config.terminal.bell_mode),
+                right_click_action: Some(config.terminal.right_click_action),
             }),
             theme: Some(ThemeFileConfig {
                 color_scheme: if config.theme.color_scheme.is_empty() {

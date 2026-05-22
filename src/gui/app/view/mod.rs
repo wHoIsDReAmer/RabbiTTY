@@ -107,19 +107,20 @@ impl App {
 
         if let Some(text) = self.pending_paste.as_deref() {
             let line_count = text.lines().count().max(1);
-            let description = format!("This will paste {} lines.", line_count);
+            let description =
+                t!("dialog.paste_multiline_body").replace("{count}", &line_count.to_string());
             return confirm_dialog(
                 base_layout,
-                "Paste multiple lines?",
+                t!("dialog.paste_multiline_title"),
                 &description,
                 vec![
                     DialogButton {
-                        label: "Cancel".into(),
+                        label: t!("dialog.cancel").into(),
                         message: Message::CancelMultilinePaste,
                         primary: false,
                     },
                     DialogButton {
-                        label: "Paste".into(),
+                        label: t!("dialog.paste").into(),
                         message: Message::ConfirmMultilinePaste,
                         primary: true,
                     },
@@ -140,6 +141,10 @@ impl App {
 
         if let Some(tab_index) = self.tab_context_menu {
             return self.view_tab_context_menu(base_layout, tab_index);
+        }
+
+        if self.terminal_context_menu {
+            return self.view_terminal_context_menu(base_layout);
         }
 
         base_layout.into()
@@ -431,6 +436,38 @@ impl App {
             ],
             self.cursor_position,
             Message::CloseTabContextMenu,
+            self.palette,
+            self.config.ui.animations_enabled,
+        )
+    }
+
+    fn view_terminal_context_menu<'a>(
+        &'a self,
+        base_layout: impl Into<Element<'a, Message>>,
+    ) -> Element<'a, Message> {
+        let has_selection = self
+            .tabs
+            .get(self.active_tab)
+            .and_then(|tab| tab.selected_text())
+            .is_some();
+
+        let mut items = Vec::new();
+        if has_selection {
+            items.push(ContextMenuItem {
+                label: t!("context_menu.copy"),
+                message: Message::TerminalContextCopy,
+            });
+        }
+        items.push(ContextMenuItem {
+            label: t!("context_menu.paste"),
+            message: Message::TerminalContextPaste,
+        });
+
+        context_menu(
+            base_layout,
+            items,
+            self.cursor_position,
+            Message::CloseTerminalContextMenu,
             self.palette,
             self.config.ui.animations_enabled,
         )

@@ -1,4 +1,4 @@
-use crate::config::{AppConfig, BellMode, CursorShape};
+use crate::config::{AppConfig, BellMode, CursorShape, RightClickAction};
 use crate::gui::app::Message;
 use crate::gui::components::accent_toggler_style;
 use crate::gui::settings::{
@@ -133,11 +133,32 @@ pub fn view<'a>(
         palette,
     );
 
+    let mouse_section = section(
+        crate::t!("settings.terminal.mouse_section"),
+        segmented_control(
+            crate::t!("settings.terminal.right_click"),
+            RightClickAction::ALL
+                .iter()
+                .map(|&action| {
+                    (
+                        right_click_action_label(action),
+                        Message::SettingsRightClickActionSelected(action),
+                        draft.right_click_action == action,
+                    )
+                })
+                .collect(),
+            palette,
+            config.ui.animations_enabled,
+        ),
+        palette,
+    );
+
     column(vec![
         scrollback_section,
         paste_section,
         cursor_section,
         bell_section,
+        mouse_section,
     ])
     .spacing(SPACING_NORMAL)
     .width(Length::Fill)
@@ -158,5 +179,13 @@ fn bell_mode_label(mode: BellMode) -> &'static str {
         BellMode::Off => crate::t!("settings.terminal.bell_mode.off"),
         BellMode::Visual => crate::t!("settings.terminal.bell_mode.visual"),
         BellMode::Sound => crate::t!("settings.terminal.bell_mode.sound"),
+    }
+}
+
+fn right_click_action_label(action: RightClickAction) -> &'static str {
+    match action {
+        RightClickAction::Paste => crate::t!("settings.terminal.right_click_action.paste"),
+        RightClickAction::Menu => crate::t!("settings.terminal.right_click_action.menu"),
+        RightClickAction::None => crate::t!("settings.terminal.right_click_action.none"),
     }
 }
