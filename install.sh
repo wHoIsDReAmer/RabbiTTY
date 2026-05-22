@@ -7,6 +7,11 @@ set -e
 REPO="wHoIsDReAmer/RabbiTTY"
 BIN_DIR="${HOME}/.local/bin"
 APP_DIR="${HOME}/Applications"
+XDG_DATA_HOME="${XDG_DATA_HOME:-${HOME}/.local/share}"
+APPLICATIONS_DIR="${XDG_DATA_HOME}/applications"
+ICON_DIR="${XDG_DATA_HOME}/icons/hicolor/256x256/apps"
+DESKTOP_FILE="${APPLICATIONS_DIR}/io.github.rabbitty.desktop"
+ICON_FILE="${ICON_DIR}/io.github.rabbitty.png"
 
 err() {
     printf 'error: %s\n' "$1" >&2
@@ -28,6 +33,60 @@ latest_tag() {
     curl -fsSL "https://api.github.com/repos/${REPO}/releases/latest" \
         | sed -nE 's/.*"tag_name": *"([^"]+)".*/\1/p' \
         | head -n1
+}
+
+refresh_linux_desktop_databases() {
+    if command -v update-desktop-database >/dev/null 2>&1; then
+        update-desktop-database "$APPLICATIONS_DIR" >/dev/null 2>&1 || true
+    fi
+
+    if command -v gtk-update-icon-cache >/dev/null 2>&1; then
+        gtk-update-icon-cache -q -t "${XDG_DATA_HOME}/icons/hicolor" >/dev/null 2>&1 || true
+    fi
+
+    if command -v xdg-desktop-menu >/dev/null 2>&1; then
+        xdg-desktop-menu forceupdate >/dev/null 2>&1 || true
+    fi
+
+    if command -v kbuildsycoca6 >/dev/null 2>&1; then
+        kbuildsycoca6 >/dev/null 2>&1 || true
+    elif command -v kbuildsycoca5 >/dev/null 2>&1; then
+        kbuildsycoca5 >/dev/null 2>&1 || true
+    fi
+}
+
+install_linux_desktop_entry() {
+    bin_path="$1"
+    icon_src=$(find "$tmp" -name 'logo.png' -type f -maxdepth 4 | head -n1)
+
+    mkdir -p "$APPLICATIONS_DIR" "$ICON_DIR"
+
+    if [ -n "$icon_src" ]; then
+        install -m 0644 "$icon_src" "$ICON_FILE"
+    else
+        curl -fsSL \
+            -o "$ICON_FILE" \
+            "https://raw.githubusercontent.com/${REPO}/main/assets/logo.png" \
+            >/dev/null 2>&1 \
+            || printf 'Warning: failed to install application icon. The launcher may use a generic icon.\n' >&2
+    fi
+
+    cat > "$DESKTOP_FILE" <<EOF
+[Desktop Entry]
+Type=Application
+Name=Rabbitty
+Comment=Fast, lean terminal emulator
+Exec="$bin_path"
+Icon=io.github.rabbitty
+Terminal=false
+Categories=System;TerminalEmulator;
+StartupNotify=true
+StartupWMClass=rabbitty
+Keywords=terminal;shell;ssh;
+EOF
+    chmod 0644 "$DESKTOP_FILE"
+
+    refresh_linux_desktop_databases
 }
 
 target=$(detect_target)
@@ -74,7 +133,9 @@ case "$target" in
         [ -n "$bin_src" ] || err "rabbitty binary not found in archive."
         mkdir -p "$BIN_DIR"
         install -m 0755 "$bin_src" "${BIN_DIR}/rabbitty"
+        install_linux_desktop_entry "${BIN_DIR}/rabbitty"
         printf '\nInstalled rabbitty to %s/rabbitty\n' "$BIN_DIR"
+        printf 'Desktop launcher at %s\n' "$DESKTOP_FILE"
         ;;
 esac
 
