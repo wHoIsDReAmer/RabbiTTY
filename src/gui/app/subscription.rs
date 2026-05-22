@@ -33,9 +33,17 @@ impl App {
             Subscription::none()
         };
 
+        let selection_autoscroll = if self.selection_autoscroll.is_some() {
+            time::every(std::time::Duration::from_millis(30))
+                .map(|_| Message::SelectionAutoscrollTick)
+        } else {
+            Subscription::none()
+        };
+
         Subscription::batch([
             animation_tick,
             cursor_blink,
+            selection_autoscroll,
             Subscription::run(|| {
                 stream::channel(100, async |mut output| {
                     let (sender, mut receiver) = mpsc::unbounded();
