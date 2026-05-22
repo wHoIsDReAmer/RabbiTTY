@@ -571,11 +571,22 @@ impl App {
                 self.tab_bar_scroll_x = x;
             }
             Message::SelectionChanged(sel) => {
+                self.selection_autoscroll = None;
                 if self.active_tab != SETTINGS_TAB_INDEX
                     && let Some(tab) = self.tabs.get_mut(self.active_tab)
                 {
                     tab.selection = sel;
                 }
+            }
+            Message::TerminalSelectionAutoscroll { up, col } => {
+                self.selection_autoscroll = Some(up);
+                self.selection_autoscroll_col = col;
+            }
+            Message::TerminalSelectionAutoscrollStop => {
+                self.selection_autoscroll = None;
+            }
+            Message::SelectionAutoscrollTick => {
+                return self.advance_selection_autoscroll();
             }
             Message::TerminalMousePress { col, row } => {
                 if let Some(tab) = self.tabs.get(self.active_tab) {
@@ -863,6 +874,45 @@ impl App {
             tab.handle_key(&key, modifiers, text.as_deref());
         }
         self.scroll_follow_bottom = true;
+        self.ignore_scrollable_sync = IGNORE_SCROLL_SYNC_COUNT;
+        self.sync_terminal_scrollable()
+    }
+
+    fn advance_selection_autoscroll(&mut self) -> Task<Message> {
+        let Some(up) = self.selection_autoscroll else {
+            return Task::none();
+        };
+        if self.active_tab == SETTINGS_TAB_INDEX {
+            self.selection_autoscroll = None;
+            return Task::none();
+        }
+        let col = self.selection_autoscroll_col;
+        let offset = {
+            let Some(tab) = self.tabs.get_mut(self.active_tab) else {
+                self.selection_autoscroll = None;
+                return Task::none();
+            };
+            let Some(mut sel) = tab.selection else {
+                self.selection_autoscroll = None;
+                return Task::none();
+            };
+            let lines = tab.size().lines;
+            tab.scroll(if up { 1 } else { -1 });
+            let (offset, _) = tab.scroll_position();
+            let edge_row = if up {
+                0i64
+            } else {
+                lines.saturating_sub(1) as i64
+            };
+            let delta = offset as i64 - sel.anchor_offset as i64;
+            sel.end = crate::terminal::SelectionPoint {
+                row: edge_row - delta,
+                col,
+            };
+            tab.selection = Some(sel);
+            offset
+        };
+        self.scroll_follow_bottom = offset == 0;
         self.ignore_scrollable_sync = IGNORE_SCROLL_SYNC_COUNT;
         self.sync_terminal_scrollable()
     }

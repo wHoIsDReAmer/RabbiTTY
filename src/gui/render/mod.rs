@@ -236,6 +236,18 @@ impl ShaderProgram<Message> for TerminalProgram {
                     }
                     if let Some(drag_start) = state.drag_start {
                         let viewport_end = self.pixel_to_grid(pos, bounds);
+                        let raw_y = cursor.position().map(|p| p.y);
+                        let out_up = raw_y.is_some_and(|y| y < bounds.y);
+                        let out_down = raw_y.is_some_and(|y| y > bounds.y + bounds.height);
+                        if out_up || out_down {
+                            return Some(
+                                Action::publish(Message::TerminalSelectionAutoscroll {
+                                    up: out_up,
+                                    col: viewport_end.col,
+                                })
+                                .and_capture(),
+                            );
+                        }
                         // Translate the current viewport row back into the anchor frame
                         // so the selection follows content when the user scrolls.
                         let delta = self.display_offset as i64 - state.drag_anchor_offset as i64;
@@ -276,7 +288,9 @@ impl ShaderProgram<Message> for TerminalProgram {
                 }
                 if state.dragging {
                     state.dragging = false;
-                    return Some(Action::capture());
+                    return Some(
+                        Action::publish(Message::TerminalSelectionAutoscrollStop).and_capture(),
+                    );
                 }
             }
             _ => {}
