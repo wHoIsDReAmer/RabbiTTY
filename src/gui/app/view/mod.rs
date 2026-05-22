@@ -182,6 +182,7 @@ impl App {
             cursor_shape: self.config.terminal.cursor_shape,
             cursor_visible,
             cursor_color: active_tab.cursor_color(),
+            background_opacity: self.config.theme.background_opacity,
         }
         .widget()
         .width(Length::Fill)
