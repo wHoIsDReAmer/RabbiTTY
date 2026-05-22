@@ -32,6 +32,7 @@ pub struct TerminalProgram {
     pub cursor_shape: crate::config::CursorShape,
     pub cursor_visible: bool,
     pub cursor_color: [f32; 4],
+    pub background_opacity: f32,
 }
 
 impl TerminalProgram {
@@ -325,6 +326,7 @@ impl ShaderProgram<Message> for TerminalProgram {
             cursor_shape: self.cursor_shape,
             cursor_visible: self.cursor_visible,
             cursor_color: self.cursor_color,
+            background_opacity: self.background_opacity,
         }
     }
 
@@ -359,6 +361,7 @@ pub struct TerminalPipeline {
     last_cursor_shape: crate::config::CursorShape,
     last_cursor_visible: bool,
     last_cursor_color: [f32; 4],
+    last_background_opacity: f32,
 }
 
 impl Pipeline for TerminalPipeline {
@@ -379,6 +382,7 @@ impl Pipeline for TerminalPipeline {
             last_cursor_shape: crate::config::CursorShape::Block,
             last_cursor_visible: false,
             last_cursor_color: [0.0; 4],
+            last_background_opacity: 1.0,
         }
     }
 }
@@ -398,6 +402,7 @@ pub struct TerminalPrimitive {
     cursor_shape: crate::config::CursorShape,
     cursor_visible: bool,
     cursor_color: [f32; 4],
+    background_opacity: f32,
 }
 
 impl Primitive for TerminalPrimitive {
@@ -436,7 +441,8 @@ impl Primitive for TerminalPrimitive {
             && self.cursor == pipeline.last_cursor
             && self.cursor_shape == pipeline.last_cursor_shape
             && self.cursor_visible == pipeline.last_cursor_visible
-            && self.cursor_color == pipeline.last_cursor_color;
+            && self.cursor_color == pipeline.last_cursor_color
+            && self.background_opacity == pipeline.last_background_opacity;
 
         if unchanged {
             return;
@@ -454,6 +460,7 @@ impl Primitive for TerminalPrimitive {
         pipeline.last_cursor_shape = self.cursor_shape;
         pipeline.last_cursor_visible = self.cursor_visible;
         pipeline.last_cursor_color = self.cursor_color;
+        pipeline.last_background_opacity = self.background_opacity;
 
         let cells = self.cells.as_slice();
 
@@ -472,6 +479,7 @@ impl Primitive for TerminalPrimitive {
             active_cursor,
             self.cursor_shape,
             self.cursor_color,
+            self.background_opacity,
         );
 
         pipeline

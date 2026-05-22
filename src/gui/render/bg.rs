@@ -183,6 +183,7 @@ impl BackgroundPipeline {
         cursor: Option<[u32; 2]>,
         cursor_shape: CursorShape,
         cursor_color: [f32; 4],
+        background_opacity: f32,
     ) {
         self.instances.clear();
         let needed = cells.len().saturating_sub(self.instances.capacity());
@@ -190,12 +191,14 @@ impl BackgroundPipeline {
             self.instances.reserve(needed);
         }
         self.instances.extend(cells.iter().map(|cell| {
-            let bg = if selection.is_some_and(|s| s.contains_at(cell.row, cell.col, display_offset))
-            {
-                super::SELECTION_BG
-            } else {
-                cell.bg
-            };
+            let mut bg =
+                if selection.is_some_and(|s| s.contains_at(cell.row, cell.col, display_offset)) {
+                    super::SELECTION_BG
+                } else {
+                    cell.bg
+                };
+            // Keep colored backgrounds as translucent as the rest of the window.
+            bg[3] *= background_opacity;
             InstanceRaw {
                 pos: [cell.col as u32, cell.row as u32],
                 rect_offset: [0.0, 0.0],
