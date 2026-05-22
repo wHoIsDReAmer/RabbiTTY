@@ -1,4 +1,5 @@
 use crate::terminal::{CellVisual, GridPos, Selection, SelectionPoint, TerminalSize};
+use iced::advanced::mouse::{Click, click};
 use iced::mouse;
 use iced::wgpu;
 use iced::widget::shader::Program as ShaderProgram;
@@ -52,6 +53,68 @@ impl TerminalProgram {
             col: col.min(self.grid_size.columns.saturating_sub(1)),
         }
     }
+
+    /// Character at a viewport cell, or a space when out of range.
+    fn cell_char(&self, row: usize, col: usize) -> char {
+        let cols = self.grid_size.columns;
+        if cols == 0 || col >= cols || row >= self.grid_size.lines {
+            return ' ';
+        }
+        self.cells
+            .get(row * cols + col)
+            .map(|c| c.ch)
+            .unwrap_or(' ')
+    }
+
+    /// Word boundaries around the clicked cell (double-click). Returns `None`
+    /// when the cell is whitespace or a delimiter.
+    fn word_selection(&self, grid: GridPos) -> Option<Selection> {
+        let cols = self.grid_size.columns;
+        if cols == 0 || !is_word_char(self.cell_char(grid.row, grid.col)) {
+            return None;
+        }
+        let mut start = grid.col;
+        while start > 0 && is_word_char(self.cell_char(grid.row, start - 1)) {
+            start -= 1;
+        }
+        let mut end = grid.col;
+        while end + 1 < cols && is_word_char(self.cell_char(grid.row, end + 1)) {
+            end += 1;
+        }
+        Some(Selection {
+            start: SelectionPoint {
+                row: grid.row as i64,
+                col: start,
+            },
+            end: SelectionPoint {
+                row: grid.row as i64,
+                col: end,
+            },
+            anchor_offset: self.display_offset,
+        })
+    }
+
+    /// Whole-line selection up to the last non-blank cell (triple-click).
+    fn line_selection(&self, grid: GridPos) -> Selection {
+        let cols = self.grid_size.columns;
+        let mut end = 0usize;
+        for col in 0..cols {
+            if self.cell_char(grid.row, col) != ' ' {
+                end = col;
+            }
+        }
+        Selection {
+            start: SelectionPoint {
+                row: grid.row as i64,
+                col: 0,
+            },
+            end: SelectionPoint {
+                row: grid.row as i64,
+                col: end,
+            },
+            anchor_offset: self.display_offset,
+        }
+    }
 }
 
 #[derive(Default)]
@@ -59,6 +122,21 @@ pub struct TerminalShaderState {
     dragging: bool,
     drag_start: Option<GridPos>,
     drag_anchor_offset: usize,
+    /// Last left-button click, used to detect double/triple clicks.
+    last_click: Option<Click>,
+}
+
+/// Word delimiter check (alacritty-style). A "word" is a run of non-whitespace
+/// characters that are not common semantic-escape delimiters, so paths and URLs
+/// select as a single unit.
+fn is_word_char(c: char) -> bool {
+    if c == '\0' || c.is_whitespace() {
+        return false;
+    }
+    !matches!(
+        c,
+        ',' | '│' | '`' | '"' | '\'' | '(' | ')' | '[' | ']' | '{' | '}' | '<' | '>'
+    )
 }
 
 type Message = crate::gui::app::Message;
@@ -98,10 +176,34 @@ impl ShaderProgram<Message> for TerminalProgram {
                             .and_capture(),
                         );
                     }
-                    state.dragging = true;
-                    state.drag_start = Some(grid_pos);
-                    state.drag_anchor_offset = self.display_offset;
-                    return Some(Action::publish(Message::SelectionChanged(None)).and_capture());
+                    let click = Click::new(pos, mouse::Button::Left, state.last_click);
+                    state.last_click = Some(click);
+                    match click.kind() {
+                        click::Kind::Double => {
+                            state.dragging = false;
+                            state.drag_start = None;
+                            let sel = self.word_selection(grid_pos);
+                            return Some(
+                                Action::publish(Message::SelectionChanged(sel)).and_capture(),
+                            );
+                        }
+                        click::Kind::Triple => {
+                            state.dragging = false;
+                            state.drag_start = None;
+                            let sel = self.line_selection(grid_pos);
+                            return Some(
+                                Action::publish(Message::SelectionChanged(Some(sel))).and_capture(),
+                            );
+                        }
+                        click::Kind::Single => {
+                            state.dragging = true;
+                            state.drag_start = Some(grid_pos);
+                            state.drag_anchor_offset = self.display_offset;
+                            return Some(
+                                Action::publish(Message::SelectionChanged(None)).and_capture(),
+                            );
+                        }
+                    }
                 }
             }
             Event::Mouse(mouse::Event::ButtonPressed(mouse::Button::Right)) => {
