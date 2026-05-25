@@ -8,6 +8,7 @@ use iced::futures::channel::mpsc;
 #[cfg(unix)]
 use std::io::ErrorKind;
 use std::io::{Read, Write};
+use std::path::PathBuf;
 #[cfg(windows)]
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
@@ -95,7 +96,7 @@ impl Session {
         let options = Options {
             shell: Some(Shell::new(spec.program, spec.args)),
             env: spec.env.into_iter().collect(),
-            working_directory: dirs::home_dir(),
+            working_directory: default_working_directory(),
             ..Default::default()
         };
 
@@ -174,7 +175,7 @@ impl Session {
         let options = Options {
             shell: Some(Shell::new(spec.program, spec.args)),
             env: spec.env.into_iter().collect(),
-            working_directory: dirs::home_dir(),
+            working_directory: default_working_directory(),
             ..Default::default()
         };
 
@@ -329,6 +330,41 @@ fn send_output_event(
     output_tx.unbounded_send(event).is_ok()
 }
 
+fn default_working_directory() -> Option<PathBuf> {
+    default_working_directory_from_env(
+        std::env::var_os("HOME").as_deref(),
+        std::env::var_os("USERPROFILE").as_deref(),
+        std::env::var_os("HOMEDRIVE").as_deref(),
+        std::env::var_os("HOMEPATH").as_deref(),
+        dirs::home_dir(),
+    )
+}
+
+fn default_working_directory_from_env(
+    home: Option<&std::ffi::OsStr>,
+    user_profile: Option<&std::ffi::OsStr>,
+    home_drive: Option<&std::ffi::OsStr>,
+    home_path: Option<&std::ffi::OsStr>,
+    fallback: Option<PathBuf>,
+) -> Option<PathBuf> {
+    home.filter(|value| !value.is_empty())
+        .map(PathBuf::from)
+        .or_else(|| {
+            user_profile
+                .filter(|value| !value.is_empty())
+                .map(PathBuf::from)
+        })
+        .or_else(|| match (home_drive, home_path) {
+            (Some(drive), Some(path)) if !drive.is_empty() && !path.is_empty() => {
+                let mut combined = std::ffi::OsString::from(drive);
+                combined.push(path);
+                Some(PathBuf::from(combined))
+            }
+            _ => None,
+        })
+        .or(fallback)
+}
+
 #[cfg(unix)]
 impl Drop for Session {
     fn drop(&mut self) {
@@ -352,5 +388,57 @@ impl Drop for Session {
         if let Some(handle) = self.reader.take() {
             let _ = handle.join();
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::path::PathBuf;
+
+    #[test]
+    fn default_working_directory_prefers_unix_home_env() {
+        let home = PathBuf::from("/tmp/rabbitty-home");
+
+        assert_eq!(
+            default_working_directory_from_env(
+                Some(home.as_os_str()),
+                None,
+                None,
+                None,
+                Some(PathBuf::from("/fallback"))
+            ),
+            Some(home)
+        );
+    }
+
+    #[test]
+    fn default_working_directory_prefers_windows_user_profile() {
+        let profile = PathBuf::from(r"C:\Users\rabbitty");
+
+        assert_eq!(
+            default_working_directory_from_env(
+                None,
+                Some(profile.as_os_str()),
+                None,
+                None,
+                Some(PathBuf::from(r"C:\fallback"))
+            ),
+            Some(profile)
+        );
+    }
+
+    #[test]
+    fn default_working_directory_builds_windows_home_drive_path() {
+        assert_eq!(
+            default_working_directory_from_env(
+                None,
+                None,
+                Some(std::ffi::OsStr::new("C:")),
+                Some(std::ffi::OsStr::new(r"\Users\rabbitty")),
+                None
+            ),
+            Some(PathBuf::from(r"C:\Users\rabbitty"))
+        );
     }
 }
