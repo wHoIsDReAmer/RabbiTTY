@@ -42,6 +42,12 @@ auto = "자동"
 [settings.appearance]
 animations_section = "애니메이션"
 animations = "애니메이션 사용"
+tabs_section = "탭"
+position = "위치"
+
+[settings.appearance.tab_position]
+top = "위"
+bottom = "아래"
 
 [settings.terminal]
 font_section = "글꼴"

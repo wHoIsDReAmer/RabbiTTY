@@ -1,6 +1,6 @@
 use crate::config::{
     AppConfig, AppConfigUpdates, BellMode, CursorShape, RightClickAction, SshAuthMethod,
-    SshProfile, parse_hex_color,
+    SshProfile, TabBarPosition, parse_hex_color,
 };
 use crate::gui::app::Message;
 use crate::gui::components::accent_toggler_style;
@@ -232,6 +232,7 @@ pub struct SettingsDraft {
     pub background_opacity: String,
     pub blur_enabled: bool,
     pub animations_enabled: bool,
+    pub tab_bar_position: TabBarPosition,
     pub macos_blur_radius: String,
     pub shortcut_new_tab: String,
     pub shortcut_close_tab: String,
@@ -274,6 +275,7 @@ impl SettingsDraft {
             background_opacity: format!("{:.2}", config.theme.background_opacity),
             blur_enabled: config.theme.blur_enabled,
             animations_enabled: config.ui.animations_enabled,
+            tab_bar_position: config.ui.tab_bar_position,
             macos_blur_radius: format!("{}", config.theme.macos_blur_radius),
             shortcut_new_tab: config.shortcuts.new_tab.clone(),
             shortcut_close_tab: config.shortcuts.close_tab.clone(),
@@ -475,6 +477,7 @@ impl SettingsDraft {
         let mut updates = AppConfigUpdates {
             language: Some(self.language.clone()),
             animations_enabled: Some(self.animations_enabled),
+            tab_bar_position: Some(self.tab_bar_position),
             terminal_font_selection: Some(self.terminal_font_selection.clone()),
             terminal_font_size: parse_f32(&self.terminal_font_size),
             terminal_padding_x: parse_f32(&self.terminal_padding_x),

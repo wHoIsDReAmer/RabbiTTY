@@ -489,6 +489,10 @@ impl App {
                 self.settings_draft.animations_enabled = enabled;
                 return self.apply_settings(true);
             }
+            Message::SettingsTabBarPositionSelected(pos) => {
+                self.settings_draft.tab_bar_position = pos;
+                return self.apply_settings(true);
+            }
             Message::SettingsBracketedPasteToggled(enabled) => {
                 self.settings_draft.bracketed_paste = enabled;
                 return self.apply_settings(true);

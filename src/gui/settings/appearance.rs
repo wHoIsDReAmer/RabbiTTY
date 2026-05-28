@@ -1,4 +1,4 @@
-use crate::config::AppConfig;
+use crate::config::{AppConfig, TabBarPosition};
 use crate::gui::app::Message;
 use crate::gui::components::{
     accent_combo_box_input_style, accent_combo_box_menu_style, accent_toggler_style,
@@ -119,15 +119,43 @@ pub fn view<'a>(
         palette,
     );
 
+    let tabs_section = section(
+        crate::t!("settings.appearance.tabs_section"),
+        segmented_control(
+            crate::t!("settings.appearance.position"),
+            TabBarPosition::ALL
+                .iter()
+                .map(|&pos| {
+                    (
+                        tab_bar_position_label(pos),
+                        Message::SettingsTabBarPositionSelected(pos),
+                        draft.tab_bar_position == pos,
+                    )
+                })
+                .collect(),
+            palette,
+            config.ui.animations_enabled,
+        ),
+        palette,
+    );
+
     column(vec![
         language_section,
         animations_section,
+        tabs_section,
         font_section,
         padding_section,
     ])
     .spacing(SPACING_NORMAL)
     .width(Length::Fill)
     .into()
+}
+
+fn tab_bar_position_label(position: TabBarPosition) -> &'static str {
+    match position {
+        TabBarPosition::Top => crate::t!("settings.appearance.tab_position.top"),
+        TabBarPosition::Bottom => crate::t!("settings.appearance.tab_position.bottom"),
+    }
 }
 
 fn language_picker<'a>(
