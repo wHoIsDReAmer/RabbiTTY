@@ -1,3 +1,4 @@
+use crate::config::TabBarPosition;
 use crate::gui::app::Message;
 use crate::gui::components::{HoverStyle, button as button_factory, hover_fade};
 use crate::gui::theme::Palette;
@@ -17,6 +18,7 @@ pub fn tab_bar<'a>(
     drag_target: Option<usize>,
     palette: Palette,
     animations_enabled: bool,
+    position: TabBarPosition,
 ) -> Element<'a, Message> {
     let mut tab_elements: Vec<Element<Message>> = Vec::new();
     let is_reordering =
@@ -83,55 +85,15 @@ pub fn tab_bar<'a>(
         .width(Length::Fill)
         .height(Length::Shrink);
 
-    // macOS: left control buttons
+    let is_top = position == TabBarPosition::Top;
+
+    // macOS: traffic-light space only when chrome is integrated (Top mode).
     #[cfg(target_os = "macos")]
-    let left_padding = 80.0;
+    let left_padding = if is_top { 80.0 } else { 0.0 };
     #[cfg(not(target_os = "macos"))]
     let left_padding = 0.0;
 
     let padding = iced::Padding::new(0.0).left(left_padding);
-
-    // Windows: right control buttons
-    #[cfg(target_os = "windows")]
-    let window_controls = {
-        let hover_subtle = Color {
-            a: 0.15,
-            ..palette.text
-        };
-        let hover_close = Color::from_rgb(0.9, 0.2, 0.2);
-
-        let win_style = move |hover_color: Color| {
-            move |_theme: &Theme, status: button::Status| button::Style {
-                background: match status {
-                    button::Status::Hovered => Some(Background::Color(hover_color)),
-                    _ => Some(Background::Color(Color::TRANSPARENT)),
-                },
-                text_color: match status {
-                    button::Status::Hovered => Color::WHITE,
-                    _ => palette.text_secondary,
-                },
-                border: Border::default(),
-                shadow: iced::Shadow::default(),
-                snap: true,
-            }
-        };
-
-        row![
-            button(text("\u{2500}").size(12))
-                .on_press(Message::WindowMinimize)
-                .padding([6, 12])
-                .style(win_style(hover_subtle)),
-            button(text("\u{25a1}").size(12))
-                .on_press(Message::WindowMaximize)
-                .padding([6, 12])
-                .style(win_style(hover_subtle)),
-            button(text("\u{2715}").size(12))
-                .on_press(Message::Exit)
-                .padding([6, 12])
-                .style(win_style(hover_close)),
-        ]
-        .spacing(0)
-    };
 
     let mut trailing: Vec<Element<Message>> = Vec::new();
     if let Some(btn) = sftp_btn {
@@ -140,16 +102,20 @@ pub fn tab_bar<'a>(
     trailing.push(add_btn);
     trailing.push(settings_btn);
 
+    // Windows: window controls live in the bar only when chrome is integrated.
     #[cfg(target_os = "windows")]
     let content = {
         let mut items: Vec<Element<Message>> = vec![tabs_scroll.into()];
         items.extend(trailing);
-        items.push(window_controls.into());
+        if is_top {
+            items.push(window_controls(palette).into());
+        }
         row(items).spacing(2).align_y(iced::Alignment::Center)
     };
 
     #[cfg(not(target_os = "windows"))]
     let content = {
+        let _ = is_top;
         let mut items: Vec<Element<Message>> = vec![tabs_scroll.into()];
         items.extend(trailing);
         row(items).spacing(2).align_y(iced::Alignment::Center)
@@ -179,6 +145,101 @@ pub fn tab_bar<'a>(
 
     #[cfg(not(any(target_os = "windows", target_os = "macos")))]
     tab_bar_container.into()
+}
+
+/// Windows min/max/close controls. Shared by the integrated (Top) tab bar and
+/// the standalone `window_chrome` strip used in Bottom mode.
+#[cfg(target_os = "windows")]
+fn window_controls<'a>(palette: Palette) -> iced::widget::Row<'a, Message> {
+    let hover_subtle = Color {
+        a: 0.15,
+        ..palette.text
+    };
+    let hover_close = Color::from_rgb(0.9, 0.2, 0.2);
+
+    let win_style = move |hover_color: Color| {
+        move |_theme: &Theme, status: button::Status| button::Style {
+            background: match status {
+                button::Status::Hovered => Some(Background::Color(hover_color)),
+                _ => Some(Background::Color(Color::TRANSPARENT)),
+            },
+            text_color: match status {
+                button::Status::Hovered => Color::WHITE,
+                _ => palette.text_secondary,
+            },
+            border: Border::default(),
+            shadow: iced::Shadow::default(),
+            snap: true,
+        }
+    };
+
+    row![
+        button(text("\u{2500}").size(12))
+            .on_press(Message::WindowMinimize)
+            .padding([6, 12])
+            .style(win_style(hover_subtle)),
+        button(text("\u{25a1}").size(12))
+            .on_press(Message::WindowMaximize)
+            .padding([6, 12])
+            .style(win_style(hover_subtle)),
+        button(text("\u{2715}").size(12))
+            .on_press(Message::Exit)
+            .padding([6, 12])
+            .style(win_style(hover_close)),
+    ]
+    .spacing(0)
+}
+
+/// Standalone window-chrome strip rendered at the top in Bottom mode, so the
+/// native controls / drag region stay at the top of the window.
+#[cfg(target_os = "windows")]
+pub fn window_chrome<'a>(palette: Palette, bar_alpha: f32) -> Element<'a, Message> {
+    let bar_alpha = bar_alpha.clamp(0.0, 1.0);
+    let strip = container(
+        row![
+            iced::widget::Space::new().width(Length::Fill),
+            window_controls(palette),
+        ]
+        .align_y(iced::Alignment::Center),
+    )
+    .style(move |_theme: &Theme| chrome_bar_style(palette, bar_alpha))
+    .width(Length::Fill);
+    mouse_area(strip).on_press(Message::WindowDrag).into()
+}
+
+#[cfg(target_os = "macos")]
+pub fn window_chrome<'a>(palette: Palette, bar_alpha: f32) -> Element<'a, Message> {
+    let bar_alpha = bar_alpha.clamp(0.0, 1.0);
+    let strip = container(iced::widget::Space::new().width(Length::Fill))
+        .style(move |_theme: &Theme| chrome_bar_style(palette, bar_alpha))
+        .padding(iced::Padding::new(0.0).left(80.0))
+        .width(Length::Fill)
+        .height(Length::Fixed(32.0));
+    mouse_area(strip).on_press(Message::WindowDrag).into()
+}
+
+#[cfg(not(any(target_os = "windows", target_os = "macos")))]
+pub fn window_chrome<'a>(_palette: Palette, _bar_alpha: f32) -> Element<'a, Message> {
+    iced::widget::Space::new()
+        .width(Length::Fill)
+        .height(Length::Fixed(0.0))
+        .into()
+}
+
+#[cfg(any(target_os = "windows", target_os = "macos"))]
+fn chrome_bar_style(palette: Palette, bar_alpha: f32) -> container::Style {
+    container::Style {
+        background: Some(Background::Color(Color {
+            a: bar_alpha,
+            ..palette.surface
+        })),
+        border: Border {
+            radius: 0.0.into(),
+            width: 0.0,
+            color: Color::TRANSPARENT,
+        },
+        ..Default::default()
+    }
 }
 
 fn browser_tab<'a>(

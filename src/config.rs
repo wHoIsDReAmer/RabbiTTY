@@ -132,6 +132,19 @@ impl std::fmt::Display for BellMode {
     }
 }
 
+/// Where the tab bar (which doubles as the title bar) is anchored.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum TabBarPosition {
+    #[default]
+    Top,
+    Bottom,
+}
+
+impl TabBarPosition {
+    pub const ALL: [Self; 2] = [Self::Top, Self::Bottom];
+}
+
 /// Action taken when the terminal area is right-clicked.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize, Default)]
 #[serde(rename_all = "snake_case")]
@@ -201,6 +214,8 @@ pub struct UiConfig {
     pub language: Option<String>,
     /// Whether smooth hover transition animations are enabled.
     pub animations_enabled: bool,
+    /// Where the tab bar / title bar is anchored.
+    pub tab_bar_position: TabBarPosition,
 }
 
 #[derive(Debug, Clone)]
@@ -273,6 +288,7 @@ struct UiFileConfig {
     window_height: Option<f32>,
     language: Option<String>,
     animations_enabled: Option<bool>,
+    tab_bar_position: Option<TabBarPosition>,
 }
 
 #[derive(Debug, Deserialize, Serialize)]
@@ -328,6 +344,7 @@ pub struct AppConfigUpdates {
     /// `None` = no change; `Some("auto"|"")` = clear; `Some("<tag>")` = set.
     pub language: Option<String>,
     pub animations_enabled: Option<bool>,
+    pub tab_bar_position: Option<TabBarPosition>,
     pub terminal_font_selection: Option<String>,
     pub terminal_font_size: Option<f32>,
     pub terminal_padding_x: Option<f32>,
@@ -369,6 +386,7 @@ impl Default for AppConfig {
                 window_height: DEFAULT_WINDOW_HEIGHT,
                 language: None,
                 animations_enabled: DEFAULT_ANIMATIONS_ENABLED,
+                tab_bar_position: TabBarPosition::default(),
             },
             terminal: TerminalConfig {
                 cell_width,
@@ -439,6 +457,9 @@ impl AppConfig {
         }
         if let Some(enabled) = updates.animations_enabled {
             self.ui.animations_enabled = enabled;
+        }
+        if let Some(position) = updates.tab_bar_position {
+            self.ui.tab_bar_position = position;
         }
         let old_font = self.terminal.font_selection.clone();
         if let Some(selection) = updates.terminal_font_selection {
@@ -576,6 +597,9 @@ impl AppConfig {
             }
             if let Some(enabled) = ui.animations_enabled {
                 self.ui.animations_enabled = enabled;
+            }
+            if let Some(position) = ui.tab_bar_position {
+                self.ui.tab_bar_position = position;
             }
         }
 
@@ -962,6 +986,7 @@ impl From<&AppConfig> for FileConfig {
                 window_height: Some(config.ui.window_height),
                 language: config.ui.language.clone(),
                 animations_enabled: Some(config.ui.animations_enabled),
+                tab_bar_position: Some(config.ui.tab_bar_position),
             }),
             terminal: Some(TerminalFileConfig {
                 cell_width: None,

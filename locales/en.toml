@@ -42,6 +42,12 @@ auto = "Auto"
 [settings.appearance]
 animations_section = "Animations"
 animations = "Enable animations"
+tabs_section = "Tabs"
+position = "Position"
+
+[settings.appearance.tab_position]
+top = "Top"
+bottom = "Bottom"
 
 [settings.terminal]
 font_section = "Font"
