@@ -36,6 +36,7 @@ pub enum Message {
     SettingsInputCommitted(SettingsField, String),
     SettingsBlurToggled(bool),
     SettingsAnimationsToggled(bool),
+    SettingsTabBarPositionSelected(crate::config::TabBarPosition),
     SettingsBracketedPasteToggled(bool),
     SettingsMultilinePasteConfirmToggled(bool),
     SettingsCursorShapeSelected(crate::config::CursorShape),

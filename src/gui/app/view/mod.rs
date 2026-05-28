@@ -7,6 +7,7 @@ mod shell_picker;
 pub(in crate::gui) use dialog::{DialogButton, confirm_dialog};
 
 use super::{App, Message, SETTINGS_TAB_INDEX};
+use crate::config::TabBarPosition;
 use crate::gui::components::context_menu::{ContextMenuItem, context_menu};
 use crate::gui::components::ime_wrapper::ImeEnabled;
 use crate::gui::components::{panel, secondary as button_secondary, tab_bar};
@@ -62,6 +63,7 @@ impl App {
             self.drag_target,
             palette,
             self.config.ui.animations_enabled,
+            self.config.ui.tab_bar_position,
         );
 
         let main_content: Element<Message> = if self.active_tab == SETTINGS_TAB_INDEX {
@@ -72,9 +74,18 @@ impl App {
             self.view_lobby(palette)
         };
 
+        let layout = match self.config.ui.tab_bar_position {
+            TabBarPosition::Top => column(vec![tab_row, main_content]),
+            TabBarPosition::Bottom => column(vec![
+                crate::gui::components::tab_bar::window_chrome(palette, bar_alpha),
+                main_content,
+                tab_row,
+            ]),
+        };
+
         let panel_background = Some(self.theme_background_color());
         let base_layout = panel(
-            column(vec![tab_row, main_content]).height(Length::Fill),
+            layout.height(Length::Fill),
             panel_background,
             self.theme_text_color(),
         )
