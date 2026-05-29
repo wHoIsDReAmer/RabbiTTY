@@ -17,7 +17,7 @@ Rabbitty is a terminal emulator chasing `foot`-like memory thrift and cross-plat
 ## Install
 
 **Linux / macOS:**
-```sh
+```
 curl -fsSL https://raw.githubusercontent.com/wHoIsDReAmer/RabbiTTY/main/install.sh | sh
 ```
 
@@ -35,11 +35,14 @@ The Unix script installs the binary to `~/.local/bin/rabbitty`. On Linux it also
 
 ## Goals
 
+- [x] Support customizable themes
 - [x] SSH Managing
+- [ ] Profile customization
+- [ ] Support serial connection
 - [ ] Plugin support with wasm
 - [x] Easy changing theme
 - [x] i18n (English, 한국어)
-- [ ] Easy file upload & download with SFTP
+- [x] Easy file upload & download with SFTP
 - [ ] Split terminal in single tab
 
 ## Custom Themes
