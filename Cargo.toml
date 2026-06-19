@@ -73,6 +73,14 @@ objc2-foundation = "0.3"
 
 [target.'cfg(not(any(target_os = "windows", target_os = "macos")))'.dependencies]
 keyring = { version = "3", default-features = false, features = ["linux-native"] }
+# Compositor-side window blur (issue #38).
+# X11: set the _KDE_NET_WM_BLUR_BEHIND_REGION property (KWin & picom honour it).
+x11rb = "0.13"
+# Wayland: request blur via KWin's org_kde_kwin_blur protocol. The system
+# (libwayland) backend lets us wrap winit's existing wl_display / wl_surface.
+wayland-client = "0.31"
+wayland-backend = { version = "0.3", features = ["client_system"] }
+wayland-protocols-plasma = { version = "0.3", features = ["client"] }
 
 [target.'cfg(target_os = "windows")'.build-dependencies]
 winresource = "0.1"

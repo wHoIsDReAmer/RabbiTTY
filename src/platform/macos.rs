@@ -1,5 +1,5 @@
 use crate::config::ThemeConfig;
-use iced::window::raw_window_handle::{RawWindowHandle, WindowHandle};
+use iced::window::raw_window_handle::{DisplayHandle, RawWindowHandle, WindowHandle};
 use objc2::{AnyThread, MainThreadMarker};
 use objc2_app_kit::{NSApplication, NSColor, NSImage, NSView, NSWindowCollectionBehavior};
 use objc2_foundation::NSData;
@@ -15,7 +15,7 @@ unsafe extern "C" {
     fn CGSDefaultConnectionForThread() -> *mut std::ffi::c_void;
 }
 
-pub fn apply_style(handle: WindowHandle<'_>, theme: &ThemeConfig) {
+pub fn apply_style(handle: WindowHandle<'_>, _display: DisplayHandle<'_>, theme: &ThemeConfig) {
     set_app_icon_once();
     apply_style_inner(handle, theme);
 }
