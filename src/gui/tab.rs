@@ -191,6 +191,10 @@ impl TerminalTab {
         self.engine.scroll_to_relative(rel);
     }
 
+    pub fn scroll_to_bottom(&mut self) {
+        self.engine.scroll_to_bottom();
+    }
+
     /// Returns true when the terminal program has enabled mouse reporting.
     pub fn mouse_mode(&self) -> bool {
         self.engine.mouse_mode()
