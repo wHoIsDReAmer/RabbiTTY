@@ -112,8 +112,8 @@ impl std::fmt::Display for CursorShape {
 #[serde(rename_all = "snake_case")]
 pub enum BellMode {
     Off,
-    #[default]
     Visual,
+    #[default]
     Sound,
 }
 
@@ -1097,7 +1097,7 @@ fn ensure_config_file(path: &Path) -> std::io::Result<()> {
 
 fn default_config_toml() -> String {
     format!(
-        "[ui]\nwindow_width = {width}\nwindow_height = {height}\n\n[terminal]\nfont_selection = \"\"\nfont_size = {font_size:.1}\npadding_x = {padding_x:.1}\npadding_y = {padding_y:.1}\n\n[theme]\ncolor_scheme = \"Catppuccin Mocha\"\nforeground = \"#{fg:02x}{fg_g:02x}{fg_b:02x}\"\nbackground = \"#{bg:02x}{bg_g:02x}{bg_b:02x}\"\ncursor = \"#{cur:02x}{cur_g:02x}{cur_b:02x}\"\nbackground_opacity = {opacity:.2}\nblur_enabled = {blur_enabled}\nmacos_blur_radius = {macos_blur_radius}\n\n[shortcuts]\nnew_tab = \"{shortcut_new_tab}\"\nclose_tab = \"{shortcut_close_tab}\"\nopen_settings = \"{shortcut_open_settings}\"\nnext_tab = \"{shortcut_next_tab}\"\nprev_tab = \"{shortcut_prev_tab}\"\nquit = \"{shortcut_quit}\"\nfont_size_increase = \"{shortcut_font_size_increase}\"\nfont_size_decrease = \"{shortcut_font_size_decrease}\"\nfont_size_reset = \"{shortcut_font_size_reset}\"\nduplicate_tab = \"{shortcut_duplicate_tab}\"\n",
+        "[ui]\nwindow_width = {width}\nwindow_height = {height}\n\n[terminal]\nfont_selection = \"\"\nfont_size = {font_size:.1}\npadding_x = {padding_x:.1}\npadding_y = {padding_y:.1}\nbell_mode = \"sound\"\n\n[theme]\ncolor_scheme = \"Catppuccin Mocha\"\nforeground = \"#{fg:02x}{fg_g:02x}{fg_b:02x}\"\nbackground = \"#{bg:02x}{bg_g:02x}{bg_b:02x}\"\ncursor = \"#{cur:02x}{cur_g:02x}{cur_b:02x}\"\nbackground_opacity = {opacity:.2}\nblur_enabled = {blur_enabled}\nmacos_blur_radius = {macos_blur_radius}\n\n[shortcuts]\nnew_tab = \"{shortcut_new_tab}\"\nclose_tab = \"{shortcut_close_tab}\"\nopen_settings = \"{shortcut_open_settings}\"\nnext_tab = \"{shortcut_next_tab}\"\nprev_tab = \"{shortcut_prev_tab}\"\nquit = \"{shortcut_quit}\"\nfont_size_increase = \"{shortcut_font_size_increase}\"\nfont_size_decrease = \"{shortcut_font_size_decrease}\"\nfont_size_reset = \"{shortcut_font_size_reset}\"\nduplicate_tab = \"{shortcut_duplicate_tab}\"\n",
         width = DEFAULT_WINDOW_WIDTH as u32,
         height = DEFAULT_WINDOW_HEIGHT as u32,
         font_size = DEFAULT_TERMINAL_FONT_SIZE,
@@ -1294,6 +1294,25 @@ mod tests {
             ..Default::default()
         });
         assert_eq!(config.terminal.font_size, default_size);
+    }
+
+    #[test]
+    fn terminal_bell_defaults_to_sound() {
+        let config = AppConfig::default();
+
+        assert_eq!(config.terminal.bell_mode, BellMode::Sound);
+    }
+
+    #[test]
+    fn generated_default_config_exposes_sound_bell_mode() {
+        let toml_str = default_config_toml();
+        let file = toml::from_str::<FileConfig>(&toml_str).expect("default config should parse");
+
+        assert!(toml_str.contains("bell_mode = \"sound\""));
+        assert_eq!(
+            file.terminal.and_then(|terminal| terminal.bell_mode),
+            Some(BellMode::Sound)
+        );
     }
 
     #[test]
