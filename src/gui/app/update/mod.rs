@@ -614,13 +614,13 @@ impl App {
                     if self.config.terminal.multiline_paste_confirm && is_multiline {
                         self.pending_paste = Some(text);
                     } else {
-                        self.perform_paste(text);
+                        return self.perform_paste(text);
                     }
                 }
             }
             Message::ConfirmMultilinePaste => {
                 if let Some(text) = self.pending_paste.take() {
-                    self.perform_paste(text);
+                    return self.perform_paste(text);
                 }
             }
             Message::CancelMultilinePaste => {
@@ -639,11 +639,12 @@ impl App {
                 {
                     let _ = session.send_bytes(text.as_bytes());
                     tab.clear_selection();
+                    tab.scroll_to_bottom();
                 }
                 self.ime_preedit = None;
                 self.scroll_follow_bottom = true;
                 self.ignore_scrollable_sync = IGNORE_SCROLL_SYNC_COUNT;
-                return self.sync_terminal_scrollable();
+                return self.sync_terminal_scrollable_forced();
             }
             Message::ImePreedit(text, cursor) => {
                 if text.is_empty() {
@@ -876,10 +877,11 @@ impl App {
         if let Some(tab) = self.tabs.get_mut(self.active_tab) {
             tab.clear_selection();
             tab.handle_key(&key, modifiers, text.as_deref());
+            tab.scroll_to_bottom();
         }
         self.scroll_follow_bottom = true;
         self.ignore_scrollable_sync = IGNORE_SCROLL_SYNC_COUNT;
-        self.sync_terminal_scrollable()
+        self.sync_terminal_scrollable_forced()
     }
 
     fn advance_selection_autoscroll(&mut self) -> Task<Message> {
@@ -922,7 +924,7 @@ impl App {
         self.sync_terminal_scrollable_forced()
     }
 
-    fn perform_paste(&mut self, text: String) {
+    fn perform_paste(&mut self, text: String) -> Task<Message> {
         let config_bracketed_paste = self.config.terminal.bracketed_paste;
         if let Some(tab) = self.active_session_mut()
             && let crate::gui::tab::TerminalSession::Active(session) = &tab.session
@@ -939,7 +941,11 @@ impl App {
                 sanitized.into_bytes()
             };
             let _ = session.send_bytes(&payload);
+            tab.scroll_to_bottom();
         }
+        self.scroll_follow_bottom = true;
+        self.ignore_scrollable_sync = IGNORE_SCROLL_SYNC_COUNT;
+        self.sync_terminal_scrollable_forced()
     }
 
     fn handle_apply_window_style(&mut self) -> Task<Message> {

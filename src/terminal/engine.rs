@@ -108,6 +108,14 @@ impl TerminalEngine {
         self.cache_dirty.set(true);
     }
 
+    pub fn scroll_to_bottom(&mut self) {
+        if self.term.grid().display_offset() == 0 {
+            return;
+        }
+        self.term.scroll_display(Scroll::Bottom);
+        self.cache_dirty.set(true);
+    }
+
     /// Returns (display_offset, total_history_lines).
     /// display_offset == 0 means at the bottom (latest output).
     pub fn scroll_position(&self) -> (usize, usize) {
@@ -321,5 +329,33 @@ impl EventListener for PtyEventProxy {
             }
             _ => {}
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn test_engine() -> TerminalEngine {
+        TerminalEngine::new(
+            TerminalSize::new(8, 3),
+            100,
+            Arc::new(Mutex::new(Box::new(std::io::sink()))),
+            TerminalTheme::default(),
+        )
+    }
+
+    #[test]
+    fn scroll_to_bottom_returns_viewport_to_latest_output() {
+        let mut engine = test_engine();
+
+        engine.feed_bytes(b"one\r\ntwo\r\nthree\r\nfour\r\nfive\r\n");
+        engine.scroll(2);
+
+        assert!(engine.scroll_position().0 > 0);
+
+        engine.scroll_to_bottom();
+
+        assert_eq!(engine.scroll_position().0, 0);
     }
 }
