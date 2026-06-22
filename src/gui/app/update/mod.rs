@@ -954,25 +954,19 @@ impl App {
         }
         self.window_style_applied = true;
 
-        #[cfg(any(target_os = "windows", target_os = "macos"))]
-        {
-            let theme = self.config.theme.clone();
-            iced::window::latest()
-                .and_then(move |id| {
-                    let theme = theme.clone();
-                    iced::window::run(id, move |window| {
-                        if let Ok(handle) = window.window_handle() {
-                            crate::platform::apply_style(handle, &theme);
-                        }
-                    })
+        let theme = self.config.theme.clone();
+        iced::window::latest()
+            .and_then(move |id| {
+                let theme = theme.clone();
+                iced::window::run(id, move |window| {
+                    if let (Ok(window_handle), Ok(display_handle)) =
+                        (window.window_handle(), window.display_handle())
+                    {
+                        crate::platform::apply_style(window_handle, display_handle, &theme);
+                    }
                 })
-                .discard()
-        }
-
-        #[cfg(not(any(target_os = "windows", target_os = "macos")))]
-        {
-            Task::none()
-        }
+            })
+            .discard()
     }
 }
 

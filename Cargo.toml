@@ -74,6 +74,13 @@ objc2-foundation = "0.3"
 [target.'cfg(not(any(target_os = "windows", target_os = "macos")))'.dependencies]
 keyring = { version = "3", default-features = false, features = ["linux-native"] }
 
+# Compositor-side window blur
+x11rb = "0.13"
+
+wayland-client = "0.31"
+wayland-backend = { version = "0.3", features = ["client_system"] }
+wayland-protocols-plasma = { version = "0.3", features = ["client"] }
+
 [target.'cfg(target_os = "windows")'.build-dependencies]
 winresource = "0.1"
 ico = "0.4"

@@ -5,7 +5,7 @@
 //! - WM_NCHITTEST to enable top edge resizing
 
 use crate::config::ThemeConfig;
-use iced::window::raw_window_handle::RawWindowHandle;
+use iced::window::raw_window_handle::{DisplayHandle, RawWindowHandle};
 use std::ffi::c_void;
 use windows::Win32::Foundation::{HWND, LPARAM, LRESULT, POINT, WPARAM};
 use windows::Win32::Graphics::Gdi::ScreenToClient;
@@ -115,6 +115,7 @@ unsafe extern "system" fn subclass_proc(
 /// Apply custom frame to window (remove title bar, keep resize border)
 pub fn apply_style(
     handle: iced::window::raw_window_handle::WindowHandle<'_>,
+    _display: DisplayHandle<'_>,
     _theme: &ThemeConfig,
 ) {
     let raw_handle = handle.as_raw();
