@@ -1,5 +1,5 @@
 use crate::config::{AppConfig, TabBarPosition};
-use crate::gui::app::Message;
+use crate::gui::app::{Message, SettingsMessage};
 use crate::gui::components::{
     accent_combo_box_input_style, accent_combo_box_menu_style, accent_toggler_style,
 };
@@ -44,7 +44,7 @@ pub fn view<'a>(
                     font_combo_state,
                     crate::t!("settings.terminal.font_search_placeholder"),
                     selected_font,
-                    Message::FontSelected,
+                    |a0| Message::Settings(SettingsMessage::FontSelected(a0)),
                 )
                 .width(Length::Fill)
                 .input_style(accent_combo_box_input_style(palette))
@@ -57,7 +57,7 @@ pub fn view<'a>(
             row![
                 checkbox(show_all_fonts)
                     .label(crate::t!("settings.terminal.show_all_fonts"))
-                    .on_toggle(Message::ToggleShowAllFonts)
+                    .on_toggle(|a0| Message::Settings(SettingsMessage::ToggleShowAllFonts(a0)))
                     .size(14)
                     .text_size(13),
             ]
@@ -108,7 +108,7 @@ pub fn view<'a>(
                 .size(13)
                 .width(Length::Fixed(160.0)),
             toggler(draft.animations_enabled)
-                .on_toggle(Message::SettingsAnimationsToggled)
+                .on_toggle(|a0| Message::Settings(SettingsMessage::AnimationsToggled(a0)))
                 .size(18)
                 .style(accent_toggler_style(palette)),
         ]
@@ -128,7 +128,7 @@ pub fn view<'a>(
                 .map(|&pos| {
                     (
                         tab_bar_position_label(pos),
-                        Message::SettingsTabBarPositionSelected(pos),
+                        Message::Settings(SettingsMessage::TabBarPositionSelected(pos)),
                         draft.tab_bar_position == pos,
                     )
                 })
@@ -167,16 +167,19 @@ fn language_picker<'a>(
         Vec::with_capacity(AVAILABLE_LOCALES.len() + 1);
     segments.push((
         t!("settings.language.auto"),
-        Message::SettingsInputCommitted(SettingsField::AppearanceLanguage, "auto".to_string()),
+        Message::Settings(SettingsMessage::InputCommitted(
+            SettingsField::AppearanceLanguage,
+            "auto".to_string(),
+        )),
         current == "auto",
     ));
     for locale in AVAILABLE_LOCALES {
         segments.push((
             locale.native_label,
-            Message::SettingsInputCommitted(
+            Message::Settings(SettingsMessage::InputCommitted(
                 SettingsField::AppearanceLanguage,
                 locale.tag.to_string(),
-            ),
+            )),
             current == locale.tag,
         ));
     }

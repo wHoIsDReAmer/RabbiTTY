@@ -8,7 +8,7 @@ pub(in crate::gui) use dialog::{DialogButton, confirm_dialog};
 
 use super::{App, Message, SETTINGS_TAB_INDEX};
 use crate::config::TabBarPosition;
-use crate::gui::app::SftpMessage;
+use crate::gui::app::{SettingsMessage, SftpMessage};
 use crate::gui::components::context_menu::{ContextMenuItem, context_menu};
 use crate::gui::components::ime_wrapper::ImeEnabled;
 use crate::gui::components::{panel, secondary as button_secondary, tab_bar};
@@ -56,7 +56,7 @@ impl App {
         let tab_row = tab_bar(
             tabs_iter,
             Message::OpenShellPicker,
-            Message::OpenSettingsTab,
+            Message::Settings(SettingsMessage::OpenTab),
             sftp_toggle,
             bar_alpha,
             tab_alpha,
@@ -102,16 +102,16 @@ impl App {
                 vec![
                     DialogButton {
                         label: "Cancel".into(),
-                        message: Message::CancelRestartForBlur,
+                        message: Message::Settings(SettingsMessage::CancelRestartForBlur),
                         primary: false,
                     },
                     DialogButton {
                         label: "Save & Restart".into(),
-                        message: Message::ConfirmRestartForBlur,
+                        message: Message::Settings(SettingsMessage::ConfirmRestartForBlur),
                         primary: true,
                     },
                 ],
-                Message::CancelRestartForBlur,
+                Message::Settings(SettingsMessage::CancelRestartForBlur),
                 palette,
                 self.config.ui.animations_enabled,
             );

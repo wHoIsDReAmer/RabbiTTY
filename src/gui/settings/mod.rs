@@ -2,7 +2,7 @@ use crate::config::{
     AppConfig, AppConfigUpdates, BellMode, CursorShape, RightClickAction, SshAuthMethod,
     SshProfile, TabBarPosition, parse_hex_color,
 };
-use crate::gui::app::Message;
+use crate::gui::app::{Message, SettingsMessage};
 use crate::gui::components::accent_toggler_style;
 use crate::gui::theme::{Palette, RADIUS_NORMAL, RADIUS_SMALL, SPACING_NORMAL};
 use iced::widget::{button, column, container, row, rule, text, text_input, toggler};
@@ -591,12 +591,12 @@ pub fn input_row<'a>(
     field: SettingsField,
     palette: Palette,
 ) -> Element<'a, Message> {
-    let commit_msg = Message::SettingsInputCommitted(field, value.to_owned());
+    let commit_msg = Message::Settings(SettingsMessage::InputCommitted(field, value.to_owned()));
     row![
         text(label).size(13).width(Length::Fixed(LABEL_WIDTH)),
         styled_text_input(
             value,
-            move |next| Message::SettingsInputChanged(field, next),
+            move |next| Message::Settings(SettingsMessage::InputChanged(field, next)),
             palette
         )
         .on_submit(commit_msg),
@@ -614,12 +614,12 @@ pub fn input_row_with_suffix<'a>(
     suffix: &'a str,
     palette: Palette,
 ) -> Element<'a, Message> {
-    let commit_msg = Message::SettingsInputCommitted(field, value.to_owned());
+    let commit_msg = Message::Settings(SettingsMessage::InputCommitted(field, value.to_owned()));
     row![
         text(label).size(13).width(Length::Fixed(LABEL_WIDTH)),
         styled_text_input(
             value,
-            move |next| Message::SettingsInputChanged(field, next),
+            move |next| Message::Settings(SettingsMessage::InputChanged(field, next)),
             palette
         )
         .on_submit(commit_msg),
@@ -645,7 +645,7 @@ pub fn color_input_row<'a>(
     let dot_color = parsed
         .map(|rgb| Color::from_rgb8(rgb[0], rgb[1], rgb[2]))
         .unwrap_or(palette.error);
-    let commit_msg = Message::SettingsInputCommitted(field, value.to_owned());
+    let commit_msg = Message::Settings(SettingsMessage::InputCommitted(field, value.to_owned()));
 
     row![
         text(label).size(13).width(Length::Fixed(LABEL_WIDTH)),
@@ -666,7 +666,7 @@ pub fn color_input_row<'a>(
             }),
         styled_text_input(
             value,
-            move |next| Message::SettingsInputChanged(field, next),
+            move |next| Message::Settings(SettingsMessage::InputChanged(field, next)),
             palette
         )
         .on_submit(commit_msg),
@@ -681,7 +681,7 @@ pub fn toggle_row<'a>(label: &'a str, value: bool, palette: Palette) -> Element<
     row![
         text(label).size(13).width(Length::Fixed(LABEL_WIDTH)),
         toggler(value)
-            .on_toggle(Message::SettingsBlurToggled)
+            .on_toggle(|a0| Message::Settings(SettingsMessage::BlurToggled(a0)))
             .size(18)
             .style(accent_toggler_style(palette))
     ]

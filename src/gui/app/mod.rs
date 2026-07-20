@@ -30,29 +30,7 @@ pub enum Message {
     OpenShellPicker,
     CloseShellPicker,
     CreateTab(ShellKind),
-    OpenSettingsTab,
-    SelectSettingsCategory(SettingsCategory),
-    SettingsInputChanged(SettingsField, String),
-    SettingsInputCommitted(SettingsField, String),
-    SettingsBlurToggled(bool),
-    SettingsAnimationsToggled(bool),
-    SettingsTabBarPositionSelected(crate::config::TabBarPosition),
-    SettingsBracketedPasteToggled(bool),
-    SettingsMultilinePasteConfirmToggled(bool),
-    SettingsCursorShapeSelected(crate::config::CursorShape),
-    SettingsCursorBlinkToggled(bool),
-    SettingsBellModeSelected(crate::config::BellMode),
-    SettingsRightClickActionSelected(crate::config::RightClickAction),
-    AddSshProfile,
-    EditSshProfile(usize),
-    RequestRemoveSshProfile(usize),
-    CancelRemoveSshProfile,
-    ConfirmRemoveSshProfile,
-    SshProfileModalFieldChanged(SshProfileField, String),
-    TestSshConnection,
-    SshConnectionTestFinished(Result<(), String>),
-    CloseSshProfileModal,
-    SaveSshProfileModal,
+    Settings(SettingsMessage),
     CreateSshTab(usize),
     LaunchFromHistory(usize),
     DuplicateTab,
@@ -69,10 +47,6 @@ pub enum Message {
     TerminalContextPaste,
     TerminalContextCopy,
     CursorMoved(iced::Point),
-    #[cfg(target_os = "macos")]
-    ConfirmRestartForBlur,
-    #[cfg(target_os = "macos")]
-    CancelRestartForBlur,
     PtySenderReady(mpsc::UnboundedSender<OutputEvent>),
     PtyOutput(OutputEvent),
     PtyOutputBatch(Vec<OutputEvent>),
@@ -114,13 +88,9 @@ pub enum Message {
 
     WindowResized(Size),
     ResizeDebounce,
-    SettingsCommitDebounce,
     AnimationTick,
     CursorBlink,
     ApplyWindowStyle,
-
-    FontSelected(TerminalFontOption),
-    ToggleShowAllFonts(bool),
 
     #[cfg(target_os = "windows")]
     WindowMinimize,
@@ -129,6 +99,44 @@ pub enum Message {
     #[cfg(any(target_os = "windows", target_os = "macos"))]
     WindowDrag,
     Exit,
+}
+
+/// Messages driving the settings screen and the SSH profile modal.
+/// Handled by [`App::update_settings_message`].
+#[derive(Clone)]
+pub enum SettingsMessage {
+    OpenTab,
+    SelectCategory(SettingsCategory),
+    InputChanged(SettingsField, String),
+    InputCommitted(SettingsField, String),
+    CommitDebounce,
+    BlurToggled(bool),
+    AnimationsToggled(bool),
+    TabBarPositionSelected(crate::config::TabBarPosition),
+    BracketedPasteToggled(bool),
+    MultilinePasteConfirmToggled(bool),
+    CursorShapeSelected(crate::config::CursorShape),
+    CursorBlinkToggled(bool),
+    BellModeSelected(crate::config::BellMode),
+    RightClickActionSelected(crate::config::RightClickAction),
+    FontSelected(TerminalFontOption),
+    ToggleShowAllFonts(bool),
+
+    AddSshProfile,
+    EditSshProfile(usize),
+    RequestRemoveSshProfile(usize),
+    CancelRemoveSshProfile,
+    ConfirmRemoveSshProfile,
+    SshProfileModalFieldChanged(SshProfileField, String),
+    TestSshConnection,
+    SshConnectionTestFinished(Result<(), String>),
+    CloseSshProfileModal,
+    SaveSshProfileModal,
+
+    #[cfg(target_os = "macos")]
+    ConfirmRestartForBlur,
+    #[cfg(target_os = "macos")]
+    CancelRestartForBlur,
 }
 
 /// Messages driving the SFTP drawer. Handled by [`App::update_sftp`].

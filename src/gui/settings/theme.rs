@@ -1,5 +1,5 @@
 use crate::config::AppConfig;
-use crate::gui::app::Message;
+use crate::gui::app::{Message, SettingsMessage};
 use crate::gui::settings::{
     SettingsDraft, SettingsField, format_rgb, hint_text, input_row_with_suffix, section, toggle_row,
 };
@@ -214,10 +214,10 @@ fn build_preset_card<'a>(
                 ..Default::default()
             }),
     )
-    .on_press(Message::SettingsInputCommitted(
+    .on_press(Message::Settings(SettingsMessage::InputCommitted(
         SettingsField::ThemeColorScheme,
         name.to_string(),
-    ))
+    )))
     .padding(0)
     .style(move |_theme: &iced::Theme, _status| button::Style {
         background: None,
@@ -280,7 +280,9 @@ fn color_palette_row<'a>(
                         }
                     }),
             )
-            .on_press(Message::SettingsInputCommitted(field, hex))
+            .on_press(Message::Settings(SettingsMessage::InputCommitted(
+                field, hex,
+            )))
             .padding(0)
             .style(|_theme: &iced::Theme, _status| button::Style {
                 background: None,
@@ -296,10 +298,13 @@ fn color_palette_row<'a>(
     let swatch_grid = Row::with_children(swatches).spacing(4).width(Length::Fill);
 
     // Current color indicator + hex input
-    let commit_msg = Message::SettingsInputCommitted(field, current_hex.to_owned());
+    let commit_msg = Message::Settings(SettingsMessage::InputCommitted(
+        field,
+        current_hex.to_owned(),
+    ));
     let hex_input = crate::gui::settings::styled_text_input_small(
         current_hex,
-        move |next| Message::SettingsInputChanged(field, next),
+        move |next| Message::Settings(SettingsMessage::InputChanged(field, next)),
         *palette,
     )
     .on_submit(commit_msg);

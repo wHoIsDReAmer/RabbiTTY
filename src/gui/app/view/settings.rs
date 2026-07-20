@@ -1,4 +1,4 @@
-use super::super::{App, Message};
+use super::super::{App, Message, SettingsMessage};
 use crate::gui::settings::{self, SettingsCategory};
 use crate::gui::theme::{RADIUS_NORMAL, SPACING_LARGE, SPACING_NORMAL, SPACING_SMALL};
 use iced::widget::{button, column, container, row, scrollable, stack, text};
@@ -42,7 +42,7 @@ impl App {
             let item = button(btn_content)
                 .padding([8, 12])
                 .width(Length::Fill)
-                .on_press(Message::SelectSettingsCategory(category))
+                .on_press(Message::Settings(SettingsMessage::SelectCategory(category)))
                 .style(button_style);
 
             let rest = crate::gui::components::HoverStyle {

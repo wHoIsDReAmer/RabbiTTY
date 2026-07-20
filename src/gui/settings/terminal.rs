@@ -1,5 +1,5 @@
 use crate::config::{AppConfig, BellMode, CursorShape, RightClickAction};
-use crate::gui::app::Message;
+use crate::gui::app::{Message, SettingsMessage};
 use crate::gui::components::accent_toggler_style;
 use crate::gui::settings::{
     SettingsDraft, SettingsField, input_row_with_suffix, section, segmented_control,
@@ -47,7 +47,7 @@ pub fn view<'a>(
                     .size(13)
                     .width(label_width),
                 toggler(draft.bracketed_paste)
-                    .on_toggle(Message::SettingsBracketedPasteToggled)
+                    .on_toggle(|a0| Message::Settings(SettingsMessage::BracketedPasteToggled(a0)))
                     .size(18)
                     .style(accent_toggler_style(palette)),
             ]
@@ -60,7 +60,9 @@ pub fn view<'a>(
                     .size(13)
                     .width(label_width),
                 toggler(draft.multiline_paste_confirm)
-                    .on_toggle(Message::SettingsMultilinePasteConfirmToggled)
+                    .on_toggle(|a0| Message::Settings(
+                        SettingsMessage::MultilinePasteConfirmToggled(a0)
+                    ))
                     .size(18)
                     .style(accent_toggler_style(palette)),
             ]
@@ -85,7 +87,7 @@ pub fn view<'a>(
                     .map(|&shape| {
                         (
                             cursor_shape_label(shape),
-                            Message::SettingsCursorShapeSelected(shape),
+                            Message::Settings(SettingsMessage::CursorShapeSelected(shape)),
                             draft.cursor_shape == shape,
                         )
                     })
@@ -98,7 +100,7 @@ pub fn view<'a>(
                     .size(13)
                     .width(label_width),
                 toggler(draft.cursor_blink)
-                    .on_toggle(Message::SettingsCursorBlinkToggled)
+                    .on_toggle(|a0| Message::Settings(SettingsMessage::CursorBlinkToggled(a0)))
                     .size(18)
                     .style(accent_toggler_style(palette)),
             ]
@@ -122,7 +124,7 @@ pub fn view<'a>(
                 .map(|&mode| {
                     (
                         bell_mode_label(mode),
-                        Message::SettingsBellModeSelected(mode),
+                        Message::Settings(SettingsMessage::BellModeSelected(mode)),
                         draft.bell_mode == mode,
                     )
                 })
@@ -142,7 +144,7 @@ pub fn view<'a>(
                 .map(|&action| {
                     (
                         right_click_action_label(action),
-                        Message::SettingsRightClickActionSelected(action),
+                        Message::Settings(SettingsMessage::RightClickActionSelected(action)),
                         draft.right_click_action == action,
                     )
                 })
