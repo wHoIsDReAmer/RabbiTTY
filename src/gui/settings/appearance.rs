@@ -4,13 +4,13 @@ use crate::gui::components::{
     accent_combo_box_input_style, accent_combo_box_menu_style, accent_toggler_style,
 };
 use crate::gui::settings::{
-    SettingsDraft, SettingsField, TerminalFontOption, hint_text, input_row_with_suffix, section,
-    segmented_control,
+    ROW_SPACING, SettingsDraft, SettingsField, TerminalFontOption, hint_text,
+    input_row_with_suffix, section, segmented_control, setting_row,
 };
 use crate::gui::theme::{Palette, SPACING_NORMAL};
 use crate::i18n::AVAILABLE_LOCALES;
-use iced::widget::{checkbox, column, combo_box, row, text, toggler};
-use iced::{Alignment, Element, Length};
+use iced::widget::{checkbox, column, combo_box, row, toggler};
+use iced::{Element, Length};
 
 pub fn view<'a>(
     config: &'a AppConfig,
@@ -36,24 +36,19 @@ pub fn view<'a>(
                 "pt",
                 palette,
             ),
-            row![
-                text(crate::t!("settings.terminal.font_family"))
-                    .size(13)
-                    .width(Length::Fixed(160.0)),
+            setting_row(
+                crate::t!("settings.terminal.font_family"),
                 combo_box(
                     font_combo_state,
                     crate::t!("settings.terminal.font_search_placeholder"),
                     selected_font,
                     |a0| Message::Settings(SettingsMessage::FontSelected(a0)),
                 )
-                .width(Length::Fill)
+                .width(Length::Fixed(260.0))
                 .input_style(accent_combo_box_input_style(palette))
                 .menu_style(accent_combo_box_menu_style(palette)),
-            ]
-            .align_y(Alignment::Center)
-            .spacing(SPACING_NORMAL)
-            .width(Length::Fill)
-            .into(),
+                palette,
+            ),
             row![
                 checkbox(show_all_fonts)
                     .label(crate::t!("settings.terminal.show_all_fonts"))
@@ -71,7 +66,7 @@ pub fn view<'a>(
                 palette,
             ),
         ])
-        .spacing(SPACING_NORMAL)
+        .spacing(ROW_SPACING)
         .width(Length::Fill)
         .into(),
         palette,
@@ -95,7 +90,7 @@ pub fn view<'a>(
                 palette,
             ),
         ])
-        .spacing(SPACING_NORMAL)
+        .spacing(ROW_SPACING)
         .width(Length::Fill)
         .into(),
         palette,
@@ -103,19 +98,14 @@ pub fn view<'a>(
 
     let animations_section = section(
         crate::t!("settings.appearance.animations_section"),
-        row![
-            text(crate::t!("settings.appearance.animations"))
-                .size(13)
-                .width(Length::Fixed(160.0)),
+        setting_row(
+            crate::t!("settings.appearance.animations"),
             toggler(draft.animations_enabled)
                 .on_toggle(|a0| Message::Settings(SettingsMessage::AnimationsToggled(a0)))
                 .size(18)
                 .style(accent_toggler_style(palette)),
-        ]
-        .align_y(Alignment::Center)
-        .spacing(SPACING_NORMAL)
-        .width(Length::Fill)
-        .into(),
+            palette,
+        ),
         palette,
     );
 

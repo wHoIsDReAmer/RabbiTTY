@@ -4,6 +4,8 @@ use crate::gui::theme::{RADIUS_NORMAL, SPACING_LARGE, SPACING_NORMAL, SPACING_SM
 use iced::widget::{button, column, container, row, scrollable, stack, text};
 use iced::{Background, Border, Color, Element, Length};
 
+const CONTENT_MAX_WIDTH: f32 = 820.0;
+
 impl App {
     pub(in crate::gui) fn view_settings(&self) -> Element<'_, Message> {
         let palette = self.palette;
@@ -21,7 +23,7 @@ impl App {
                     iced::widget::button::Style {
                         background: Some(Background::Color(Color::TRANSPARENT)),
                         text_color: if is_active {
-                            palette.text
+                            palette.background
                         } else {
                             palette.text_secondary
                         },
@@ -47,10 +49,7 @@ impl App {
 
             let rest = crate::gui::components::HoverStyle {
                 background: if is_active {
-                    Color {
-                        a: 0.12,
-                        ..palette.text
-                    }
+                    palette.accent
                 } else {
                     Color::TRANSPARENT
                 },
@@ -119,6 +118,7 @@ impl App {
             palette,
         ))
         .padding([0, 12])
+        .max_width(CONTENT_MAX_WIDTH)
         .width(Length::Fill);
 
         let body_scroll: Element<Message> = scrollable(body_content)
