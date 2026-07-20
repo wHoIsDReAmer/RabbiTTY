@@ -101,8 +101,6 @@ pub enum Message {
     Exit,
 }
 
-/// Messages driving the settings screen and the SSH profile modal.
-/// Handled by [`App::update_settings_message`].
 #[derive(Clone)]
 pub enum SettingsMessage {
     OpenTab,
@@ -139,7 +137,6 @@ pub enum SettingsMessage {
     CancelRestartForBlur,
 }
 
-/// Messages driving the SFTP drawer. Handled by [`App::update_sftp`].
 #[derive(Clone)]
 pub enum SftpMessage {
     ToggleDrawer,

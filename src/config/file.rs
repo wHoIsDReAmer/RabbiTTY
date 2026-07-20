@@ -1,6 +1,3 @@
-//! Serde mirror of [`AppConfig`](super::AppConfig) — every field is optional so a
-//! partial or hand-edited `config.toml` still loads, falling back to defaults.
-
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::{Path, PathBuf};
