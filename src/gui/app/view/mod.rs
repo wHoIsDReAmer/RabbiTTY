@@ -8,6 +8,7 @@ pub(in crate::gui) use dialog::{DialogButton, confirm_dialog};
 
 use super::{App, Message, SETTINGS_TAB_INDEX};
 use crate::config::TabBarPosition;
+use crate::gui::app::SftpMessage;
 use crate::gui::components::context_menu::{ContextMenuItem, context_menu};
 use crate::gui::components::ime_wrapper::ImeEnabled;
 use crate::gui::components::{panel, secondary as button_secondary, tab_bar};
@@ -47,7 +48,7 @@ impl App {
         let sftp_toggle = if self.active_tab != SETTINGS_TAB_INDEX {
             self.tabs.get(self.active_tab).and_then(|tab| {
                 matches!(tab.shell, crate::gui::tab::ShellKind::Ssh(_))
-                    .then_some((Message::SftpToggleDrawer, tab.sftp.open))
+                    .then_some((Message::Sftp(SftpMessage::ToggleDrawer), tab.sftp.open))
             })
         } else {
             None
