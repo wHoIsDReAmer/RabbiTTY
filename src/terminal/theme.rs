@@ -11,6 +11,7 @@ pub struct TerminalTheme {
     pub(super) background: Rgb,
     cursor: Rgb,
     ansi: [Rgb; 16],
+    bold_is_bright: bool,
 }
 
 /// A named color preset with foreground, background, cursor, and 16 ANSI colors.
@@ -369,6 +370,7 @@ impl Default for TerminalTheme {
             background: rgb_from_triplet(preset.bg),
             cursor: rgb_from_triplet(preset.cursor),
             ansi: preset.ansi.map(rgb_from_triplet),
+            bold_is_bright: crate::config::DEFAULT_BOLD_IS_BRIGHT,
         }
     }
 }
@@ -388,6 +390,7 @@ impl TerminalTheme {
             background: rgb_from_triplet(config.theme.background),
             cursor: rgb_from_triplet(config.theme.cursor),
             ansi: base_ansi,
+            bold_is_bright: config.terminal.bold_is_bright,
         }
     }
 
@@ -462,8 +465,9 @@ pub(super) fn resolve_rgb(
     flags: Flags,
     apply_intensity: bool,
 ) -> Rgb {
-    let is_dim = apply_intensity && flags.intersects(Flags::DIM | Flags::DIM_BOLD);
-    let is_bold = apply_intensity && flags.intersects(Flags::BOLD | Flags::DIM_BOLD);
+    // `DIM_BOLD` is `DIM | BOLD`, so `intersects` on it matches bold-only cells too.
+    let is_dim = apply_intensity && flags.contains(Flags::DIM);
+    let is_bold = apply_intensity && theme.bold_is_bright && flags.contains(Flags::BOLD);
 
     match color {
         AnsiColor::Spec(rgb) => {
@@ -616,5 +620,61 @@ fn xterm_component(value: u8) -> u8 {
         3 => 175,
         4 => 215,
         _ => 255,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn dracula() -> TerminalTheme {
+        let mut cfg = AppConfig::default();
+        cfg.theme.color_scheme = "Dracula".into();
+        TerminalTheme::from_config(&cfg)
+    }
+
+    fn cyan(theme: &TerminalTheme, flags: Flags) -> Rgb {
+        resolve_rgb(
+            AnsiColor::Named(NamedColor::Cyan),
+            &Colors::default(),
+            theme,
+            flags,
+            true,
+        )
+    }
+
+    #[test]
+    fn bold_alone_is_not_dimmed() {
+        let theme = dracula();
+        assert_eq!(cyan(&theme, Flags::BOLD), cyan(&theme, Flags::empty()));
+    }
+
+    #[test]
+    fn dim_still_dims() {
+        let theme = dracula();
+        let plain = cyan(&theme, Flags::empty());
+        assert_eq!(cyan(&theme, Flags::DIM), dim_rgb(plain));
+    }
+
+    #[test]
+    fn bold_is_bright_promotes_only_when_enabled() {
+        let mut cfg = AppConfig::default();
+        cfg.theme.color_scheme = "Dracula".into();
+
+        cfg.terminal.bold_is_bright = false;
+        let off = TerminalTheme::from_config(&cfg);
+        assert_eq!(cyan(&off, Flags::BOLD), cyan(&off, Flags::empty()));
+
+        cfg.terminal.bold_is_bright = true;
+        let on = TerminalTheme::from_config(&cfg);
+        let bright = resolve_rgb(
+            AnsiColor::Named(NamedColor::BrightCyan),
+            &Colors::default(),
+            &on,
+            Flags::empty(),
+            true,
+        );
+        assert_eq!(cyan(&on, Flags::BOLD), bright);
+        assert_ne!(cyan(&on, Flags::BOLD), cyan(&on, Flags::empty()));
     }
 }

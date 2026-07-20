@@ -115,6 +115,24 @@ pub fn view<'a>(
         palette,
     );
 
+    let colors_section = section(
+        crate::t!("settings.terminal.colors_section"),
+        row![
+            text(crate::t!("settings.terminal.bold_is_bright"))
+                .size(13)
+                .width(label_width),
+            toggler(draft.bold_is_bright)
+                .on_toggle(|a0| Message::Settings(SettingsMessage::BoldIsBrightToggled(a0)))
+                .size(18)
+                .style(accent_toggler_style(palette)),
+        ]
+        .align_y(Alignment::Center)
+        .spacing(SPACING_NORMAL)
+        .width(Length::Fill)
+        .into(),
+        palette,
+    );
+
     let bell_section = section(
         crate::t!("settings.terminal.bell_section"),
         segmented_control(
@@ -159,6 +177,7 @@ pub fn view<'a>(
         scrollback_section,
         paste_section,
         cursor_section,
+        colors_section,
         bell_section,
         mouse_section,
     ])

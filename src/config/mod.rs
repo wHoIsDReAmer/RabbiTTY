@@ -54,6 +54,7 @@ pub struct TerminalConfig {
     pub scroll_multiplier: f32,
     pub cursor_shape: CursorShape,
     pub cursor_blink: bool,
+    pub bold_is_bright: bool,
     pub bell_mode: BellMode,
     pub right_click_action: RightClickAction,
 }
@@ -108,6 +109,7 @@ impl Default for AppConfig {
                 scroll_multiplier: DEFAULT_TERMINAL_SCROLL_MULTIPLIER,
                 cursor_shape: CursorShape::default(),
                 cursor_blink: DEFAULT_CURSOR_BLINK,
+                bold_is_bright: DEFAULT_BOLD_IS_BRIGHT,
                 bell_mode: BellMode::default(),
                 right_click_action: RightClickAction::default(),
             },
@@ -229,6 +231,9 @@ impl AppConfig {
             }
             if let Some(enabled) = term.cursor_blink {
                 self.terminal.cursor_blink = enabled;
+            }
+            if let Some(enabled) = term.bold_is_bright {
+                self.terminal.bold_is_bright = enabled;
             }
             if let Some(mode) = term.bell_mode {
                 self.terminal.bell_mode = mode;

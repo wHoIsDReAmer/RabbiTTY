@@ -115,6 +115,7 @@ pub enum SettingsMessage {
     MultilinePasteConfirmToggled(bool),
     CursorShapeSelected(crate::config::CursorShape),
     CursorBlinkToggled(bool),
+    BoldIsBrightToggled(bool),
     BellModeSelected(crate::config::BellMode),
     RightClickActionSelected(crate::config::RightClickAction),
     FontSelected(TerminalFontOption),
