@@ -30,70 +30,11 @@ pub enum Message {
     OpenShellPicker,
     CloseShellPicker,
     CreateTab(ShellKind),
-    OpenSettingsTab,
-    SelectSettingsCategory(SettingsCategory),
-    SettingsInputChanged(SettingsField, String),
-    SettingsInputCommitted(SettingsField, String),
-    SettingsBlurToggled(bool),
-    SettingsAnimationsToggled(bool),
-    SettingsTabBarPositionSelected(crate::config::TabBarPosition),
-    SettingsBracketedPasteToggled(bool),
-    SettingsMultilinePasteConfirmToggled(bool),
-    SettingsCursorShapeSelected(crate::config::CursorShape),
-    SettingsCursorBlinkToggled(bool),
-    SettingsBellModeSelected(crate::config::BellMode),
-    SettingsRightClickActionSelected(crate::config::RightClickAction),
-    AddSshProfile,
-    EditSshProfile(usize),
-    RequestRemoveSshProfile(usize),
-    CancelRemoveSshProfile,
-    ConfirmRemoveSshProfile,
-    SshProfileModalFieldChanged(SshProfileField, String),
-    TestSshConnection,
-    SshConnectionTestFinished(Result<(), String>),
-    CloseSshProfileModal,
-    SaveSshProfileModal,
+    Settings(SettingsMessage),
     CreateSshTab(usize),
     LaunchFromHistory(usize),
     DuplicateTab,
-    SftpToggleDrawer,
-    SftpOpenSucceeded {
-        tab_id: u64,
-        command_tx: iced::futures::channel::mpsc::UnboundedSender<crate::ssh::sftp::Command>,
-    },
-    SftpOpenFailed {
-        tab_id: u64,
-        error: String,
-    },
-    SftpEvent {
-        tab_id: u64,
-        event: crate::ssh::sftp::Event,
-    },
-    SftpNavigate {
-        tab_id: u64,
-        path: String,
-    },
-    SftpRefresh,
-    SftpRequestUpload,
-    SftpUploadPicked {
-        tab_id: u64,
-        files: Vec<std::path::PathBuf>,
-    },
-    SftpRequestDownload {
-        tab_id: u64,
-        remote: String,
-        suggested_name: String,
-    },
-    SftpDownloadPicked {
-        tab_id: u64,
-        remote: String,
-        local: std::path::PathBuf,
-    },
-    SftpCancelTransfer,
-    SftpDismissTransfer {
-        tab_id: u64,
-        path: String,
-    },
+    Sftp(SftpMessage),
     SshPasswordPromptChanged(String),
     SshPasswordPromptToggleSave(bool),
     SshPasswordPromptSubmit,
@@ -106,10 +47,6 @@ pub enum Message {
     TerminalContextPaste,
     TerminalContextCopy,
     CursorMoved(iced::Point),
-    #[cfg(target_os = "macos")]
-    ConfirmRestartForBlur,
-    #[cfg(target_os = "macos")]
-    CancelRestartForBlur,
     PtySenderReady(mpsc::UnboundedSender<OutputEvent>),
     PtyOutput(OutputEvent),
     PtyOutputBatch(Vec<OutputEvent>),
@@ -151,13 +88,9 @@ pub enum Message {
 
     WindowResized(Size),
     ResizeDebounce,
-    SettingsCommitDebounce,
     AnimationTick,
     CursorBlink,
     ApplyWindowStyle,
-
-    FontSelected(TerminalFontOption),
-    ToggleShowAllFonts(bool),
 
     #[cfg(target_os = "windows")]
     WindowMinimize,
@@ -166,6 +99,87 @@ pub enum Message {
     #[cfg(any(target_os = "windows", target_os = "macos"))]
     WindowDrag,
     Exit,
+}
+
+/// Messages driving the settings screen and the SSH profile modal.
+/// Handled by [`App::update_settings_message`].
+#[derive(Clone)]
+pub enum SettingsMessage {
+    OpenTab,
+    SelectCategory(SettingsCategory),
+    InputChanged(SettingsField, String),
+    InputCommitted(SettingsField, String),
+    CommitDebounce,
+    BlurToggled(bool),
+    AnimationsToggled(bool),
+    TabBarPositionSelected(crate::config::TabBarPosition),
+    BracketedPasteToggled(bool),
+    MultilinePasteConfirmToggled(bool),
+    CursorShapeSelected(crate::config::CursorShape),
+    CursorBlinkToggled(bool),
+    BellModeSelected(crate::config::BellMode),
+    RightClickActionSelected(crate::config::RightClickAction),
+    FontSelected(TerminalFontOption),
+    ToggleShowAllFonts(bool),
+
+    AddSshProfile,
+    EditSshProfile(usize),
+    RequestRemoveSshProfile(usize),
+    CancelRemoveSshProfile,
+    ConfirmRemoveSshProfile,
+    SshProfileModalFieldChanged(SshProfileField, String),
+    TestSshConnection,
+    SshConnectionTestFinished(Result<(), String>),
+    CloseSshProfileModal,
+    SaveSshProfileModal,
+
+    #[cfg(target_os = "macos")]
+    ConfirmRestartForBlur,
+    #[cfg(target_os = "macos")]
+    CancelRestartForBlur,
+}
+
+/// Messages driving the SFTP drawer. Handled by [`App::update_sftp`].
+#[derive(Clone)]
+pub enum SftpMessage {
+    ToggleDrawer,
+    OpenSucceeded {
+        tab_id: u64,
+        command_tx: iced::futures::channel::mpsc::UnboundedSender<crate::ssh::sftp::Command>,
+    },
+    OpenFailed {
+        tab_id: u64,
+        error: String,
+    },
+    Event {
+        tab_id: u64,
+        event: crate::ssh::sftp::Event,
+    },
+    Navigate {
+        tab_id: u64,
+        path: String,
+    },
+    Refresh,
+    RequestUpload,
+    UploadPicked {
+        tab_id: u64,
+        files: Vec<std::path::PathBuf>,
+    },
+    RequestDownload {
+        tab_id: u64,
+        remote: String,
+        suggested_name: String,
+    },
+    DownloadPicked {
+        tab_id: u64,
+        remote: String,
+        local: std::path::PathBuf,
+    },
+    CancelTransfer,
+    DismissTransfer {
+        tab_id: u64,
+        path: String,
+    },
 }
 
 pub struct App {

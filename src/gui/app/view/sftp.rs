@@ -1,6 +1,6 @@
 //! SFTP drawer rendering.
 
-use crate::gui::app::Message;
+use crate::gui::app::{Message, SftpMessage};
 use crate::gui::components::{HoverStyle, hover_fade};
 use crate::gui::sftp::{self, SftpDrawerState, TransferRow};
 use crate::gui::theme::{Palette, RADIUS_NORMAL, RADIUS_SMALL, SPACING_NORMAL, SPACING_SMALL};
@@ -105,19 +105,19 @@ fn drawer_header<'a>(
 
     let upload_btn = drawer_icon_button(
         "\u{2191}",
-        Message::SftpRequestUpload,
+        Message::Sftp(SftpMessage::RequestUpload),
         palette,
         animations_enabled,
     );
     let refresh_btn = drawer_icon_button(
         "\u{27F3}",
-        Message::SftpRefresh,
+        Message::Sftp(SftpMessage::Refresh),
         palette,
         animations_enabled,
     );
     let close_btn = drawer_icon_button(
         "\u{2715}",
-        Message::SftpToggleDrawer,
+        Message::Sftp(SftpMessage::ToggleDrawer),
         palette,
         animations_enabled,
     );
@@ -272,10 +272,10 @@ fn parent_row<'a>(
         .spacing(SPACING_NORMAL)
         .align_y(Alignment::Center),
     )
-    .on_press(Message::SftpNavigate {
+    .on_press(Message::Sftp(SftpMessage::Navigate {
         tab_id,
         path: parent,
-    })
+    }))
     .padding([3.0, SPACING_NORMAL])
     .width(Length::Fill)
     .height(Length::Fixed(ROW_HEIGHT))
@@ -343,16 +343,16 @@ fn entry_row<'a>(
     .align_y(Alignment::Center);
 
     let press_msg = if entry.is_dir {
-        Some(Message::SftpNavigate {
+        Some(Message::Sftp(SftpMessage::Navigate {
             tab_id,
             path: sftp::join_path(&state.current_path, &entry.name),
-        })
+        }))
     } else if !entry.is_symlink {
-        Some(Message::SftpRequestDownload {
+        Some(Message::Sftp(SftpMessage::RequestDownload {
             tab_id,
             remote: sftp::join_path(&state.current_path, &entry.name),
             suggested_name: entry.name.clone(),
-        })
+        }))
     } else {
         None
     };
@@ -509,7 +509,7 @@ fn transfer_row<'a>(
             snap: true,
         };
         let cancel_btn = button(text("\u{2715}").size(10))
-            .on_press(Message::SftpCancelTransfer)
+            .on_press(Message::Sftp(SftpMessage::CancelTransfer))
             .padding([2, 6])
             .style(cancel_style);
         let cancel_rest = HoverStyle {

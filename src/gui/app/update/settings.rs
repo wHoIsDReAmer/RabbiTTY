@@ -1,7 +1,9 @@
-use super::super::{App, Message};
+use super::super::{App, Message, SETTINGS_TAB_INDEX, SettingsMessage};
 use crate::config::AppConfigUpdates;
 use crate::gui::settings::SettingsDraft;
+use crate::gui::settings::SettingsField;
 use crate::terminal::TerminalTheme;
+use iced::time::Instant;
 use iced::{Size, Task, window};
 
 impl App {
@@ -133,6 +135,185 @@ impl App {
             return iced::exit();
         }
 
+        Task::none()
+    }
+}
+
+impl App {
+    pub(super) fn update_settings_message(&mut self, message: SettingsMessage) -> Task<Message> {
+        match message {
+            SettingsMessage::AddSshProfile => {
+                self.settings_draft.open_create_ssh_profile_modal();
+            }
+            SettingsMessage::EditSshProfile(index) => {
+                self.settings_draft.open_edit_ssh_profile_modal(index);
+            }
+            SettingsMessage::RequestRemoveSshProfile(index) => {
+                self.settings_draft.request_delete_ssh_profile(index);
+            }
+            SettingsMessage::CancelRemoveSshProfile => {
+                self.settings_draft.cancel_delete_ssh_profile();
+            }
+            SettingsMessage::ConfirmRemoveSshProfile => {
+                if let Some((host, user)) = self.settings_draft.confirm_delete_ssh_profile() {
+                    crate::keychain::delete_password(&host, &user);
+                    self.save_ssh_profiles();
+                }
+            }
+            SettingsMessage::SshProfileModalFieldChanged(field, value) => {
+                self.settings_draft.update_ssh_profile_modal(field, value);
+            }
+            SettingsMessage::TestSshConnection => match self
+                .settings_draft
+                .begin_ssh_connection_test()
+            {
+                Ok(profile) => {
+                    return Task::perform(
+                        crate::ssh::test_ssh_connection(profile, std::time::Duration::from_secs(5)),
+                        |r| Message::Settings(SettingsMessage::SshConnectionTestFinished(r)),
+                    );
+                }
+                Err(err) => {
+                    eprintln!("Failed to start SSH connection test: {err}");
+                }
+            },
+            SettingsMessage::SshConnectionTestFinished(result) => {
+                self.settings_draft.finish_ssh_connection_test(result);
+            }
+            SettingsMessage::CloseSshProfileModal => {
+                self.settings_draft.close_ssh_profile_modal();
+            }
+            SettingsMessage::SaveSshProfileModal => {
+                match self.settings_draft.save_ssh_profile_modal() {
+                    Ok(Some(profile)) => {
+                        match profile.password.as_deref() {
+                            Some(pw) => {
+                                crate::keychain::set_password(&profile.host, &profile.user, pw);
+                            }
+                            None => {
+                                crate::keychain::delete_password(&profile.host, &profile.user);
+                            }
+                        }
+                        self.save_ssh_profiles();
+                    }
+                    Ok(None) => {}
+                    Err(err) => eprintln!("Failed to update SSH profile draft: {err}"),
+                }
+            }
+            SettingsMessage::OpenTab => {
+                self.settings_open = true;
+                self.active_tab = SETTINGS_TAB_INDEX;
+                self.settings_draft = SettingsDraft::from_config(&self.config);
+            }
+            SettingsMessage::SelectCategory(category) => {
+                if !self.settings_open {
+                    self.settings_open = true;
+                    self.active_tab = SETTINGS_TAB_INDEX;
+                    self.settings_draft = SettingsDraft::from_config(&self.config);
+                }
+                if let Some(immediate) = self.settings_category_transition.request_switch(
+                    category,
+                    self.settings_category,
+                    self.config.ui.animations_enabled,
+                    Instant::now(),
+                ) {
+                    self.settings_category = immediate;
+                }
+            }
+            SettingsMessage::InputChanged(field, value) => {
+                self.settings_draft.update(field, value);
+                self.settings_debounce_seq = self.settings_debounce_seq.wrapping_add(1);
+                if self.settings_debounce_pending {
+                    return Task::none();
+                }
+                self.settings_debounce_pending = true;
+                self.settings_debounce_spawned_seq = self.settings_debounce_seq;
+                return Task::perform(
+                    async {
+                        std::thread::sleep(std::time::Duration::from_millis(500));
+                    },
+                    |()| Message::Settings(SettingsMessage::CommitDebounce),
+                );
+            }
+            SettingsMessage::InputCommitted(field, value) => {
+                self.settings_draft.update(field, value);
+                self.settings_debounce_spawned_seq = self.settings_debounce_seq;
+                return self.apply_settings(true);
+            }
+            SettingsMessage::CommitDebounce => {
+                if self.settings_debounce_spawned_seq != self.settings_debounce_seq {
+                    self.settings_debounce_spawned_seq = self.settings_debounce_seq;
+                    return Task::perform(
+                        async {
+                            std::thread::sleep(std::time::Duration::from_millis(500));
+                        },
+                        |()| Message::Settings(SettingsMessage::CommitDebounce),
+                    );
+                }
+                self.settings_debounce_pending = false;
+                return self.apply_settings(true);
+            }
+            SettingsMessage::BlurToggled(enabled) => {
+                self.settings_draft.blur_enabled = enabled;
+                return self.apply_settings(true);
+            }
+            SettingsMessage::AnimationsToggled(enabled) => {
+                self.settings_draft.animations_enabled = enabled;
+                return self.apply_settings(true);
+            }
+            SettingsMessage::TabBarPositionSelected(pos) => {
+                self.settings_draft.tab_bar_position = pos;
+                return self.apply_settings(true);
+            }
+            SettingsMessage::BracketedPasteToggled(enabled) => {
+                self.settings_draft.bracketed_paste = enabled;
+                return self.apply_settings(true);
+            }
+            SettingsMessage::MultilinePasteConfirmToggled(enabled) => {
+                self.settings_draft.multiline_paste_confirm = enabled;
+                return self.apply_settings(true);
+            }
+            SettingsMessage::CursorShapeSelected(shape) => {
+                self.settings_draft.cursor_shape = shape;
+                return self.apply_settings(true);
+            }
+            SettingsMessage::CursorBlinkToggled(enabled) => {
+                self.settings_draft.cursor_blink = enabled;
+                return self.apply_settings(true);
+            }
+            SettingsMessage::BellModeSelected(mode) => {
+                self.settings_draft.bell_mode = mode;
+                return self.apply_settings(true);
+            }
+            SettingsMessage::RightClickActionSelected(action) => {
+                self.settings_draft.right_click_action = action;
+                return self.apply_settings(true);
+            }
+            SettingsMessage::FontSelected(option) => {
+                self.settings_draft
+                    .update(SettingsField::TerminalFontSelection, option.value);
+                return self.apply_settings(true);
+            }
+            SettingsMessage::ToggleShowAllFonts(show_all) => {
+                self.show_all_fonts = show_all;
+                self.font_combo_state = super::super::build_font_combo_state(
+                    &self.all_font_options,
+                    show_all,
+                    self.config.terminal.font_selection.as_deref(),
+                );
+                return self.apply_settings(true);
+            }
+            #[cfg(target_os = "macos")]
+            SettingsMessage::ConfirmRestartForBlur => {
+                return self.handle_confirm_restart();
+            }
+            #[cfg(target_os = "macos")]
+            SettingsMessage::CancelRestartForBlur => {
+                self.show_restart_confirm = false;
+                self.pending_settings_updates = None;
+                self.pending_save_on_restart = false;
+            }
+        }
         Task::none()
     }
 }

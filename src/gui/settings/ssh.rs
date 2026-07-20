@@ -1,5 +1,5 @@
 use crate::config::SshAuthMethod;
-use crate::gui::app::Message;
+use crate::gui::app::{Message, SettingsMessage};
 use crate::gui::components::{button_icon, primary, secondary};
 use crate::gui::settings::{
     SettingsDraft, SshConnectionTestStatus, SshProfileDraft, SshProfileField, SshProfileModalMode,
@@ -50,7 +50,8 @@ fn delete_confirm_overlay<'a>(
     palette: Palette,
     animations_enabled: bool,
 ) -> Element<'a, Message> {
-    let backdrop = mouse_area(backdrop(palette)).on_press(Message::CancelRemoveSshProfile);
+    let backdrop = mouse_area(backdrop(palette))
+        .on_press(Message::Settings(SettingsMessage::CancelRemoveSshProfile));
     let title = profile_title(profile);
     let description = format!("Delete \"{title}\" from SSH profiles?");
 
@@ -64,13 +65,13 @@ fn delete_confirm_overlay<'a>(
                 container("").width(Length::Fill),
                 secondary(
                     crate::t!("settings.ssh.cancel"),
-                    Some(Message::CancelRemoveSshProfile),
+                    Some(Message::Settings(SettingsMessage::CancelRemoveSshProfile)),
                     palette,
                     animations_enabled,
                 ),
                 primary(
                     crate::t!("settings.ssh.delete"),
-                    Message::ConfirmRemoveSshProfile,
+                    Message::Settings(SettingsMessage::ConfirmRemoveSshProfile),
                     palette,
                     animations_enabled,
                 ),
@@ -122,7 +123,12 @@ fn content<'a>(
                 .size(16)
                 .color(palette.text),
             container("").width(Length::Fill),
-            primary("+", Message::AddSshProfile, palette, animations_enabled),
+            primary(
+                "+",
+                Message::Settings(SettingsMessage::AddSshProfile),
+                palette,
+                animations_enabled
+            ),
         ]
         .spacing(SPACING_SMALL)
         .align_y(Alignment::Center)
@@ -290,13 +296,13 @@ fn profile_row<'a>(
                 ),
                 button_icon(
                     "\u{270e}",
-                    Message::EditSshProfile(index),
+                    Message::Settings(SettingsMessage::EditSshProfile(index)),
                     palette,
                     animations_enabled,
                 ),
                 button_icon(
                     "\u{1f5d1}",
-                    Message::RequestRemoveSshProfile(index),
+                    Message::Settings(SettingsMessage::RequestRemoveSshProfile(index)),
                     palette,
                     animations_enabled,
                 ),
@@ -382,7 +388,8 @@ fn modal_overlay_content<'a>(
     palette: Palette,
     animations_enabled: bool,
 ) -> Element<'a, Message> {
-    let backdrop = mouse_area(backdrop(palette)).on_press(Message::CloseSshProfileModal);
+    let backdrop = mouse_area(backdrop(palette))
+        .on_press(Message::Settings(SettingsMessage::CloseSshProfileModal));
 
     let title = match mode {
         SshProfileModalMode::Create => crate::t!("settings.ssh.create_profile"),
@@ -396,7 +403,7 @@ fn modal_overlay_content<'a>(
             container("").width(Length::Fill),
             button_icon(
                 "x",
-                Message::CloseSshProfileModal,
+                Message::Settings(SettingsMessage::CloseSshProfileModal),
                 palette,
                 animations_enabled
             ),
@@ -424,7 +431,7 @@ fn modal_overlay_content<'a>(
     } else {
         secondary(
             crate::t!("settings.ssh.test_connection"),
-            Some(Message::TestSshConnection),
+            Some(Message::Settings(SettingsMessage::TestSshConnection)),
             palette,
             animations_enabled,
         )
@@ -436,13 +443,13 @@ fn modal_overlay_content<'a>(
             container("").width(Length::Fill),
             secondary(
                 crate::t!("settings.ssh.cancel"),
-                Some(Message::CloseSshProfileModal),
+                Some(Message::Settings(SettingsMessage::CloseSshProfileModal)),
                 palette,
                 animations_enabled,
             ),
             primary(
                 crate::t!("settings.ssh.save"),
-                Message::SaveSshProfileModal,
+                Message::Settings(SettingsMessage::SaveSshProfileModal),
                 palette,
                 animations_enabled,
             ),
@@ -540,7 +547,12 @@ fn profile_form<'a>(
         modal_input(
             crate::t!("settings.ssh.key_file_input_placeholder"),
             &profile.identity_file,
-            |next| Message::SshProfileModalFieldChanged(SshProfileField::IdentityFile, next),
+            |next| {
+                Message::Settings(SettingsMessage::SshProfileModalFieldChanged(
+                    SshProfileField::IdentityFile,
+                    next,
+                ))
+            },
             palette,
         )
         .into()
@@ -558,7 +570,12 @@ fn profile_form<'a>(
         modal_input(
             crate::t!("settings.ssh.display_name"),
             &profile.name,
-            |next| Message::SshProfileModalFieldChanged(SshProfileField::Name, next),
+            |next| {
+                Message::Settings(SettingsMessage::SshProfileModalFieldChanged(
+                    SshProfileField::Name,
+                    next,
+                ))
+            },
             palette,
         )
         .into(),
@@ -568,7 +585,12 @@ fn profile_form<'a>(
             modal_input(
                 crate::t!("settings.ssh.host"),
                 &profile.host,
-                |next| { Message::SshProfileModalFieldChanged(SshProfileField::Host, next) },
+                |next| {
+                    Message::Settings(SettingsMessage::SshProfileModalFieldChanged(
+                        SshProfileField::Host,
+                        next,
+                    ))
+                },
                 palette
             )
             .width(Length::Fill),
@@ -576,7 +598,12 @@ fn profile_form<'a>(
             modal_input(
                 crate::t!("settings.ssh.port"),
                 &profile.port,
-                |next| { Message::SshProfileModalFieldChanged(SshProfileField::Port, next) },
+                |next| {
+                    Message::Settings(SettingsMessage::SshProfileModalFieldChanged(
+                        SshProfileField::Port,
+                        next,
+                    ))
+                },
                 palette
             )
             .width(Length::Fixed(80.0)),
@@ -590,7 +617,12 @@ fn profile_form<'a>(
         modal_input(
             crate::t!("settings.ssh.username"),
             &profile.user,
-            |next| Message::SshProfileModalFieldChanged(SshProfileField::User, next),
+            |next| {
+                Message::Settings(SettingsMessage::SshProfileModalFieldChanged(
+                    SshProfileField::User,
+                    next,
+                ))
+            },
             palette,
         )
         .into(),
@@ -625,10 +657,10 @@ fn profile_form<'a>(
         checkbox(profile.proxy_command_enabled)
             .label(crate::t!("settings.ssh.use_proxy_command"))
             .on_toggle(|enabled| {
-                Message::SshProfileModalFieldChanged(
+                Message::Settings(SettingsMessage::SshProfileModalFieldChanged(
                     SshProfileField::ProxyCommandEnabled,
                     enabled.to_string(),
-                )
+                ))
             })
             .size(14)
             .text_size(13)
@@ -639,7 +671,12 @@ fn profile_form<'a>(
             modal_input(
                 crate::t!("settings.ssh.proxy_command_placeholder"),
                 &profile.proxy_command,
-                |next| Message::SshProfileModalFieldChanged(SshProfileField::ProxyCommand, next),
+                |next| {
+                    Message::Settings(SettingsMessage::SshProfileModalFieldChanged(
+                        SshProfileField::ProxyCommand,
+                        next,
+                    ))
+                },
                 palette,
             )
             .into(),
@@ -665,7 +702,10 @@ fn auth_method_button<'a>(
     palette: Palette,
     animations_enabled: bool,
 ) -> Element<'a, Message> {
-    let message = Message::SshProfileModalFieldChanged(SshProfileField::AuthMethod, value.into());
+    let message = Message::Settings(SettingsMessage::SshProfileModalFieldChanged(
+        SshProfileField::AuthMethod,
+        value.into(),
+    ));
     if selected {
         primary(label, message, palette, animations_enabled)
     } else {
@@ -722,7 +762,12 @@ fn modal_password<'a>(
 ) -> text_input::TextInput<'a, Message> {
     text_input(placeholder, value)
         .secure(true)
-        .on_input(move |next| Message::SshProfileModalFieldChanged(SshProfileField::Password, next))
+        .on_input(move |next| {
+            Message::Settings(SettingsMessage::SshProfileModalFieldChanged(
+                SshProfileField::Password,
+                next,
+            ))
+        })
         .padding([6, 10])
         .size(13)
         .width(Length::Fill)
