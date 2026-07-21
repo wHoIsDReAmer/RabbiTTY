@@ -73,3 +73,28 @@ pub fn view<'a, Message: 'a>(icon: ShellIcon, size: f32, opacity: f32) -> Elemen
         .style(move |_theme: &iced::Theme, _status| svg::Style { color: Some(color) })
         .into()
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn every_picker_name_resolves_to_a_distinct_icon() {
+        let mut seen: Vec<(String, iced::Color)> = Vec::new();
+        for name in PROFILE_ICON_NAMES {
+            let icon = by_name(name);
+            assert!(
+                !seen.iter().any(|(n, c)| n != name && *c == icon.color),
+                "{name} shares a color with another picker icon"
+            );
+            seen.push((name.to_string(), icon.color));
+        }
+    }
+
+    #[test]
+    fn unknown_names_fall_back_to_the_terminal_icon() {
+        let fallback = by_name("something-nobody-ships");
+        let terminal = by_name("terminal");
+        assert_eq!(fallback.color, terminal.color);
+    }
+}
