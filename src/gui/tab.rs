@@ -332,6 +332,8 @@ impl TerminalTab {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Profile {
     pub name: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub icon: Option<String>,
     pub kind: ProfileKind,
 }
 
@@ -351,6 +353,7 @@ impl Profile {
     pub fn default_shell() -> Self {
         Self {
             name: default_shell_display_name(),
+            icon: None,
             kind: ProfileKind::Local {
                 program: None,
                 args: Vec::new(),
@@ -361,6 +364,7 @@ impl Profile {
     pub fn shell(name: String, path: String) -> Self {
         Self {
             name,
+            icon: None,
             kind: ProfileKind::Local {
                 program: Some(path),
                 args: vec!["-l".to_string()],
@@ -371,6 +375,7 @@ impl Profile {
     pub fn ssh(profile: SshProfile) -> Self {
         Self {
             name: profile.tab_title(),
+            icon: None,
             kind: ProfileKind::Ssh(profile),
         }
     }

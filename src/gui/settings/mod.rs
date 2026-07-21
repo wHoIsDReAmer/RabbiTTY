@@ -286,7 +286,7 @@ impl SettingsDraft {
             shortcut_prev_tab: config.shortcuts.prev_tab.clone(),
             shortcut_quit: config.shortcuts.quit.clone(),
             ssh_profiles: config
-                .ssh_profiles
+                .ssh_profiles()
                 .iter()
                 .map(SshProfileDraft::from_profile)
                 .collect(),
@@ -1060,7 +1060,7 @@ mod tests {
     #[test]
     fn update_ssh_profile_password_field() {
         let config = crate::config::AppConfig {
-            ssh_profiles: vec![SshProfile {
+            profiles: vec![SshProfile {
                 name: "srv".into(),
                 host: "h".into(),
                 port: 22,
@@ -1069,7 +1069,10 @@ mod tests {
                 identity_file: None,
                 password: None,
                 proxy_command: None,
-            }],
+            }]
+            .into_iter()
+            .map(crate::gui::tab::Profile::ssh)
+            .collect(),
             ..Default::default()
         };
         let mut draft = SettingsDraft::from_config(&config);
@@ -1098,7 +1101,7 @@ mod tests {
     #[test]
     fn ssh_profile_modal_edit_replaces_selected_profile() {
         let mut draft = SettingsDraft::from_config(&crate::config::AppConfig {
-            ssh_profiles: vec![SshProfile {
+            profiles: vec![SshProfile {
                 name: "old".into(),
                 host: "old.example.com".into(),
                 port: 22,
@@ -1107,7 +1110,10 @@ mod tests {
                 identity_file: Some("~/.ssh/id_ed25519".into()),
                 password: None,
                 proxy_command: None,
-            }],
+            }]
+            .into_iter()
+            .map(crate::gui::tab::Profile::ssh)
+            .collect(),
             ..Default::default()
         });
 
@@ -1125,7 +1131,7 @@ mod tests {
     #[test]
     fn ssh_profile_modal_cancel_leaves_profiles_unchanged() {
         let mut draft = SettingsDraft::from_config(&crate::config::AppConfig {
-            ssh_profiles: vec![SshProfile {
+            profiles: vec![SshProfile {
                 name: "prod".into(),
                 host: "prod.example.com".into(),
                 port: 22,
@@ -1134,7 +1140,10 @@ mod tests {
                 identity_file: None,
                 password: Some("secret".into()),
                 proxy_command: None,
-            }],
+            }]
+            .into_iter()
+            .map(crate::gui::tab::Profile::ssh)
+            .collect(),
             ..Default::default()
         });
 
@@ -1162,7 +1171,7 @@ mod tests {
     #[test]
     fn ssh_profile_delete_requires_confirmation() {
         let mut draft = SettingsDraft::from_config(&crate::config::AppConfig {
-            ssh_profiles: vec![
+            profiles: vec![
                 SshProfile {
                     name: "prod".into(),
                     host: "prod.example.com".into(),
@@ -1183,7 +1192,10 @@ mod tests {
                     password: None,
                     proxy_command: None,
                 },
-            ],
+            ]
+            .into_iter()
+            .map(crate::gui::tab::Profile::ssh)
+            .collect(),
             ..Default::default()
         });
 
@@ -1208,7 +1220,7 @@ mod tests {
     #[test]
     fn ssh_profile_delete_cancel_leaves_profile_unchanged() {
         let mut draft = SettingsDraft::from_config(&crate::config::AppConfig {
-            ssh_profiles: vec![SshProfile {
+            profiles: vec![SshProfile {
                 name: "prod".into(),
                 host: "prod.example.com".into(),
                 port: 22,
@@ -1217,7 +1229,10 @@ mod tests {
                 identity_file: None,
                 password: Some("secret".into()),
                 proxy_command: None,
-            }],
+            }]
+            .into_iter()
+            .map(crate::gui::tab::Profile::ssh)
+            .collect(),
             ..Default::default()
         });
 
@@ -1286,7 +1301,11 @@ mod tests {
         };
         let mut profiles = vec![existing.clone()];
         let mut draft = SettingsDraft::from_config(&crate::config::AppConfig {
-            ssh_profiles: profiles.clone(),
+            profiles: profiles
+                .clone()
+                .into_iter()
+                .map(crate::gui::tab::Profile::ssh)
+                .collect(),
             ..Default::default()
         });
         draft.add_ssh_profile();
@@ -1313,7 +1332,11 @@ mod tests {
         };
         let mut profiles = vec![existing.clone()];
         let mut draft = SettingsDraft::from_config(&crate::config::AppConfig {
-            ssh_profiles: profiles.clone(),
+            profiles: profiles
+                .clone()
+                .into_iter()
+                .map(crate::gui::tab::Profile::ssh)
+                .collect(),
             ..Default::default()
         });
         draft.add_ssh_profile();
@@ -1344,7 +1367,11 @@ mod tests {
         };
         let mut profiles = vec![existing.clone()];
         let mut draft = SettingsDraft::from_config(&crate::config::AppConfig {
-            ssh_profiles: profiles.clone(),
+            profiles: profiles
+                .clone()
+                .into_iter()
+                .map(crate::gui::tab::Profile::ssh)
+                .collect(),
             ..Default::default()
         });
         draft.add_ssh_profile();

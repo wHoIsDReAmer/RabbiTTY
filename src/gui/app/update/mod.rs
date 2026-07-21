@@ -29,13 +29,12 @@ impl App {
     }
 
     fn save_ssh_profiles(&mut self) {
-        if let Err(err) = self
-            .settings_draft
-            .apply_ssh_profiles_to(&mut self.config.ssh_profiles)
-        {
+        let mut ssh = self.config.ssh_profiles();
+        if let Err(err) = self.settings_draft.apply_ssh_profiles_to(&mut ssh) {
             eprintln!("Failed to save SSH profiles: {err}");
             return;
         }
+        self.config.set_ssh_profiles(ssh);
 
         match self.config.save() {
             Ok(()) => {

@@ -102,12 +102,12 @@ impl App {
                 .filter_map(|profile| profile.to_profile())
                 .collect();
             if draft.is_empty() {
-                self.config.ssh_profiles.clone()
+                self.config.ssh_profiles()
             } else {
                 draft
             }
         } else {
-            self.config.ssh_profiles.clone()
+            self.config.ssh_profiles()
         };
 
         // ~/.ssh/config-derived hosts join the list, but a user-created profile

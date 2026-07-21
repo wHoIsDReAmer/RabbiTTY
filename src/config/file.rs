@@ -5,6 +5,7 @@ use std::path::{Path, PathBuf};
 use super::AppConfig;
 use super::defaults::*;
 use super::types::{BellMode, CursorShape, RightClickAction, SshAuthMethod, TabBarPosition};
+use crate::gui::tab::Profile;
 
 #[derive(Debug, Deserialize, Serialize)]
 pub(super) struct SshProfileFileConfig {
@@ -23,6 +24,10 @@ pub(super) struct FileConfig {
     pub(super) terminal: Option<TerminalFileConfig>,
     pub(super) theme: Option<ThemeFileConfig>,
     pub(super) shortcuts: Option<ShortcutsFileConfig>,
+    #[serde(default)]
+    pub(super) profiles: Option<Vec<Profile>>,
+    /// Legacy key, read only for migration into `profiles`.
+    #[serde(default)]
     pub(super) ssh_profiles: Option<Vec<SshProfileFileConfig>>,
 }
 
@@ -153,34 +158,19 @@ impl From<&AppConfig> for FileConfig {
                 font_size_reset: Some(config.shortcuts.font_size_reset.clone()),
                 duplicate_tab: Some(config.shortcuts.duplicate_tab.clone()),
             }),
-            ssh_profiles: if config.ssh_profiles.is_empty() {
+            profiles: if config.profiles.is_empty() {
                 None
             } else {
                 Some(
                     config
-                        .ssh_profiles
+                        .profiles
                         .iter()
-                        .filter(|p| !p.host.trim().is_empty())
-                        .map(|p| SshProfileFileConfig {
-                            name: Some(p.name.clone()),
-                            host: Some(p.host.clone()),
-                            port: Some(p.port),
-                            user: if p.user.is_empty() {
-                                None
-                            } else {
-                                Some(p.user.clone())
-                            },
-                            auth_method: Some(p.auth_method),
-                            identity_file: if matches!(p.auth_method, SshAuthMethod::KeyFile) {
-                                p.identity_file.clone()
-                            } else {
-                                None
-                            },
-                            proxy_command: p.proxy_command.clone(),
-                        })
+                        .filter(|p| p.ssh_profile().is_none_or(|s| !s.host.trim().is_empty()))
+                        .cloned()
                         .collect(),
                 )
             },
+            ssh_profiles: None,
         }
     }
 }
@@ -251,6 +241,33 @@ mod tests {
     }
 
     #[test]
+    fn legacy_ssh_profiles_migrate_and_reserialize_as_profiles() {
+        let mut config = AppConfig::default();
+        let file = toml::from_str::<FileConfig>(
+            r#"
+            [[ssh_profiles]]
+            name = "Legacy"
+            host = "old.example.com"
+            user = "admin"
+            "#,
+        )
+        .expect("parse");
+        config.apply_file(file);
+        assert_eq!(config.ssh_profiles().len(), 1);
+
+        // Re-serializing emits the new [[profiles]] form, not the legacy key.
+        let toml = toml::to_string_pretty(&FileConfig::from(&config)).unwrap();
+        assert!(toml.contains("[[profiles]]"), "{toml}");
+        assert!(!toml.contains("[[ssh_profiles]]"), "{toml}");
+
+        // And that output round-trips back to the same SSH profile.
+        let reparsed = toml::from_str::<FileConfig>(&toml).expect("reparse");
+        let mut config2 = AppConfig::default();
+        config2.apply_file(reparsed);
+        assert_eq!(config2.ssh_profiles()[0].host, "old.example.com");
+    }
+
+    #[test]
     fn ssh_profile_parsed_from_file_config() {
         let mut config = AppConfig::default();
         let file = toml::from_str::<FileConfig>(
@@ -269,9 +286,10 @@ mod tests {
         .expect("file config should parse");
 
         config.apply_file(file);
-        assert_eq!(config.ssh_profiles.len(), 2);
+        let sshs = config.ssh_profiles();
+        assert_eq!(sshs.len(), 2);
 
-        let p0 = &config.ssh_profiles[0];
+        let p0 = &sshs[0];
         assert_eq!(p0.name, "My Server");
         assert_eq!(p0.host, "example.com");
         assert_eq!(p0.port, 2222);
@@ -280,7 +298,7 @@ mod tests {
         assert_eq!(p0.identity_file.as_deref(), Some("~/.ssh/id_ed25519"));
         assert!(p0.password.is_none()); // password is never in config file
 
-        let p1 = &config.ssh_profiles[1];
+        let p1 = &sshs[1];
         assert_eq!(p1.name, "bare.host"); // name defaults to host
         assert_eq!(p1.port, 22); // default port
         assert_eq!(p1.auth_method, SshAuthMethod::Password);
@@ -307,8 +325,9 @@ mod tests {
 
         config.apply_file(file);
 
-        assert_eq!(config.ssh_profiles[0].auth_method, SshAuthMethod::KeyFile);
-        assert_eq!(config.ssh_profiles[1].auth_method, SshAuthMethod::Password);
+        let sshs = config.ssh_profiles();
+        assert_eq!(sshs[0].auth_method, SshAuthMethod::KeyFile);
+        assert_eq!(sshs[1].auth_method, SshAuthMethod::Password);
 
         let serialized = toml::to_string_pretty(&FileConfig::from(&config)).unwrap();
         assert!(serialized.contains("auth_method = \"key_file\""));
@@ -329,7 +348,8 @@ mod tests {
 
         config.apply_file(file);
 
-        let profile = &config.ssh_profiles[0];
+        let sshs = config.ssh_profiles();
+        let profile = &sshs[0];
         assert_eq!(
             profile.proxy_command.as_deref(),
             Some("cloudflared access ssh --hostname %h")
@@ -352,13 +372,13 @@ mod tests {
         .expect("file config should parse");
 
         config.apply_file(file);
-        assert!(config.ssh_profiles.is_empty());
+        assert!(config.ssh_profiles().is_empty());
     }
 
     #[test]
     fn ssh_profile_serialization_excludes_password() {
         let config = AppConfig {
-            ssh_profiles: vec![SshProfile {
+            profiles: vec![crate::gui::tab::Profile::ssh(SshProfile {
                 name: "test".into(),
                 host: "host.com".into(),
                 port: 22,
@@ -367,7 +387,7 @@ mod tests {
                 identity_file: None,
                 password: Some("secret123".into()),
                 proxy_command: None,
-            }],
+            })],
             ..Default::default()
         };
 
@@ -380,7 +400,7 @@ mod tests {
     #[test]
     fn ssh_profile_serialization_skips_empty_host_profiles() {
         let config = AppConfig {
-            ssh_profiles: vec![SshProfile {
+            profiles: vec![crate::gui::tab::Profile::ssh(SshProfile {
                 name: "".into(),
                 host: "".into(),
                 port: 22,
@@ -389,14 +409,14 @@ mod tests {
                 identity_file: None,
                 password: None,
                 proxy_command: None,
-            }],
+            })],
             ..Default::default()
         };
 
         let file = FileConfig::from(&config);
         let toml_str = toml::to_string_pretty(&file).unwrap();
 
-        assert!(!toml_str.contains("[[ssh_profiles]]"));
+        assert!(!toml_str.contains("[[profiles]]"));
     }
 
     #[test]
