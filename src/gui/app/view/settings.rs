@@ -10,6 +10,8 @@ impl App {
     pub(in crate::gui) fn view_settings(&self) -> Element<'_, Message> {
         let palette = self.palette;
         let animations_enabled = self.config.ui.animations_enabled;
+        // Faint tint over the translucent base so blur shows through the sidebar.
+        let sidebar_alpha = 0.22;
         let mut category_items: Vec<Element<Message>> = Vec::new();
 
         for category in SettingsCategory::ALL {
@@ -84,7 +86,10 @@ impl App {
         .width(Length::Fixed(180.0))
         .height(Length::Fill)
         .style(move |_theme: &iced::Theme| container::Style {
-            background: Some(Background::Color(palette.surface)),
+            background: Some(Background::Color(Color {
+                a: sidebar_alpha,
+                ..palette.surface
+            })),
             ..Default::default()
         });
 
