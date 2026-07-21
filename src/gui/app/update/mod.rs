@@ -28,23 +28,18 @@ impl App {
             .filter(|tab| matches!(tab.session, crate::gui::tab::TerminalSession::Active(_)))
     }
 
-    fn save_ssh_profiles(&mut self) {
-        let mut ssh = self.config.ssh_profiles();
-        if let Err(err) = self.settings_draft.apply_ssh_profiles_to(&mut ssh) {
-            eprintln!("Failed to save SSH profiles: {err}");
-            return;
-        }
-        self.config.set_ssh_profiles(ssh);
+    fn save_profiles(&mut self) {
+        self.config.profiles = self.settings_draft.collect_profiles();
 
         match self.config.save() {
             Ok(()) => {
                 self.settings_draft = SettingsDraft::from_config(&self.config);
-                self.settings_draft.set_ssh_profiles_saved();
+                self.settings_draft.set_profiles_saved();
             }
             Err(err) => {
-                let message = format!("Failed to save SSH profiles: {err}");
+                let message = format!("Failed to save profiles: {err}");
                 eprintln!("{message}");
-                self.settings_draft.set_ssh_profiles_error(message);
+                self.settings_draft.set_profiles_error(message);
             }
         }
     }
@@ -142,11 +137,6 @@ impl App {
             }
             Message::SshPasswordPromptCancel => {
                 self.password_prompt = None;
-            }
-            Message::CreateSshTabFromConfig(index) => {
-                if let Some(profile) = self.ssh_config_profiles.get(index).cloned() {
-                    return self.request_ssh_tab(profile);
-                }
             }
             Message::ShowTabContextMenu(index) => {
                 self.tab_context_menu = Some(index);

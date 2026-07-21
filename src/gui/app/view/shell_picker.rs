@@ -1,30 +1,10 @@
 use super::super::{App, Message};
+use crate::gui::icons::{self, ShellIcon};
 use crate::gui::tab::{Profile, ProfileKind};
 use crate::gui::theme::{Palette, RADIUS_NORMAL, RADIUS_SMALL, SPACING_SMALL};
 use iced::time::Instant;
 use iced::widget::{button, column, container, mouse_area, row, scrollable, stack, svg, text};
 use iced::{Background, Border, Color, Element, Length};
-use std::sync::LazyLock;
-
-static ICON_BASH: LazyLock<svg::Handle> =
-    LazyLock::new(|| svg::Handle::from_memory(include_bytes!("../../../../assets/icons/bash.svg")));
-static ICON_ZSH: LazyLock<svg::Handle> =
-    LazyLock::new(|| svg::Handle::from_memory(include_bytes!("../../../../assets/icons/zsh.svg")));
-static ICON_FISH: LazyLock<svg::Handle> =
-    LazyLock::new(|| svg::Handle::from_memory(include_bytes!("../../../../assets/icons/fish.svg")));
-static ICON_POWERSHELL: LazyLock<svg::Handle> = LazyLock::new(|| {
-    svg::Handle::from_memory(include_bytes!("../../../../assets/icons/powershell.svg"))
-});
-static ICON_TERMINAL: LazyLock<svg::Handle> = LazyLock::new(|| {
-    svg::Handle::from_memory(include_bytes!("../../../../assets/icons/terminal.svg"))
-});
-static ICON_SSH: LazyLock<svg::Handle> =
-    LazyLock::new(|| svg::Handle::from_memory(include_bytes!("../../../../assets/icons/ssh.svg")));
-
-struct ShellIcon {
-    handle: svg::Handle,
-    color: Color,
-}
 
 #[derive(Clone, Copy)]
 struct PickerStyle {
@@ -67,6 +47,16 @@ impl PickerStyle {
             .into()
     }
 
+    fn emoji(&self, glyph: String) -> Element<'static, Message> {
+        container(text(glyph).size(14.0).color(Color {
+            a: self.alpha,
+            ..self.palette.text
+        }))
+        .width(Length::Fixed(16.0))
+        .align_x(iced::Alignment::Center)
+        .into()
+    }
+
     fn divider(&self) -> Element<'static, Message> {
         let alpha = self.alpha;
         let palette = self.palette;
@@ -85,7 +75,7 @@ impl PickerStyle {
 
     fn item_button(
         &self,
-        icon: ShellIcon,
+        icon: Element<'static, Message>,
         label: String,
         subtitle: Option<String>,
         selected: bool,
@@ -99,7 +89,7 @@ impl PickerStyle {
             label_items.push(self.text_secondary(&sub, 10.0));
         }
 
-        let content = row![self.icon(icon), column(label_items).spacing(1)]
+        let content = row![icon, column(label_items).spacing(1)]
             .spacing(10)
             .align_y(iced::Alignment::Center);
 
@@ -157,47 +147,14 @@ impl PickerStyle {
     }
 }
 
-fn icon_by_name(name: &str) -> ShellIcon {
-    match name.to_lowercase().as_str() {
-        "bash" => ShellIcon {
-            handle: ICON_BASH.clone(),
-            color: Color::from_rgb8(0x4E, 0xAA, 0x25),
-        },
-        "zsh" => ShellIcon {
-            handle: ICON_ZSH.clone(),
-            color: Color::from_rgb8(0xF1, 0x5A, 0x24),
-        },
-        "fish" => ShellIcon {
-            handle: ICON_FISH.clone(),
-            color: Color::from_rgb8(0x34, 0xC5, 0x34),
-        },
-        "pwsh" | "powershell" => ShellIcon {
-            handle: ICON_POWERSHELL.clone(),
-            color: Color::from_rgb8(0x5A, 0x91, 0xD8),
-        },
-        _ => ShellIcon {
-            handle: ICON_TERMINAL.clone(),
-            color: Color::from_rgb8(0x4C, 0xC2, 0xFF),
-        },
-    }
-}
-
 fn icon_for_shell(shell: &Profile) -> ShellIcon {
+    if let Some(name) = shell.icon.as_deref().filter(|n| !n.trim().is_empty()) {
+        return icons::by_name(name);
+    }
     match &shell.kind {
-        ProfileKind::Ssh(_) => ShellIcon {
-            handle: ICON_SSH.clone(),
-            color: Color::from_rgb8(0x4F, 0xC0, 0x8D),
-        },
-        ProfileKind::Local { program: None, .. } => {
-            let name = std::env::var("SHELL").unwrap_or_default();
-            let name = std::path::Path::new(&name)
-                .file_name()
-                .and_then(|n| n.to_str())
-                .unwrap_or("")
-                .to_string();
-            icon_by_name(&name)
-        }
-        ProfileKind::Local { .. } => icon_by_name(&shell.name),
+        ProfileKind::Ssh(_) => icons::ssh(),
+        ProfileKind::Local { program: None, .. } => icons::by_name(&icons::default_shell_name()),
+        ProfileKind::Local { .. } => icons::by_name(&shell.name),
     }
 }
 
@@ -262,15 +219,42 @@ impl App {
                     ))
                 };
                 let selected = self.shell_picker_selected == option_index;
+                let icon = style.icon(icons::ssh());
                 items.push(style.item_button(
-                    ShellIcon {
-                        handle: (*ICON_SSH).clone(),
-                        color: Color::from_rgb8(0x4F, 0xC0, 0x8D),
-                    },
+                    icon,
                     label,
                     subtitle,
                     selected,
                     Message::CreateSshTab(i),
+                ));
+                option_index += 1;
+            }
+            items.push(style.divider());
+        }
+
+        let local_profiles = self.session_local_profiles();
+        if !local_profiles.is_empty() {
+            items.push(style.text_secondary(t!("shell_picker.profiles"), 11.0));
+
+            for profile in &local_profiles {
+                let subtitle = match &profile.kind {
+                    ProfileKind::Local {
+                        program: Some(path),
+                        ..
+                    } => Some(path.clone()),
+                    _ => Some(t!("settings.ssh.default_shell").into()),
+                };
+                let selected = self.shell_picker_selected == option_index;
+                let icon = match &profile.icon {
+                    Some(glyph) if !glyph.trim().is_empty() => style.emoji(glyph.clone()),
+                    _ => style.icon(icon_for_shell(profile)),
+                };
+                items.push(style.item_button(
+                    icon,
+                    profile.display_name(),
+                    subtitle,
+                    selected,
+                    Message::CreateTab(profile.clone()),
                 ));
                 option_index += 1;
             }
@@ -290,8 +274,9 @@ impl App {
                 ProfileKind::Ssh(_) => None,
             };
             let selected = self.shell_picker_selected == option_index;
+            let icon = style.icon(icon_for_shell(shell));
             items.push(style.item_button(
-                icon_for_shell(shell),
+                icon,
                 label,
                 subtitle,
                 selected,

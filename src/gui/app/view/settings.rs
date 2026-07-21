@@ -100,7 +100,6 @@ impl App {
             &self.font_combo_state,
             self.show_all_fonts,
             &self.all_font_options,
-            &self.ssh_config_profiles,
             palette,
         ))
         .padding([SPACING_LARGE, 12.0])
@@ -151,6 +150,7 @@ impl App {
             settings::ssh::modal_overlay(
                 settings_layout,
                 &self.settings_draft,
+                &self.ssh_config_profiles,
                 palette,
                 animations_enabled,
             )

@@ -90,16 +90,18 @@ impl App {
     }
 
     pub(in crate::gui) fn shell_picker_option_count(&self) -> usize {
-        self.available_shells.len() + self.session_ssh_profiles().len()
+        self.session_ssh_profiles().len()
+            + self.session_local_profiles().len()
+            + self.available_shells.len()
     }
 
     pub(in crate::gui) fn session_ssh_profiles(&self) -> Vec<SshProfile> {
         let mut profiles: Vec<SshProfile> = if self.settings_open {
             let draft: Vec<SshProfile> = self
                 .settings_draft
-                .ssh_profiles
+                .profiles
                 .iter()
-                .filter_map(|profile| profile.to_profile())
+                .filter_map(|profile| profile.to_ssh_profile())
                 .collect();
             if draft.is_empty() {
                 self.config.ssh_profiles()
@@ -120,6 +122,38 @@ impl App {
         profiles
     }
 
+    pub(in crate::gui) fn session_local_profiles(&self) -> Vec<Profile> {
+        let source = if self.settings_open {
+            let draft: Vec<Profile> = self
+                .settings_draft
+                .profiles
+                .iter()
+                .filter(|d| !matches!(d.kind, crate::gui::settings::ProfileDraftKind::Ssh))
+                .filter_map(|d| d.to_profile())
+                .collect();
+            if draft.is_empty() {
+                self.config_local_profiles()
+            } else {
+                draft
+            }
+        } else {
+            self.config_local_profiles()
+        };
+        source
+            .into_iter()
+            .filter(|p| !p.display_name().trim().is_empty())
+            .collect()
+    }
+
+    fn config_local_profiles(&self) -> Vec<Profile> {
+        self.config
+            .profiles
+            .iter()
+            .filter(|p| p.ssh_profile().is_none())
+            .cloned()
+            .collect()
+    }
+
     pub(super) fn shift_shell_picker_selection(&mut self, delta: isize) {
         let count = self.shell_picker_option_count() as isize;
         if count <= 0 {
@@ -133,6 +167,7 @@ impl App {
     pub(super) fn confirm_shell_picker_selection(&mut self) -> Task<Message> {
         let selected = self.shell_picker_selected;
         let ssh_profiles = self.session_ssh_profiles();
+        let local_profiles = self.session_local_profiles();
 
         if selected < ssh_profiles.len() {
             let profile = ssh_profiles[selected].clone();
@@ -141,7 +176,13 @@ impl App {
             return self.request_ssh_tab(profile);
         }
 
-        let shell_index = selected - ssh_profiles.len();
+        let local_index = selected - ssh_profiles.len();
+        if local_index < local_profiles.len() {
+            let profile = local_profiles[local_index].clone();
+            return self.create_tab(profile);
+        }
+
+        let shell_index = local_index - local_profiles.len();
         if shell_index < self.available_shells.len() {
             let shell = self.available_shells[shell_index].clone();
             return self.create_tab(shell);

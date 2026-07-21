@@ -37,18 +37,6 @@ impl AppConfig {
             .filter_map(|p| p.ssh_profile().cloned())
             .collect()
     }
-
-    /// Replace the SSH profiles, preserving local profiles and their order.
-    pub fn set_ssh_profiles(&mut self, ssh: Vec<SshProfile>) {
-        let mut locals: Vec<Profile> = self
-            .profiles
-            .iter()
-            .filter(|p| p.ssh_profile().is_none())
-            .cloned()
-            .collect();
-        locals.extend(ssh.into_iter().map(Profile::ssh));
-        self.profiles = locals;
-    }
 }
 
 #[derive(Debug, Clone)]

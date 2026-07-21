@@ -179,34 +179,48 @@ pub fn icon_toggle<'a>(
     palette: Palette,
     animations_enabled: bool,
 ) -> Element<'a, Message> {
-    let inner = button(text(glyph.as_ref().to_string()).size(13))
-        .padding([6, 10])
-        .on_press(on_press)
-        .style(
-            move |_theme: &Theme, status: button::Status| button::Style {
-                background: Some(Background::Color(Color::TRANSPARENT)),
-                text_color: if active {
-                    palette.accent
-                } else {
-                    match status {
-                        button::Status::Hovered => palette.text,
-                        _ => palette.text_secondary,
-                    }
-                },
-                border: Border {
-                    radius: ICON_RADIUS.into(),
-                    width: 0.0,
-                    color: Color::TRANSPARENT,
-                },
-                shadow: Shadow::default(),
-                snap: true,
+    icon_toggle_content(
+        text(glyph.as_ref().to_string()).size(13).into(),
+        on_press,
+        active,
+        palette,
+        animations_enabled,
+    )
+}
+
+/// `icon_toggle` for content that is not a glyph (an SVG, say).
+pub fn icon_toggle_content<'a>(
+    content: Element<'a, Message>,
+    on_press: Message,
+    active: bool,
+    palette: Palette,
+    animations_enabled: bool,
+) -> Element<'a, Message> {
+    let inner = button(content).padding([6, 10]).on_press(on_press).style(
+        move |_theme: &Theme, status: button::Status| button::Style {
+            background: Some(Background::Color(Color::TRANSPARENT)),
+            text_color: if active {
+                palette.accent
+            } else {
+                match status {
+                    button::Status::Hovered => palette.text,
+                    _ => palette.text_secondary,
+                }
             },
-        );
+            border: Border {
+                radius: ICON_RADIUS.into(),
+                width: 0.0,
+                color: Color::TRANSPARENT,
+            },
+            shadow: Shadow::default(),
+            snap: true,
+        },
+    );
 
     let rest = HoverStyle {
         background: if active {
             Color {
-                a: 0.08,
+                a: 0.18,
                 ..palette.accent
             }
         } else {

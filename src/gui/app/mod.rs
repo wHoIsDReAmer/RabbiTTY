@@ -1,6 +1,7 @@
 use crate::config::AppConfig;
 use crate::gui::settings::{
-    SettingsCategory, SettingsDraft, SettingsField, SshProfileField, TerminalFontOption,
+    ProfileDraftKind, ProfileField, ProfileModalTab, SettingsCategory, SettingsDraft,
+    SettingsField, TerminalFontOption,
 };
 use crate::gui::tab::{Profile, TerminalTab, discover_available_shells};
 use crate::session::OutputEvent;
@@ -39,7 +40,6 @@ pub enum Message {
     SshPasswordPromptToggleSave(bool),
     SshPasswordPromptSubmit,
     SshPasswordPromptCancel,
-    CreateSshTabFromConfig(usize),
     ShowTabContextMenu(usize),
     CloseTabContextMenu,
     TerminalRightClick,
@@ -121,16 +121,20 @@ pub enum SettingsMessage {
     FontSelected(TerminalFontOption),
     ToggleShowAllFonts(bool),
 
-    AddSshProfile,
-    EditSshProfile(usize),
-    RequestRemoveSshProfile(usize),
-    CancelRemoveSshProfile,
-    ConfirmRemoveSshProfile,
-    SshProfileModalFieldChanged(SshProfileField, String),
+    AddProfile,
+    EditProfile(usize),
+    LaunchProfile(usize),
+    RequestRemoveProfile(usize),
+    CancelRemoveProfile,
+    ConfirmRemoveProfile,
+    ProfileModalFieldChanged(ProfileField, String),
+    ProfileModalTypeSelected(ProfileDraftKind),
+    ProfileModalTabSelected(ProfileModalTab),
+    ProfileModalBaseSelected(Option<usize>),
     TestSshConnection,
     SshConnectionTestFinished(Result<(), String>),
-    CloseSshProfileModal,
-    SaveSshProfileModal,
+    CloseProfileModal,
+    SaveProfileModal,
 
     #[cfg(target_os = "macos")]
     ConfirmRestartForBlur,
