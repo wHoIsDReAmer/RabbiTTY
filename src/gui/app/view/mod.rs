@@ -13,7 +13,7 @@ use crate::gui::components::context_menu::{ContextMenuItem, context_menu};
 use crate::gui::components::ime_wrapper::ImeEnabled;
 use crate::gui::components::{panel, secondary as button_secondary, tab_bar};
 use crate::gui::render::TerminalProgram;
-use crate::gui::theme::{RADIUS_SMALL, SPACING_SMALL};
+use crate::gui::theme::{RADIUS_SMALL, SPACING_LARGE, SPACING_NORMAL, SPACING_SMALL};
 use iced::widget::{button, column, container, image, row, scrollable, stack, text};
 use iced::{Alignment, Background, Border, Color, Element, Length};
 use std::sync::LazyLock;
@@ -314,11 +314,18 @@ impl App {
 
     fn view_lobby(&self, palette: crate::gui::theme::Palette) -> Element<'_, Message> {
         let logo = image(LOGO_HANDLE.clone())
-            .width(Length::Fixed(96.0))
-            .height(Length::Fixed(96.0));
-        let version_label = text(format!("RabbiTTY v{}", env!("CARGO_PKG_VERSION")))
-            .size(13)
-            .color(Color::from_rgba(1.0, 1.0, 1.0, 0.4));
+            .width(Length::Fixed(112.0))
+            .height(Length::Fixed(112.0));
+        let title = text("Rabbitty").size(28).color(palette.text);
+        let version_label = text(format!("v{}", env!("CARGO_PKG_VERSION")))
+            .size(12)
+            .color(Color {
+                a: 0.45,
+                ..palette.text_secondary
+            });
+        let header = column![logo, title, version_label]
+            .spacing(SPACING_SMALL)
+            .align_x(Alignment::Center);
         let new_tab_btn = button_secondary(
             t!("lobby.new_tab"),
             Some(Message::OpenShellPicker),
@@ -326,32 +333,24 @@ impl App {
             self.config.ui.animations_enabled,
         );
 
-        let mut content: Vec<Element<Message>> =
-            vec![logo.into(), version_label.into(), new_tab_btn];
+        let mut content: Vec<Element<Message>> = vec![header.into(), new_tab_btn];
 
         if !self.session_history.entries.is_empty() {
-            content.push(
-                container(text(""))
-                    .width(Length::Fixed(240.0))
-                    .height(1)
-                    .style(move |_theme: &iced::Theme| container::Style {
-                        background: Some(Background::Color(Color {
-                            a: 0.1,
-                            ..palette.text
-                        })),
-                        ..Default::default()
-                    })
-                    .into(),
-            );
-            content.push(
-                text(t!("lobby.recent_sessions"))
-                    .size(11)
-                    .color(Color {
-                        a: 0.5,
-                        ..palette.text_secondary
-                    })
-                    .into(),
-            );
+            let divider = container(text(""))
+                .width(Length::Fixed(240.0))
+                .height(1)
+                .style(move |_theme: &iced::Theme| container::Style {
+                    background: Some(Background::Color(Color {
+                        a: 0.1,
+                        ..palette.text
+                    })),
+                    ..Default::default()
+                });
+            let recent_label = text(t!("lobby.recent_sessions")).size(11).color(Color {
+                a: 0.5,
+                ..palette.text_secondary
+            });
+            let mut session_items: Vec<Element<Message>> = Vec::new();
 
             for (i, entry) in self.session_history.entries.iter().enumerate() {
                 let name = entry.display_name.clone();
@@ -411,7 +410,7 @@ impl App {
                     ..rest
                 };
 
-                content.push(
+                session_items.push(
                     crate::gui::components::hover_fade(
                         session_btn,
                         rest,
@@ -421,11 +420,20 @@ impl App {
                     .into(),
                 );
             }
+
+            let recent = column![
+                divider,
+                recent_label,
+                column(session_items).spacing(2).align_x(Alignment::Center),
+            ]
+            .spacing(SPACING_NORMAL)
+            .align_x(Alignment::Center);
+            content.push(recent.into());
         }
 
         container(
             column(content)
-                .spacing(SPACING_SMALL)
+                .spacing(SPACING_LARGE)
                 .align_x(Alignment::Center),
         )
         .center(Length::Fill)
