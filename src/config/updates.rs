@@ -39,6 +39,7 @@ pub struct AppConfigUpdates {
     pub terminal_scroll_multiplier: Option<f32>,
     pub terminal_cursor_shape: Option<CursorShape>,
     pub terminal_cursor_blink: Option<bool>,
+    pub terminal_bold_is_bright: Option<bool>,
     pub terminal_bell_mode: Option<BellMode>,
     pub terminal_right_click_action: Option<RightClickAction>,
 }
@@ -101,6 +102,9 @@ impl AppConfig {
         }
         if let Some(enabled) = updates.terminal_cursor_blink {
             self.terminal.cursor_blink = enabled;
+        }
+        if let Some(enabled) = updates.terminal_bold_is_bright {
+            self.terminal.bold_is_bright = enabled;
         }
         if let Some(mode) = updates.terminal_bell_mode {
             self.terminal.bell_mode = mode;

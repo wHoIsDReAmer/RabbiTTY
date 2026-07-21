@@ -43,7 +43,8 @@ impl App {
             .into_iter();
         let tabs_iter = tabs_iter.chain(settings_iter);
         let ui_alpha = self.config.theme.background_opacity;
-        let bar_alpha = (ui_alpha * 0.9).clamp(0.0, 1.0);
+        // Faint tint over the translucent base so blur shows through the bar.
+        let bar_alpha = 0.22;
         let tab_alpha = (ui_alpha * 0.6).clamp(0.0, 1.0);
         let sftp_toggle = if self.active_tab != SETTINGS_TAB_INDEX {
             self.tabs.get(self.active_tab).and_then(|tab| {
@@ -84,7 +85,8 @@ impl App {
             ]),
         };
 
-        let panel_background = Some(self.theme_background_color());
+        // `window_style` already clears the window to `background @ opacity`.
+        let panel_background = None;
         let base_layout = panel(
             layout.height(Length::Fill),
             panel_background,

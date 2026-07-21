@@ -13,5 +13,6 @@ pub use container::panel;
 pub use hover_fade::{HoverStyle, hover_fade};
 pub use tab_bar::tab_bar;
 pub use widget_styles::{
-    accent_combo_box_input_style, accent_combo_box_menu_style, accent_toggler_style,
+    accent_combo_box_input_style, accent_combo_box_menu_style, accent_pick_list_style,
+    accent_toggler_style,
 };

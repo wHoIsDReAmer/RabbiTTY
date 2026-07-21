@@ -46,6 +46,7 @@ impl App {
             || updates.background.is_some()
             || updates.cursor.is_some()
             || updates.ansi_colors.is_some()
+            || updates.terminal_bold_is_bright.is_some()
             || updates.background_opacity.is_some()
             || updates.blur_enabled.is_some()
             || updates.macos_blur_radius.is_some();
@@ -279,6 +280,10 @@ impl App {
             }
             SettingsMessage::CursorBlinkToggled(enabled) => {
                 self.settings_draft.cursor_blink = enabled;
+                return self.apply_settings(true);
+            }
+            SettingsMessage::BoldIsBrightToggled(enabled) => {
+                self.settings_draft.bold_is_bright = enabled;
                 return self.apply_settings(true);
             }
             SettingsMessage::BellModeSelected(mode) => {

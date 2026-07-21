@@ -29,11 +29,17 @@ impl Palette {
         let bg = theme.background;
         let fg = theme.foreground;
 
-        let surface = [
-            bg[0].saturating_add(19),
-            bg[1].saturating_add(20),
-            bg[2].saturating_add(22),
-        ];
+        // Elevated surfaces move away from the background: lighter on dark
+        // themes, darker on light ones.
+        let dark = u16::from(bg[0]) + u16::from(bg[1]) + u16::from(bg[2]) < 384;
+        let lift = |c: u8, d: u8| {
+            if dark {
+                c.saturating_add(d)
+            } else {
+                c.saturating_sub(d)
+            }
+        };
+        let surface = [lift(bg[0], 26), lift(bg[1], 27), lift(bg[2], 30)];
         let text_sec = [
             blend_u8(fg[0], bg[0], 0.35),
             blend_u8(fg[1], bg[1], 0.35),

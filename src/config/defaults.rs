@@ -66,4 +66,5 @@ pub const DEFAULT_BRACKETED_PASTE: bool = true;
 pub const DEFAULT_MULTILINE_PASTE_CONFIRM: bool = false;
 pub const DEFAULT_TERMINAL_SCROLL_MULTIPLIER: f32 = 1.0;
 pub const DEFAULT_CURSOR_BLINK: bool = true;
+pub const DEFAULT_BOLD_IS_BRIGHT: bool = false;
 pub const DEFAULT_ANIMATIONS_ENABLED: bool = true;

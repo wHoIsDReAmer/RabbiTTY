@@ -4,10 +4,14 @@ use crate::gui::theme::{RADIUS_NORMAL, SPACING_LARGE, SPACING_NORMAL, SPACING_SM
 use iced::widget::{button, column, container, row, scrollable, stack, text};
 use iced::{Background, Border, Color, Element, Length};
 
+const CONTENT_MAX_WIDTH: f32 = 820.0;
+
 impl App {
     pub(in crate::gui) fn view_settings(&self) -> Element<'_, Message> {
         let palette = self.palette;
         let animations_enabled = self.config.ui.animations_enabled;
+        // Faint tint over the translucent base so blur shows through the sidebar.
+        let sidebar_alpha = 0.22;
         let mut category_items: Vec<Element<Message>> = Vec::new();
 
         for category in SettingsCategory::ALL {
@@ -21,7 +25,7 @@ impl App {
                     iced::widget::button::Style {
                         background: Some(Background::Color(Color::TRANSPARENT)),
                         text_color: if is_active {
-                            palette.text
+                            palette.background
                         } else {
                             palette.text_secondary
                         },
@@ -47,10 +51,7 @@ impl App {
 
             let rest = crate::gui::components::HoverStyle {
                 background: if is_active {
-                    Color {
-                        a: 0.12,
-                        ..palette.text
-                    }
+                    palette.accent
                 } else {
                     Color::TRANSPARENT
                 },
@@ -85,28 +86,12 @@ impl App {
         .width(Length::Fixed(180.0))
         .height(Length::Fill)
         .style(move |_theme: &iced::Theme| container::Style {
-            background: Some(Background::Color(palette.surface)),
+            background: Some(Background::Color(Color {
+                a: sidebar_alpha,
+                ..palette.surface
+            })),
             ..Default::default()
         });
-
-        let breadcrumb = row![
-            text("Settings").size(18),
-            text("/").size(16).color(Color {
-                a: 0.3,
-                ..palette.text
-            }),
-            text(self.settings_category.label())
-                .size(16)
-                .color(palette.text),
-        ]
-        .align_y(iced::Alignment::Center)
-        .spacing(SPACING_SMALL);
-
-        let header: Element<Message> = row![breadcrumb, container("").width(Length::Fill),]
-            .align_y(iced::Alignment::Center)
-            .spacing(SPACING_NORMAL)
-            .width(Length::Fill)
-            .into();
 
         let body_content = container(settings::view_category(
             self.settings_category,
@@ -118,7 +103,8 @@ impl App {
             &self.ssh_config_profiles,
             palette,
         ))
-        .padding([0, 12])
+        .padding([SPACING_LARGE, 12.0])
+        .max_width(CONTENT_MAX_WIDTH)
         .width(Length::Fill);
 
         let body_scroll: Element<Message> = scrollable(body_content)
@@ -150,15 +136,10 @@ impl App {
             body_scroll
         };
 
-        let content = container(
-            column(vec![header, body])
-                .spacing(SPACING_NORMAL)
-                .height(Length::Fill)
-                .width(Length::Fill),
-        )
-        .width(Length::Fill)
-        .height(Length::Fill)
-        .padding(SPACING_LARGE);
+        let content = container(body)
+            .width(Length::Fill)
+            .height(Length::Fill)
+            .padding(SPACING_LARGE);
 
         let settings_layout: Element<Message> = row![sidebar, content]
             .spacing(SPACING_LARGE)

@@ -1,12 +1,13 @@
 use crate::config::{AppConfig, BellMode, CursorShape, RightClickAction};
 use crate::gui::app::{Message, SettingsMessage};
 use crate::gui::components::accent_toggler_style;
+use crate::gui::settings::{ROW_SPACING, SECTION_SPACING};
 use crate::gui::settings::{
-    SettingsDraft, SettingsField, input_row_with_suffix, section, segmented_control,
+    SettingsDraft, SettingsField, input_row_with_suffix, section, segmented_control, setting_row,
 };
-use crate::gui::theme::{Palette, SPACING_NORMAL};
-use iced::widget::{column, row, text, toggler};
-use iced::{Alignment, Element, Length};
+use crate::gui::theme::Palette;
+use iced::widget::{column, toggler};
+use iced::{Element, Length};
 
 pub fn view<'a>(
     config: &'a AppConfig,
@@ -31,47 +32,35 @@ pub fn view<'a>(
                 palette,
             ),
         ])
-        .spacing(SPACING_NORMAL)
+        .spacing(ROW_SPACING)
         .width(Length::Fill)
         .into(),
         palette,
     );
 
-    let label_width = Length::Fixed(160.0);
-
     let paste_section = section(
         crate::t!("settings.terminal.paste_section"),
         column(vec![
-            row![
-                text(crate::t!("settings.terminal.bracketed_paste"))
-                    .size(13)
-                    .width(label_width),
+            setting_row(
+                crate::t!("settings.terminal.bracketed_paste"),
                 toggler(draft.bracketed_paste)
                     .on_toggle(|a0| Message::Settings(SettingsMessage::BracketedPasteToggled(a0)))
                     .size(18)
                     .style(accent_toggler_style(palette)),
-            ]
-            .align_y(Alignment::Center)
-            .spacing(SPACING_NORMAL)
-            .width(Length::Fill)
-            .into(),
-            row![
-                text(crate::t!("settings.terminal.confirm_multiline_paste"))
-                    .size(13)
-                    .width(label_width),
+                palette,
+            ),
+            setting_row(
+                crate::t!("settings.terminal.confirm_multiline_paste"),
                 toggler(draft.multiline_paste_confirm)
-                    .on_toggle(|a0| Message::Settings(
-                        SettingsMessage::MultilinePasteConfirmToggled(a0)
-                    ))
+                    .on_toggle(|a0| {
+                        Message::Settings(SettingsMessage::MultilinePasteConfirmToggled(a0))
+                    })
                     .size(18)
                     .style(accent_toggler_style(palette)),
-            ]
-            .align_y(Alignment::Center)
-            .spacing(SPACING_NORMAL)
-            .width(Length::Fill)
-            .into(),
+                palette,
+            ),
         ])
-        .spacing(SPACING_NORMAL)
+        .spacing(ROW_SPACING)
         .width(Length::Fill)
         .into(),
         palette,
@@ -95,23 +84,31 @@ pub fn view<'a>(
                 palette,
                 config.ui.animations_enabled,
             ),
-            row![
-                text(crate::t!("settings.terminal.blink"))
-                    .size(13)
-                    .width(label_width),
+            setting_row(
+                crate::t!("settings.terminal.blink"),
                 toggler(draft.cursor_blink)
                     .on_toggle(|a0| Message::Settings(SettingsMessage::CursorBlinkToggled(a0)))
                     .size(18)
                     .style(accent_toggler_style(palette)),
-            ]
-            .align_y(Alignment::Center)
-            .spacing(SPACING_NORMAL)
-            .width(Length::Fill)
-            .into(),
+                palette,
+            ),
         ])
-        .spacing(SPACING_NORMAL)
+        .spacing(ROW_SPACING)
         .width(Length::Fill)
         .into(),
+        palette,
+    );
+
+    let colors_section = section(
+        crate::t!("settings.terminal.colors_section"),
+        setting_row(
+            crate::t!("settings.terminal.bold_is_bright"),
+            toggler(draft.bold_is_bright)
+                .on_toggle(|a0| Message::Settings(SettingsMessage::BoldIsBrightToggled(a0)))
+                .size(18)
+                .style(accent_toggler_style(palette)),
+            palette,
+        ),
         palette,
     );
 
@@ -159,10 +156,11 @@ pub fn view<'a>(
         scrollback_section,
         paste_section,
         cursor_section,
+        colors_section,
         bell_section,
         mouse_section,
     ])
-    .spacing(SPACING_NORMAL)
+    .spacing(SECTION_SPACING)
     .width(Length::Fill)
     .into()
 }

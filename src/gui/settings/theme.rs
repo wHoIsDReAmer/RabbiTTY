@@ -1,14 +1,13 @@
 use crate::config::AppConfig;
 use crate::gui::app::{Message, SettingsMessage};
 use crate::gui::settings::{
-    SettingsDraft, SettingsField, format_rgb, hint_text, input_row_with_suffix, section, toggle_row,
+    ROW_SPACING, SECTION_SPACING, SettingsDraft, SettingsField, format_rgb, hint_text,
+    input_row_with_suffix, section, toggle_row,
 };
 use crate::gui::theme::{Palette, RADIUS_SMALL, SPACING_NORMAL};
 use crate::terminal::theme::{ColorPreset, all_presets};
-use iced::widget::{Column, Row, button, column, container, row, text};
+use iced::widget::{Column, Row, Space, button, column, container, row, text};
 use iced::{Background, Border, Color, Element, Length};
-
-const LABEL_WIDTH: f32 = 160.0;
 
 pub fn view<'a>(
     _config: &'a AppConfig,
@@ -55,7 +54,7 @@ pub fn view<'a>(
             ),
             hint_text(crate::t!("settings.theme.colors_hint"), palette),
         ])
-        .spacing(SPACING_NORMAL)
+        .spacing(ROW_SPACING)
         .width(Length::Fill)
         .into(),
         palette,
@@ -70,7 +69,7 @@ pub fn view<'a>(
             "0.0 ~ 1.0",
             palette,
         )])
-        .spacing(SPACING_NORMAL)
+        .spacing(ROW_SPACING)
         .width(Length::Fill)
         .into(),
         palette,
@@ -83,7 +82,7 @@ pub fn view<'a>(
             draft.blur_enabled,
             palette,
         )])
-        .spacing(SPACING_NORMAL)
+        .spacing(ROW_SPACING)
         .width(Length::Fill)
         .into(),
         palette,
@@ -102,7 +101,7 @@ pub fn view<'a>(
             ),
             hint_text(crate::t!("settings.theme.blur_radius_hint"), palette),
         ])
-        .spacing(SPACING_NORMAL)
+        .spacing(ROW_SPACING)
         .width(Length::Fill)
         .into(),
         palette,
@@ -126,7 +125,7 @@ pub fn view<'a>(
     ];
 
     column(sections)
-        .spacing(SPACING_NORMAL)
+        .spacing(SECTION_SPACING)
         .width(Length::Fill)
         .into()
 }
@@ -311,7 +310,8 @@ fn color_palette_row<'a>(
 
     column![
         row![
-            text(label).size(13).width(Length::Fixed(LABEL_WIDTH)),
+            text(label).size(13),
+            Space::new().width(Length::Fill),
             container("")
                 .width(Length::Fixed(20.0))
                 .height(Length::Fixed(20.0))
@@ -332,7 +332,7 @@ fn color_palette_row<'a>(
         .align_y(iced::Alignment::Center)
         .spacing(SPACING_NORMAL)
         .width(Length::Fill),
-        row![container("").width(Length::Fixed(LABEL_WIDTH)), swatch_grid,]
+        row![Space::new().width(Length::Fill), swatch_grid,]
             .spacing(SPACING_NORMAL)
             .width(Length::Fill),
     ]

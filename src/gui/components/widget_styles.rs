@@ -4,7 +4,7 @@
 
 use crate::gui::theme::{Palette, RADIUS_SMALL};
 use iced::widget::overlay::menu;
-use iced::widget::{text_input, toggler};
+use iced::widget::{pick_list, text_input, toggler};
 use iced::{Background, Border, Color, Shadow, Theme};
 
 /// Style closure for `toggler` widgets driven by `palette.accent`.
@@ -124,6 +124,42 @@ pub fn accent_combo_box_input_style(
             selection: Color {
                 a: 0.3,
                 ..palette.accent
+            },
+        }
+    }
+}
+
+/// Style closure for the button of a `pick_list`, matched to the accent theme.
+pub fn accent_pick_list_style(
+    palette: Palette,
+) -> impl Fn(&Theme, pick_list::Status) -> pick_list::Style {
+    move |_theme: &Theme, status: pick_list::Status| {
+        let border_color = match status {
+            pick_list::Status::Opened { .. } => Color {
+                a: 0.5,
+                ..palette.accent
+            },
+            pick_list::Status::Hovered => Color {
+                a: 0.25,
+                ..palette.text
+            },
+            pick_list::Status::Active => Color {
+                a: 0.12,
+                ..palette.text
+            },
+        };
+        pick_list::Style {
+            text_color: palette.text,
+            placeholder_color: palette.text_secondary,
+            handle_color: palette.text_secondary,
+            background: Background::Color(Color {
+                a: 0.35,
+                ..palette.background
+            }),
+            border: Border {
+                radius: RADIUS_SMALL.into(),
+                width: 1.0,
+                color: border_color,
             },
         }
     }

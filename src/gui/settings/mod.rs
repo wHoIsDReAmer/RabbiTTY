@@ -4,8 +4,8 @@ use crate::config::{
 };
 use crate::gui::app::{Message, SettingsMessage};
 use crate::gui::components::accent_toggler_style;
-use crate::gui::theme::{Palette, RADIUS_NORMAL, RADIUS_SMALL, SPACING_NORMAL};
-use iced::widget::{button, column, container, row, rule, text, text_input, toggler};
+use crate::gui::theme::{Palette, RADIUS_SMALL, SPACING_LARGE, SPACING_NORMAL, SPACING_SMALL};
+use iced::widget::{Space, button, column, container, row, rule, text, text_input, toggler};
 use iced::{Alignment, Background, Border, Color, Element, Length};
 use std::fmt;
 
@@ -223,6 +223,7 @@ pub struct SettingsDraft {
     pub multiline_paste_confirm: bool,
     pub cursor_shape: CursorShape,
     pub cursor_blink: bool,
+    pub bold_is_bright: bool,
     pub bell_mode: BellMode,
     pub right_click_action: RightClickAction,
     pub color_scheme: String,
@@ -266,6 +267,7 @@ impl SettingsDraft {
             multiline_paste_confirm: config.terminal.multiline_paste_confirm,
             cursor_shape: config.terminal.cursor_shape,
             cursor_blink: config.terminal.cursor_blink,
+            bold_is_bright: config.terminal.bold_is_bright,
             bell_mode: config.terminal.bell_mode,
             right_click_action: config.terminal.right_click_action,
             color_scheme: config.theme.color_scheme.clone(),
@@ -488,6 +490,7 @@ impl SettingsDraft {
             terminal_multiline_paste_confirm: Some(self.multiline_paste_confirm),
             terminal_cursor_shape: Some(self.cursor_shape),
             terminal_cursor_blink: Some(self.cursor_blink),
+            terminal_bold_is_bright: Some(self.bold_is_bright),
             terminal_bell_mode: Some(self.bell_mode),
             terminal_right_click_action: Some(self.right_click_action),
             color_scheme: Some(self.color_scheme.clone()),
@@ -583,7 +586,10 @@ pub fn view_category<'a>(
     }
 }
 
-const LABEL_WIDTH: f32 = 160.0;
+const NUMERIC_INPUT_WIDTH: f32 = 110.0;
+pub const SECTION_SPACING: f32 = 40.0;
+pub const ROW_SPACING: f32 = 22.0;
+const TEXT_INPUT_WIDTH: f32 = 260.0;
 
 pub fn input_row<'a>(
     label: &'a str,
@@ -592,19 +598,17 @@ pub fn input_row<'a>(
     palette: Palette,
 ) -> Element<'a, Message> {
     let commit_msg = Message::Settings(SettingsMessage::InputCommitted(field, value.to_owned()));
-    row![
-        text(label).size(13).width(Length::Fixed(LABEL_WIDTH)),
+    setting_row(
+        label,
         styled_text_input(
             value,
             move |next| Message::Settings(SettingsMessage::InputChanged(field, next)),
-            palette
+            palette,
         )
+        .width(Length::Fixed(TEXT_INPUT_WIDTH))
         .on_submit(commit_msg),
-    ]
-    .align_y(Alignment::Center)
-    .spacing(SPACING_NORMAL)
-    .width(Length::Fill)
-    .into()
+        palette,
+    )
 }
 
 pub fn input_row_with_suffix<'a>(
@@ -615,23 +619,25 @@ pub fn input_row_with_suffix<'a>(
     palette: Palette,
 ) -> Element<'a, Message> {
     let commit_msg = Message::Settings(SettingsMessage::InputCommitted(field, value.to_owned()));
-    row![
-        text(label).size(13).width(Length::Fixed(LABEL_WIDTH)),
-        styled_text_input(
-            value,
-            move |next| Message::Settings(SettingsMessage::InputChanged(field, next)),
-            palette
-        )
-        .on_submit(commit_msg),
-        text(suffix)
-            .size(12)
-            .color(palette.text_secondary)
-            .width(Length::Shrink),
-    ]
-    .align_y(Alignment::Center)
-    .spacing(SPACING_NORMAL)
-    .width(Length::Fill)
-    .into()
+    setting_row(
+        label,
+        row![
+            styled_text_input(
+                value,
+                move |next| Message::Settings(SettingsMessage::InputChanged(field, next)),
+                palette,
+            )
+            .width(Length::Fixed(NUMERIC_INPUT_WIDTH))
+            .on_submit(commit_msg),
+            text(suffix)
+                .size(12)
+                .color(palette.text_secondary)
+                .width(Length::Fixed(20.0)),
+        ]
+        .align_y(Alignment::Center)
+        .spacing(SPACING_SMALL),
+        palette,
+    )
 }
 
 #[allow(dead_code)]
@@ -647,48 +653,47 @@ pub fn color_input_row<'a>(
         .unwrap_or(palette.error);
     let commit_msg = Message::Settings(SettingsMessage::InputCommitted(field, value.to_owned()));
 
-    row![
-        text(label).size(13).width(Length::Fixed(LABEL_WIDTH)),
-        container("")
-            .width(Length::Fixed(18.0))
-            .height(Length::Fixed(18.0))
-            .style(move |_theme: &iced::Theme| container::Style {
-                background: Some(Background::Color(dot_color)),
-                border: Border {
-                    radius: 9.0.into(),
-                    width: 1.0,
-                    color: Color {
-                        a: 0.25,
-                        ..palette.text
+    setting_row(
+        label,
+        row![
+            container("")
+                .width(Length::Fixed(18.0))
+                .height(Length::Fixed(18.0))
+                .style(move |_theme: &iced::Theme| container::Style {
+                    background: Some(Background::Color(dot_color)),
+                    border: Border {
+                        radius: 9.0.into(),
+                        width: 1.0,
+                        color: Color {
+                            a: 0.25,
+                            ..palette.text
+                        },
                     },
-                },
-                ..Default::default()
-            }),
-        styled_text_input(
-            value,
-            move |next| Message::Settings(SettingsMessage::InputChanged(field, next)),
-            palette
-        )
-        .on_submit(commit_msg),
-    ]
-    .align_y(Alignment::Center)
-    .spacing(SPACING_NORMAL)
-    .width(Length::Fill)
-    .into()
+                    ..Default::default()
+                }),
+            styled_text_input(
+                value,
+                move |next| Message::Settings(SettingsMessage::InputChanged(field, next)),
+                palette,
+            )
+            .width(Length::Fixed(NUMERIC_INPUT_WIDTH))
+            .on_submit(commit_msg),
+        ]
+        .align_y(Alignment::Center)
+        .spacing(SPACING_NORMAL),
+        palette,
+    )
 }
 
 pub fn toggle_row<'a>(label: &'a str, value: bool, palette: Palette) -> Element<'a, Message> {
-    row![
-        text(label).size(13).width(Length::Fixed(LABEL_WIDTH)),
+    setting_row(
+        label,
         toggler(value)
             .on_toggle(|a0| Message::Settings(SettingsMessage::BlurToggled(a0)))
             .size(18)
-            .style(accent_toggler_style(palette))
-    ]
-    .align_y(Alignment::Center)
-    .spacing(SPACING_NORMAL)
-    .width(Length::Fill)
-    .into()
+            .style(accent_toggler_style(palette)),
+        palette,
+    )
 }
 
 /// A labeled segmented control: a fixed-width label followed by a row of
@@ -713,14 +718,7 @@ pub fn segmented_control<'a>(
         })
         .collect();
 
-    row![
-        text(label).size(13).width(Length::Fixed(LABEL_WIDTH)),
-        row(buttons).spacing(8),
-    ]
-    .align_y(Alignment::Center)
-    .spacing(SPACING_NORMAL)
-    .width(Length::Fill)
-    .into()
+    setting_row(label, row(buttons).spacing(2), palette)
 }
 
 fn segment_button<'a>(
@@ -731,6 +729,7 @@ fn segment_button<'a>(
     animations_enabled: bool,
 ) -> Element<'a, Message> {
     let accent = palette.accent;
+    let on_accent = palette.background;
     let text_color = palette.text;
     let surface = palette.surface;
 
@@ -740,13 +739,13 @@ fn segment_button<'a>(
     let inner = button(
         text(label)
             .size(13)
-            .color(if selected { accent } else { text_color }),
+            .color(if selected { on_accent } else { text_color }),
     )
     .on_press(message)
-    .padding([6, 14])
+    .padding([9, 16])
     .style(move |_theme: &iced::Theme, _status| button::Style {
         background: Some(Background::Color(Color::TRANSPARENT)),
-        text_color: if selected { accent } else { text_color },
+        text_color: if selected { on_accent } else { text_color },
         border: Border {
             radius: RADIUS_SMALL.into(),
             width: 0.0,
@@ -758,19 +757,16 @@ fn segment_button<'a>(
 
     let rest = if selected {
         crate::gui::components::HoverStyle {
-            background: Color { a: 0.25, ..surface },
-            border_color: accent,
-            border_width: 1.5,
+            background: accent,
+            border_color: Color::TRANSPARENT,
+            border_width: 0.0,
             radius: RADIUS_SMALL,
         }
     } else {
         crate::gui::components::HoverStyle {
-            background: Color { a: 0.12, ..surface },
-            border_color: Color {
-                a: 0.15,
-                ..text_color
-            },
-            border_width: 1.0,
+            background: Color { a: 0.5, ..surface },
+            border_color: Color::TRANSPARENT,
+            border_width: 0.0,
             radius: RADIUS_SMALL,
         }
     };
@@ -779,12 +775,9 @@ fn segment_button<'a>(
         rest
     } else {
         crate::gui::components::HoverStyle {
-            background: Color { a: 0.2, ..surface },
-            border_color: Color {
-                a: 0.28,
-                ..text_color
-            },
-            border_width: 1.0,
+            background: Color { a: 0.85, ..surface },
+            border_color: Color::TRANSPARENT,
+            border_width: 0.0,
             radius: RADIUS_SMALL,
         }
     };
@@ -819,42 +812,29 @@ pub fn section<'a>(
     body: Element<'a, Message>,
     palette: Palette,
 ) -> Element<'a, Message> {
-    container(
-        column(vec![
-            text(title).size(14).color(palette.text).into(),
-            container("")
-                .width(Length::Fill)
-                .height(Length::Fixed(1.0))
-                .style(move |_theme: &iced::Theme| container::Style {
-                    background: Some(Background::Color(Color {
-                        a: 0.10,
-                        ..palette.text
-                    })),
-                    ..Default::default()
-                })
-                .into(),
-            body,
-        ])
-        .spacing(SPACING_NORMAL)
-        .width(Length::Fill),
-    )
-    .padding([16, 16])
+    column(vec![
+        text(title).size(22).color(palette.text).into(),
+        column(vec![body]).spacing(SPACING_LARGE).into(),
+    ])
+    .spacing(SPACING_LARGE)
     .width(Length::Fill)
-    .style(move |_theme: &iced::Theme| container::Style {
-        background: Some(Background::Color(Color {
-            a: 0.18,
-            ..palette.surface
-        })),
-        border: Border {
-            radius: RADIUS_NORMAL.into(),
-            width: 1.0,
-            color: Color {
-                a: 0.08,
-                ..palette.text
-            },
-        },
-        ..Default::default()
-    })
+    .into()
+}
+
+/// A settings row: label on the left, control pinned to the right edge.
+pub fn setting_row<'a>(
+    label: &'a str,
+    control: impl Into<Element<'a, Message>>,
+    palette: Palette,
+) -> Element<'a, Message> {
+    row![
+        text(label).size(14).color(palette.text),
+        Space::new().width(Length::Fill),
+        control.into(),
+    ]
+    .align_y(Alignment::Center)
+    .spacing(SPACING_NORMAL)
+    .width(Length::Fill)
     .into()
 }
 
@@ -868,28 +848,22 @@ where
 {
     text_input("", value)
         .on_input(on_input)
-        .padding([6, 10])
+        .padding([9, 12])
         .width(Length::Fill)
         .style(move |_theme: &iced::Theme, status: text_input::Status| {
             let focused = matches!(status, text_input::Status::Focused { .. });
             text_input::Style {
                 background: Background::Color(Color {
-                    a: 0.35,
+                    a: 0.55,
                     ..palette.background
                 }),
                 border: Border {
                     radius: RADIUS_SMALL.into(),
                     width: 1.0,
                     color: if focused {
-                        Color {
-                            a: 0.5,
-                            ..palette.accent
-                        }
+                        palette.accent
                     } else {
-                        Color {
-                            a: 0.12,
-                            ..palette.text
-                        }
+                        Color::TRANSPARENT
                     },
                 },
                 icon: palette.text_secondary,
@@ -913,28 +887,22 @@ where
 {
     text_input("", value)
         .on_input(on_input)
-        .padding([4, 8])
+        .padding([9, 12])
         .width(Length::Fixed(100.0))
         .style(move |_theme: &iced::Theme, status: text_input::Status| {
             let focused = matches!(status, text_input::Status::Focused { .. });
             text_input::Style {
                 background: Background::Color(Color {
-                    a: 0.35,
+                    a: 0.55,
                     ..palette.background
                 }),
                 border: Border {
                     radius: RADIUS_SMALL.into(),
                     width: 1.0,
                     color: if focused {
-                        Color {
-                            a: 0.5,
-                            ..palette.accent
-                        }
+                        palette.accent
                     } else {
-                        Color {
-                            a: 0.12,
-                            ..palette.text
-                        }
+                        Color::TRANSPARENT
                     },
                 },
                 icon: palette.text_secondary,
