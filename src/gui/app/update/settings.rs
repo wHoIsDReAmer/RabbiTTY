@@ -1,7 +1,9 @@
 use super::super::{App, Message, SETTINGS_TAB_INDEX, SettingsMessage};
 use crate::config::AppConfigUpdates;
-use crate::gui::settings::SettingsDraft;
 use crate::gui::settings::SettingsField;
+use crate::gui::settings::{
+    ProfileDraft, ProfileDraftKind, ProfileTemplate, SettingsDraft, TemplateGroup,
+};
 use crate::terminal::TerminalTheme;
 use iced::time::Instant;
 use iced::{Size, Task, window};
@@ -141,11 +143,43 @@ impl App {
 }
 
 impl App {
+    pub(in crate::gui) fn profile_templates(&self) -> Vec<ProfileTemplate> {
+        let mut out = vec![
+            ProfileTemplate {
+                group: TemplateGroup::Basic,
+                draft: ProfileDraft {
+                    kind: ProfileDraftKind::Ssh,
+                    ..ProfileDraft::default()
+                },
+            },
+            ProfileTemplate {
+                group: TemplateGroup::Basic,
+                draft: ProfileDraft::default(),
+            },
+        ];
+        out.extend(self.available_shells.iter().map(|shell| ProfileTemplate {
+            group: TemplateGroup::Shell,
+            draft: ProfileDraft::from_profile(shell),
+        }));
+        out.extend(self.ssh_config_profiles.iter().map(|host| ProfileTemplate {
+            group: TemplateGroup::SshConfig,
+            draft: ProfileDraft::from_ssh_fields(host),
+        }));
+        out
+    }
+}
+
+impl App {
     pub(super) fn update_settings_message(&mut self, message: SettingsMessage) -> Task<Message> {
         match message {
             SettingsMessage::AddProfile => {
-                self.settings_draft.open_create_profile_modal();
+                self.settings_draft.open_template_picker();
                 self.modal_anim.go_mut(true, Instant::now());
+            }
+            SettingsMessage::ProfileTemplateSelected(index) => {
+                if let Some(template) = self.profile_templates().into_iter().nth(index) {
+                    self.settings_draft.start_from_template(template.draft);
+                }
             }
             SettingsMessage::EditProfile(index) => {
                 self.settings_draft.open_edit_profile_modal(index);
@@ -178,15 +212,8 @@ impl App {
             SettingsMessage::ProfileModalFieldChanged(field, value) => {
                 self.settings_draft.update_profile_modal(field, value);
             }
-            SettingsMessage::ProfileModalTypeSelected(kind) => {
-                self.settings_draft.set_profile_modal_kind(kind);
-            }
             SettingsMessage::ProfileModalTabSelected(tab) => {
                 self.settings_draft.set_profile_modal_tab(tab);
-            }
-            SettingsMessage::ProfileModalBaseSelected(index) => {
-                let base = index.and_then(|i| self.ssh_config_profiles.get(i));
-                self.settings_draft.apply_profile_modal_base(index, base);
             }
             SettingsMessage::TestSshConnection => match self
                 .settings_draft

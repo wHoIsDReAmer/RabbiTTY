@@ -1,7 +1,7 @@
 use crate::config::AppConfig;
 use crate::gui::settings::{
-    ProfileDraftKind, ProfileField, ProfileModalTab, SettingsCategory, SettingsDraft,
-    SettingsField, TerminalFontOption,
+    ProfileField, ProfileModalTab, SettingsCategory, SettingsDraft, SettingsField,
+    TerminalFontOption,
 };
 use crate::gui::tab::{Profile, TerminalTab, discover_available_shells};
 use crate::session::OutputEvent;
@@ -126,10 +126,9 @@ pub enum SettingsMessage {
     RequestRemoveProfile(usize),
     CancelRemoveProfile,
     ConfirmRemoveProfile,
+    ProfileTemplateSelected(usize),
     ProfileModalFieldChanged(ProfileField, String),
-    ProfileModalTypeSelected(ProfileDraftKind),
     ProfileModalTabSelected(ProfileModalTab),
-    ProfileModalBaseSelected(Option<usize>),
     TestSshConnection,
     SshConnectionTestFinished(Result<(), String>),
     CloseProfileModal,
@@ -483,6 +482,45 @@ mod tests {
 
         assert!(!app.show_shell_picker);
         assert!(!app.modal_anim.value());
+    }
+
+    #[test]
+    fn profile_templates_start_with_blank_ssh_and_local() {
+        let app = App::new(AppConfig::default());
+        let templates = app.profile_templates();
+
+        assert!(templates.len() >= 2);
+        assert!(matches!(
+            templates[0].draft.kind,
+            crate::gui::settings::ProfileDraftKind::Ssh
+        ));
+        assert!(templates[0].draft.host.is_empty());
+        assert!(matches!(
+            templates[1].draft.kind,
+            crate::gui::settings::ProfileDraftKind::Local
+        ));
+    }
+
+    #[test]
+    fn ssh_config_hosts_become_templates() {
+        let mut app = App::new(AppConfig::default());
+        app.ssh_config_profiles = vec![crate::config::SshProfile {
+            name: "kube-1".into(),
+            host: "192.168.0.230".into(),
+            port: 2222,
+            user: "root".into(),
+            ..Default::default()
+        }];
+
+        let seeded = app
+            .profile_templates()
+            .into_iter()
+            .find(|t| t.draft.name == "kube-1")
+            .expect("ssh config host should be offered as a template");
+
+        assert_eq!(seeded.group, crate::gui::settings::TemplateGroup::SshConfig);
+        assert_eq!(seeded.draft.host, "192.168.0.230");
+        assert_eq!(seeded.draft.port, "2222");
     }
 
     fn ssh(name: &str) -> crate::config::SshProfile {

@@ -74,10 +74,6 @@ pub enum ProfileDraftKind {
     Ssh,
 }
 
-impl ProfileDraftKind {
-    pub const ALL: [Self; 2] = [Self::Ssh, Self::Local];
-}
-
 impl fmt::Display for ProfileDraftKind {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str(match self {
@@ -162,8 +158,32 @@ pub struct ProfileDraft {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ProfileModalMode {
+    TemplatePicker,
     Create,
     Edit(usize),
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TemplateGroup {
+    Basic,
+    Shell,
+    SshConfig,
+}
+
+impl TemplateGroup {
+    pub fn label(self) -> Option<&'static str> {
+        match self {
+            Self::Basic => None,
+            Self::Shell => Some(crate::t!("settings.ssh.template_shells")),
+            Self::SshConfig => Some(crate::t!("settings.ssh.template_ssh_config")),
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct ProfileTemplate {
+    pub group: TemplateGroup,
+    pub draft: ProfileDraft,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -183,7 +203,7 @@ impl Default for ProfileDraft {
 }
 
 impl ProfileDraft {
-    fn from_ssh_fields(profile: &SshProfile) -> Self {
+    pub fn from_ssh_fields(profile: &SshProfile) -> Self {
         Self {
             kind: ProfileDraftKind::Ssh,
             name: profile.name.clone(),
@@ -358,7 +378,6 @@ pub struct SettingsDraft {
     pub profile_modal_draft: ProfileDraft,
     pub profile_delete_pending: Option<usize>,
     pub profile_modal_tab: ProfileModalTab,
-    pub profile_modal_base: Option<usize>,
     pub ssh_connection_test_status: SshConnectionTestStatus,
 }
 
@@ -408,7 +427,6 @@ impl SettingsDraft {
             profile_modal_draft: ProfileDraft::default(),
             profile_delete_pending: None,
             profile_modal_tab: ProfileModalTab::default(),
-            profile_modal_base: None,
             ssh_connection_test_status: SshConnectionTestStatus::Idle,
         }
     }
@@ -447,12 +465,19 @@ impl SettingsDraft {
         None
     }
 
-    pub fn open_create_profile_modal(&mut self) {
+    pub fn open_template_picker(&mut self) {
         self.profiles_error = None;
-        self.profile_modal_mode = Some(ProfileModalMode::Create);
+        self.profile_modal_mode = Some(ProfileModalMode::TemplatePicker);
         self.profile_modal_draft = ProfileDraft::default();
         self.profile_modal_tab = ProfileModalTab::default();
-        self.profile_modal_base = None;
+        self.ssh_connection_test_status = SshConnectionTestStatus::Idle;
+    }
+
+    pub fn start_from_template(&mut self, draft: ProfileDraft) {
+        self.profiles_error = None;
+        self.profile_modal_mode = Some(ProfileModalMode::Create);
+        self.profile_modal_draft = draft;
+        self.profile_modal_tab = ProfileModalTab::default();
         self.ssh_connection_test_status = SshConnectionTestStatus::Idle;
     }
 
@@ -470,7 +495,6 @@ impl SettingsDraft {
             }
             self.profile_modal_draft = draft;
             self.profile_modal_tab = ProfileModalTab::default();
-            self.profile_modal_base = None;
             self.ssh_connection_test_status = SshConnectionTestStatus::Idle;
         }
     }
@@ -479,7 +503,6 @@ impl SettingsDraft {
         self.profile_modal_mode = None;
         self.profile_modal_draft = ProfileDraft::default();
         self.profile_modal_tab = ProfileModalTab::default();
-        self.profile_modal_base = None;
         self.ssh_connection_test_status = SshConnectionTestStatus::Idle;
     }
 
@@ -489,33 +512,8 @@ impl SettingsDraft {
         update_profile_draft(&mut self.profile_modal_draft, field, value);
     }
 
-    pub fn set_profile_modal_kind(&mut self, kind: ProfileDraftKind) {
-        self.profiles_error = None;
-        self.ssh_connection_test_status = SshConnectionTestStatus::Idle;
-        self.profile_modal_draft.kind = kind;
-        self.profile_modal_tab = ProfileModalTab::default();
-    }
-
     pub fn set_profile_modal_tab(&mut self, tab: ProfileModalTab) {
         self.profile_modal_tab = tab;
-    }
-
-    pub fn apply_profile_modal_base(&mut self, index: Option<usize>, base: Option<&SshProfile>) {
-        self.profiles_error = None;
-        self.ssh_connection_test_status = SshConnectionTestStatus::Idle;
-        self.profile_modal_tab = ProfileModalTab::default();
-        self.profile_modal_base = index;
-
-        let icon = self.profile_modal_draft.icon.clone();
-        let mut draft = match base {
-            Some(ssh) => ProfileDraft::from_ssh_fields(ssh),
-            None => ProfileDraft {
-                kind: ProfileDraftKind::Ssh,
-                ..ProfileDraft::default()
-            },
-        };
-        draft.icon = icon;
-        self.profile_modal_draft = draft;
     }
 
     pub fn begin_ssh_connection_test(&mut self) -> Result<SshProfile, String> {
@@ -552,12 +550,12 @@ impl SettingsDraft {
             Some(ProfileModalMode::Create) => {
                 self.profiles.push(self.profile_modal_draft.clone());
             }
+            Some(ProfileModalMode::TemplatePicker) | None => {}
             Some(ProfileModalMode::Edit(index)) => {
                 if let Some(slot) = self.profiles.get_mut(index) {
                     *slot = self.profile_modal_draft.clone();
                 }
             }
-            None => {}
         }
 
         self.close_profile_modal();
@@ -1220,7 +1218,7 @@ mod tests {
     fn local_draft_roundtrips_program_and_icon() {
         let profile = Profile {
             name: "My fish".into(),
-            icon: Some("🐟".into()),
+            icon: Some("fish".into()),
             kind: ProfileKind::Local {
                 program: Some("/opt/bin/fish".into()),
                 args: vec!["-l".into()],
@@ -1229,12 +1227,12 @@ mod tests {
         let draft = ProfileDraft::from_profile(&profile);
         assert_eq!(draft.kind, ProfileDraftKind::Local);
         assert_eq!(draft.name, "My fish");
-        assert_eq!(draft.icon, "🐟");
+        assert_eq!(draft.icon, "fish");
         assert_eq!(draft.program, "/opt/bin/fish");
 
         let back = draft.to_profile().unwrap();
         assert_eq!(back.name, "My fish");
-        assert_eq!(back.icon.as_deref(), Some("🐟"));
+        assert_eq!(back.icon.as_deref(), Some("fish"));
         assert!(matches!(
             back.kind,
             ProfileKind::Local { program: Some(p), args } if p == "/opt/bin/fish" && args == vec!["-l".to_string()]
@@ -1280,8 +1278,7 @@ mod tests {
     fn profile_modal_create_appends_ssh_profile() {
         let mut draft = SettingsDraft::from_config(&crate::config::AppConfig::default());
 
-        draft.open_create_profile_modal();
-        draft.set_profile_modal_kind(ProfileDraftKind::Ssh);
+        draft.start_from_template(ssh_template());
         draft.update_profile_modal(ProfileField::Name, "prod".into());
         draft.update_profile_modal(ProfileField::Host, "10.0.0.1".into());
         draft.update_profile_modal(ProfileField::User, "deploy".into());
@@ -1306,61 +1303,55 @@ mod tests {
         }
     }
 
+    fn ssh_template() -> ProfileDraft {
+        ProfileDraft {
+            kind: ProfileDraftKind::Ssh,
+            ..ProfileDraft::default()
+        }
+    }
+
     #[test]
-    fn base_seeds_modal_from_ssh_config_host() {
+    fn template_seeds_modal_from_ssh_config_host() {
         let mut draft = SettingsDraft::from_config(&crate::config::AppConfig::default());
-        let base = ssh_config_host();
 
-        draft.open_create_profile_modal();
-        draft.apply_profile_modal_base(Some(0), Some(&base));
+        draft.open_template_picker();
+        assert_eq!(
+            draft.profile_modal_mode,
+            Some(ProfileModalMode::TemplatePicker)
+        );
 
+        draft.start_from_template(ProfileDraft::from_ssh_fields(&ssh_config_host()));
+
+        assert_eq!(draft.profile_modal_mode, Some(ProfileModalMode::Create));
         let modal = &draft.profile_modal_draft;
         assert!(matches!(modal.kind, ProfileDraftKind::Ssh));
         assert_eq!(modal.host, "192.168.0.230");
         assert_eq!(modal.port, "2222");
         assert_eq!(modal.user, "root");
         assert_eq!(modal.identity_file, "~/.ssh/id_ed25519");
-        assert_eq!(draft.profile_modal_base, Some(0));
     }
 
     #[test]
-    fn saved_base_profile_is_independent_of_ssh_config() {
+    fn profile_built_from_template_is_independent_of_its_source() {
         let mut draft = SettingsDraft::from_config(&crate::config::AppConfig::default());
-        let base = ssh_config_host();
+        let source = ssh_config_host();
 
-        draft.open_create_profile_modal();
-        draft.apply_profile_modal_base(Some(0), Some(&base));
+        draft.start_from_template(ProfileDraft::from_ssh_fields(&source));
         draft.update_profile_modal(ProfileField::Host, "10.0.0.9".into());
         draft.save_profile_modal().unwrap();
 
         assert_eq!(draft.profiles.len(), 1);
         assert_eq!(draft.profiles[0].host, "10.0.0.9");
-        assert_eq!(base.host, "192.168.0.230");
+        assert_eq!(source.host, "192.168.0.230");
     }
 
     #[test]
-    fn clearing_base_resets_connection_fields() {
-        let mut draft = SettingsDraft::from_config(&crate::config::AppConfig::default());
-        let base = ssh_config_host();
-
-        draft.open_create_profile_modal();
-        draft.apply_profile_modal_base(Some(0), Some(&base));
-        draft.apply_profile_modal_base(None, None);
-
-        let modal = &draft.profile_modal_draft;
-        assert!(matches!(modal.kind, ProfileDraftKind::Ssh));
-        assert!(modal.host.is_empty());
-        assert!(modal.user.is_empty());
-        assert_eq!(draft.profile_modal_base, None);
-    }
-
-    #[test]
-    fn switching_profile_type_returns_to_first_tab() {
+    fn template_resets_the_modal_tab() {
         let mut draft = SettingsDraft::from_config(&crate::config::AppConfig::default());
 
-        draft.open_create_profile_modal();
+        draft.start_from_template(ssh_template());
         draft.set_profile_modal_tab(ProfileModalTab::Advanced);
-        draft.set_profile_modal_kind(ProfileDraftKind::Local);
+        draft.start_from_template(ProfileDraft::default());
 
         assert_eq!(draft.profile_modal_tab, ProfileModalTab::Connection);
     }
@@ -1369,7 +1360,7 @@ mod tests {
     fn profile_modal_create_appends_local_profile() {
         let mut draft = SettingsDraft::from_config(&crate::config::AppConfig::default());
 
-        draft.open_create_profile_modal();
+        draft.start_from_template(ProfileDraft::default());
         draft.update_profile_modal(ProfileField::Name, "scratch".into());
         draft.update_profile_modal(ProfileField::Program, "/bin/bash".into());
         draft.save_profile_modal().unwrap();
@@ -1440,8 +1431,7 @@ mod tests {
     fn profile_modal_save_requires_host_for_ssh() {
         let mut draft = SettingsDraft::from_config(&crate::config::AppConfig::default());
 
-        draft.open_create_profile_modal();
-        draft.set_profile_modal_kind(ProfileDraftKind::Ssh);
+        draft.start_from_template(ssh_template());
         draft.update_profile_modal(ProfileField::Name, "missing-host".into());
         let err = draft.save_profile_modal().unwrap_err();
 
@@ -1526,8 +1516,7 @@ mod tests {
     fn ssh_connection_test_requires_host() {
         let mut draft = SettingsDraft::from_config(&crate::config::AppConfig::default());
 
-        draft.open_create_profile_modal();
-        draft.set_profile_modal_kind(ProfileDraftKind::Ssh);
+        draft.start_from_template(ssh_template());
         let result = draft.begin_ssh_connection_test();
 
         assert!(result.is_err());
@@ -1541,8 +1530,7 @@ mod tests {
     fn ssh_connection_test_tracks_testing_and_result() {
         let mut draft = SettingsDraft::from_config(&crate::config::AppConfig::default());
 
-        draft.open_create_profile_modal();
-        draft.set_profile_modal_kind(ProfileDraftKind::Ssh);
+        draft.start_from_template(ssh_template());
         draft.update_profile_modal(ProfileField::Host, "example.com".into());
         let profile = draft.begin_ssh_connection_test().unwrap();
 
