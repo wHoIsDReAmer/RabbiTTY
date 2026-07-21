@@ -1,4 +1,5 @@
 use super::super::{App, Message};
+use crate::gui::app::update::tab::PickerSection;
 use crate::gui::icons::{self, ShellIcon};
 use crate::gui::tab::{Profile, ProfileKind};
 use crate::gui::theme::{Palette, RADIUS_NORMAL, RADIUS_SMALL, SPACING_SMALL};
@@ -45,16 +46,6 @@ impl PickerStyle {
                 color: Some(icon_color),
             })
             .into()
-    }
-
-    fn emoji(&self, glyph: String) -> Element<'static, Message> {
-        container(text(glyph).size(14.0).color(Color {
-            a: self.alpha,
-            ..self.palette.text
-        }))
-        .width(Length::Fixed(16.0))
-        .align_x(iced::Alignment::Center)
-        .into()
     }
 
     fn divider(&self) -> Element<'static, Message> {
@@ -195,94 +186,28 @@ impl App {
         };
 
         let mut items: Vec<Element<Message>> = Vec::new();
-        let mut option_index = 0usize;
 
         items.push(style.text(t!("shell_picker.title"), 15.0));
         items.push(style.divider());
 
-        let ssh_profiles = self.session_ssh_profiles();
-        if !ssh_profiles.is_empty() {
-            items.push(style.text_secondary(t!("shell_picker.ssh"), 11.0));
-
-            for (i, profile) in ssh_profiles.iter().enumerate() {
-                let label = if profile.name.is_empty() {
-                    profile.host.clone()
-                } else {
-                    profile.name.clone()
-                };
-                let subtitle = if profile.user.is_empty() {
-                    Some(format!("{}:{}", profile.host, profile.port))
-                } else {
-                    Some(format!(
-                        "{}@{}:{}",
-                        profile.user, profile.host, profile.port
-                    ))
-                };
-                let selected = self.shell_picker_selected == option_index;
-                let icon = style.icon(icons::ssh());
-                items.push(style.item_button(
-                    icon,
-                    label,
-                    subtitle,
-                    selected,
-                    Message::CreateSshTab(i),
-                ));
-                option_index += 1;
+        let mut previous: Option<PickerSection> = None;
+        for (option_index, entry) in self.shell_picker_entries().into_iter().enumerate() {
+            if previous != Some(entry.section) {
+                if previous.is_some() {
+                    items.push(style.divider());
+                }
+                items.push(style.text_secondary(entry.section.label(), 11.0));
+                previous = Some(entry.section);
             }
-            items.push(style.divider());
-        }
-
-        let local_profiles = self.session_local_profiles();
-        if !local_profiles.is_empty() {
-            items.push(style.text_secondary(t!("shell_picker.profiles"), 11.0));
-
-            for profile in &local_profiles {
-                let subtitle = match &profile.kind {
-                    ProfileKind::Local {
-                        program: Some(path),
-                        ..
-                    } => Some(path.clone()),
-                    _ => Some(t!("settings.ssh.default_shell").into()),
-                };
-                let selected = self.shell_picker_selected == option_index;
-                let icon = match &profile.icon {
-                    Some(glyph) if !glyph.trim().is_empty() => style.emoji(glyph.clone()),
-                    _ => style.icon(icon_for_shell(profile)),
-                };
-                items.push(style.item_button(
-                    icon,
-                    profile.display_name(),
-                    subtitle,
-                    selected,
-                    Message::CreateTab(profile.clone()),
-                ));
-                option_index += 1;
-            }
-            items.push(style.divider());
-        }
-
-        items.push(style.text_secondary(t!("shell_picker.shells"), 11.0));
-
-        for shell in &self.available_shells {
-            let label = shell.display_name();
-            let subtitle = match &shell.kind {
-                ProfileKind::Local { program: None, .. } => Some(t!("shell_picker.default").into()),
-                ProfileKind::Local {
-                    program: Some(path),
-                    ..
-                } => Some(path.clone()),
-                ProfileKind::Ssh(_) => None,
-            };
             let selected = self.shell_picker_selected == option_index;
-            let icon = style.icon(icon_for_shell(shell));
+            let icon = style.icon(icon_for_shell(&entry.profile));
             items.push(style.item_button(
                 icon,
-                label,
-                subtitle,
+                entry.label.clone(),
+                entry.subtitle.clone(),
                 selected,
-                Message::CreateTab(shell.clone()),
+                Message::CreateTab(entry.profile.clone()),
             ));
-            option_index += 1;
         }
 
         let card_alpha = 0.98 * progress;

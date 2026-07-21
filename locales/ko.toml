@@ -5,7 +5,8 @@ name = "한국어"
 title = "새 세션 시작"
 ssh = "SSH"
 profiles = "프로필"
-shells = "셸"
+ssh_config = "~/.ssh/config"
+builtin = "빌트인"
 default = "기본"
 
 [context_menu]

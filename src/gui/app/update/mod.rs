@@ -1,6 +1,6 @@
 mod settings;
 mod sftp;
-mod tab;
+pub(in crate::gui) mod tab;
 mod terminal;
 
 use super::{App, Message, SETTINGS_TAB_INDEX};
@@ -101,11 +101,6 @@ impl App {
                 self.modal_anim.go_mut(false, Instant::now());
             }
             Message::CreateTab(profile) => return self.launch_profile(profile),
-            Message::CreateSshTab(profile_index) => {
-                if let Some(profile) = self.session_ssh_profiles().get(profile_index).cloned() {
-                    return self.request_ssh_tab(profile);
-                }
-            }
             Message::LaunchFromHistory(index) => {
                 if let Some(entry) = self.session_history.entries.get(index).cloned() {
                     return self.launch_profile(entry.profile);

@@ -32,7 +32,6 @@ pub enum Message {
     CloseShellPicker,
     CreateTab(Profile),
     Settings(SettingsMessage),
-    CreateSshTab(usize),
     LaunchFromHistory(usize),
     DuplicateTab,
     Sftp(SftpMessage),
@@ -484,5 +483,82 @@ mod tests {
 
         assert!(!app.show_shell_picker);
         assert!(!app.modal_anim.value());
+    }
+
+    fn ssh(name: &str) -> crate::config::SshProfile {
+        crate::config::SshProfile {
+            name: name.into(),
+            host: format!("{name}.example.com"),
+            port: 22,
+            user: "root".into(),
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn ssh_config_hosts_sit_below_user_profiles() {
+        use crate::gui::app::update::tab::PickerSection;
+
+        let mut app = App::new(AppConfig {
+            profiles: vec![Profile::ssh(ssh("mine"))],
+            ..Default::default()
+        });
+        app.ssh_config_profiles = vec![ssh("from-config")];
+
+        let sections: Vec<_> = app
+            .shell_picker_entries()
+            .into_iter()
+            .map(|e| (e.section, e.label))
+            .collect();
+
+        let ssh_section: Vec<_> = sections
+            .iter()
+            .filter(|(s, _)| *s == PickerSection::Ssh)
+            .map(|(_, l)| l.as_str())
+            .collect();
+        let config_section: Vec<_> = sections
+            .iter()
+            .filter(|(s, _)| *s == PickerSection::SshConfig)
+            .map(|(_, l)| l.as_str())
+            .collect();
+
+        assert_eq!(ssh_section, vec!["mine"]);
+        assert_eq!(config_section, vec!["from-config"]);
+    }
+
+    #[test]
+    fn a_user_profile_shadows_the_ssh_config_host_it_shares_a_name_with() {
+        let mut app = App::new(AppConfig {
+            profiles: vec![Profile::ssh(ssh("kube-1"))],
+            ..Default::default()
+        });
+        app.ssh_config_profiles = vec![ssh("kube-1")];
+
+        let named: Vec<_> = app
+            .shell_picker_entries()
+            .into_iter()
+            .filter(|e| e.label == "kube-1")
+            .collect();
+
+        assert_eq!(named.len(), 1);
+    }
+
+    #[test]
+    fn picker_selection_maps_to_the_entry_at_that_position() {
+        let mut app = App::new(AppConfig {
+            profiles: vec![Profile::ssh(ssh("first"))],
+            ..Default::default()
+        });
+        app.ssh_config_profiles = vec![ssh("second")];
+
+        let entries = app.shell_picker_entries();
+        assert_eq!(app.shell_picker_option_count(), entries.len());
+
+        app.shell_picker_selected = 1;
+        let expected = entries[1].label.clone();
+        assert_eq!(
+            app.shell_picker_entries()[app.shell_picker_selected].label,
+            expected
+        );
     }
 }

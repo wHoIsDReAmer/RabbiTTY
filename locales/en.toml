@@ -5,7 +5,8 @@ name = "English"
 title = "Start New Session"
 ssh = "SSH"
 profiles = "Profiles"
-shells = "Shells"
+ssh_config = "From ~/.ssh/config"
+builtin = "Built-in"
 default = "Default"
 
 [context_menu]
