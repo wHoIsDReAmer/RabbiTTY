@@ -2,7 +2,7 @@ use crate::config::AppConfig;
 use crate::gui::settings::{
     SettingsCategory, SettingsDraft, SettingsField, SshProfileField, TerminalFontOption,
 };
-use crate::gui::tab::{ShellKind, TerminalTab, discover_available_shells};
+use crate::gui::tab::{Profile, TerminalTab, discover_available_shells};
 use crate::session::OutputEvent;
 use crate::session::history::SessionHistory;
 use crate::terminal::font::discover_system_terminal_fonts;
@@ -29,7 +29,7 @@ pub enum Message {
     CloseTab(usize),
     OpenShellPicker,
     CloseShellPicker,
-    CreateTab(ShellKind),
+    CreateTab(Profile),
     Settings(SettingsMessage),
     CreateSshTab(usize),
     LaunchFromHistory(usize),
@@ -192,7 +192,7 @@ pub struct App {
     pub(super) font_combo_state: combo_box::State<TerminalFontOption>,
     pub(super) show_all_fonts: bool,
     pub(super) all_font_options: Vec<TerminalFontOption>,
-    pub(super) available_shells: Vec<ShellKind>,
+    pub(super) available_shells: Vec<Profile>,
     pub(super) config: AppConfig,
     pub(super) pty_sender: Option<mpsc::UnboundedSender<OutputEvent>>,
     pub(super) initial_shell_opened: bool,

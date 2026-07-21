@@ -2,7 +2,7 @@ use super::super::shortcuts::ShortcutAction;
 use super::super::{App, Message, SETTINGS_TAB_INDEX};
 use crate::config::SshProfile;
 use crate::gui::settings::SettingsDraft;
-use crate::gui::tab::ShellKind;
+use crate::gui::tab::Profile;
 use crate::terminal::TerminalTheme;
 use iced::Task;
 use iced::keyboard::{Key, Modifiers};
@@ -25,10 +25,21 @@ impl App {
             });
             return Task::none();
         }
-        self.create_tab(ShellKind::Ssh(profile))
+        self.create_tab(Profile::ssh(profile))
     }
 
-    pub(in crate::gui) fn create_tab(&mut self, shell: ShellKind) -> Task<Message> {
+    /// Launch a tab for `profile`, deferring through the SSH password prompt
+    /// when the profile is an SSH connection that needs one.
+    pub(in crate::gui) fn launch_profile(&mut self, profile: Profile) -> Task<Message> {
+        if let Some(ssh) = profile.ssh_profile() {
+            let ssh = ssh.clone();
+            self.request_ssh_tab(ssh)
+        } else {
+            self.create_tab(profile)
+        }
+    }
+
+    pub(in crate::gui) fn create_tab(&mut self, profile: Profile) -> Task<Message> {
         let Some(sender) = self.pty_sender.clone() else {
             eprintln!("PTY output channel not ready");
             return Task::none();
@@ -38,10 +49,10 @@ impl App {
         let theme = TerminalTheme::from_config(&self.config);
         let tab_id = self.next_tab_id;
         self.next_tab_id = self.next_tab_id.wrapping_add(1);
-        let display_name = shell.display_name();
-        self.session_history.record((&shell).into(), display_name);
-        let new_tab = crate::gui::tab::TerminalTab::from_shell(
-            shell,
+        let display_name = profile.display_name();
+        self.session_history.record(profile.clone(), display_name);
+        let new_tab = crate::gui::tab::TerminalTab::from_profile(
+            profile,
             cols,
             rows,
             theme,

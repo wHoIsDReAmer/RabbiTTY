@@ -1,5 +1,5 @@
 use super::super::{App, Message};
-use crate::gui::tab::ShellKind;
+use crate::gui::tab::{Profile, ProfileKind};
 use crate::gui::theme::{Palette, RADIUS_NORMAL, RADIUS_SMALL, SPACING_SMALL};
 use iced::time::Instant;
 use iced::widget::{button, column, container, mouse_area, row, scrollable, stack, svg, text};
@@ -182,13 +182,13 @@ fn icon_by_name(name: &str) -> ShellIcon {
     }
 }
 
-fn icon_for_shell(shell: &ShellKind) -> ShellIcon {
-    match shell {
-        ShellKind::Ssh(_) => ShellIcon {
+fn icon_for_shell(shell: &Profile) -> ShellIcon {
+    match &shell.kind {
+        ProfileKind::Ssh(_) => ShellIcon {
             handle: ICON_SSH.clone(),
             color: Color::from_rgb8(0x4F, 0xC0, 0x8D),
         },
-        ShellKind::Default => {
+        ProfileKind::Local { program: None, .. } => {
             let name = std::env::var("SHELL").unwrap_or_default();
             let name = std::path::Path::new(&name)
                 .file_name()
@@ -197,7 +197,7 @@ fn icon_for_shell(shell: &ShellKind) -> ShellIcon {
                 .to_string();
             icon_by_name(&name)
         }
-        ShellKind::Shell { name, .. } => icon_by_name(name),
+        ProfileKind::Local { .. } => icon_by_name(&shell.name),
     }
 }
 
@@ -281,10 +281,13 @@ impl App {
 
         for shell in &self.available_shells {
             let label = shell.display_name();
-            let subtitle = match shell {
-                ShellKind::Default => Some(t!("shell_picker.default").into()),
-                ShellKind::Shell { path, .. } => Some(path.clone()),
-                ShellKind::Ssh(_) => None,
+            let subtitle = match &shell.kind {
+                ProfileKind::Local { program: None, .. } => Some(t!("shell_picker.default").into()),
+                ProfileKind::Local {
+                    program: Some(path),
+                    ..
+                } => Some(path.clone()),
+                ProfileKind::Ssh(_) => None,
             };
             let selected = self.shell_picker_selected == option_index;
             items.push(style.item_button(

@@ -5,7 +5,7 @@ mod terminal;
 
 use super::{App, Message, SETTINGS_TAB_INDEX};
 use crate::gui::settings::SettingsDraft;
-use crate::gui::tab::ShellKind;
+use crate::gui::tab::Profile;
 use iced::keyboard::{Key, key::Named};
 use iced::time::Instant;
 use iced::{Task, widget};
@@ -100,31 +100,23 @@ impl App {
             Message::CloseShellPicker => {
                 self.shell_picker_anim.go_mut(false, Instant::now());
             }
-            Message::CreateTab(shell) => match shell {
-                ShellKind::Ssh(profile) => return self.request_ssh_tab(profile),
-                shell => return self.create_tab(shell),
-            },
+            Message::CreateTab(profile) => return self.launch_profile(profile),
             Message::CreateSshTab(profile_index) => {
                 if let Some(profile) = self.session_ssh_profiles().get(profile_index).cloned() {
                     return self.request_ssh_tab(profile);
                 }
             }
             Message::LaunchFromHistory(index) => {
-                if let Some(entry) = self.session_history.entries.get(index).cloned()
-                    && let Some(shell) = entry.kind.to_shell_kind(&self.config.ssh_profiles)
-                {
-                    return match shell {
-                        ShellKind::Ssh(profile) => self.request_ssh_tab(profile),
-                        shell => self.create_tab(shell),
-                    };
+                if let Some(entry) = self.session_history.entries.get(index).cloned() {
+                    return self.launch_profile(entry.profile);
                 }
             }
             Message::DuplicateTab => {
                 let index = self.tab_context_menu.unwrap_or(self.active_tab);
                 self.tab_context_menu = None;
                 if let Some(tab) = self.tabs.get(index) {
-                    let shell = tab.shell.clone();
-                    return self.create_tab(shell);
+                    let profile = tab.profile.clone();
+                    return self.launch_profile(profile);
                 }
             }
             Message::Sftp(message) => return self.update_sftp(message),
@@ -146,7 +138,7 @@ impl App {
                     if prompt.save_to_keychain {
                         crate::keychain::set_password(&profile.host, &profile.user, &prompt.draft);
                     }
-                    return self.create_tab(crate::gui::tab::ShellKind::Ssh(profile));
+                    return self.create_tab(Profile::ssh(profile));
                 }
             }
             Message::SshPasswordPromptCancel => {
@@ -206,7 +198,7 @@ impl App {
             Message::PtySenderReady(sender) => {
                 self.pty_sender = Some(sender);
                 if self.take_initial_shell_request() {
-                    return self.create_tab(ShellKind::Default);
+                    return self.create_tab(Profile::default_shell());
                 }
             }
             Message::PtyOutput(event) => {
