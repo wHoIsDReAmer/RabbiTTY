@@ -4,19 +4,8 @@ use std::path::{Path, PathBuf};
 
 use super::AppConfig;
 use super::defaults::*;
-use super::types::{BellMode, CursorShape, RightClickAction, SshAuthMethod, TabBarPosition};
+use super::types::{BellMode, CursorShape, RightClickAction, TabBarPosition};
 use crate::gui::tab::Profile;
-
-#[derive(Debug, Deserialize, Serialize)]
-pub(super) struct SshProfileFileConfig {
-    pub(super) name: Option<String>,
-    pub(super) host: Option<String>,
-    pub(super) port: Option<u16>,
-    pub(super) user: Option<String>,
-    pub(super) auth_method: Option<SshAuthMethod>,
-    pub(super) identity_file: Option<String>,
-    pub(super) proxy_command: Option<String>,
-}
 
 #[derive(Debug, Deserialize, Serialize)]
 pub(super) struct FileConfig {
@@ -26,9 +15,6 @@ pub(super) struct FileConfig {
     pub(super) shortcuts: Option<ShortcutsFileConfig>,
     #[serde(default)]
     pub(super) profiles: Option<Vec<Profile>>,
-    /// Legacy key, read only for migration into `profiles`.
-    #[serde(default)]
-    pub(super) ssh_profiles: Option<Vec<SshProfileFileConfig>>,
 }
 
 #[derive(Debug, Deserialize, Serialize)]
@@ -170,7 +156,6 @@ impl From<&AppConfig> for FileConfig {
                         .collect(),
                 )
             },
-            ssh_profiles: None,
         }
     }
 }
@@ -226,7 +211,7 @@ pub(super) fn default_config_toml() -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::config::SshProfile;
+    use crate::config::{SshAuthMethod, SshProfile};
 
     #[test]
     fn generated_default_config_exposes_sound_bell_mode() {
@@ -241,138 +226,36 @@ mod tests {
     }
 
     #[test]
-    fn legacy_ssh_profiles_migrate_and_reserialize_as_profiles() {
+    fn profiles_parse_ssh_and_skip_empty_host() {
         let mut config = AppConfig::default();
         let file = toml::from_str::<FileConfig>(
             r#"
-            [[ssh_profiles]]
-            name = "Legacy"
-            host = "old.example.com"
-            user = "admin"
-            "#,
-        )
-        .expect("parse");
-        config.apply_file(file);
-        assert_eq!(config.ssh_profiles().len(), 1);
-
-        // Re-serializing emits the new [[profiles]] form, not the legacy key.
-        let toml = toml::to_string_pretty(&FileConfig::from(&config)).unwrap();
-        assert!(toml.contains("[[profiles]]"), "{toml}");
-        assert!(!toml.contains("[[ssh_profiles]]"), "{toml}");
-
-        // And that output round-trips back to the same SSH profile.
-        let reparsed = toml::from_str::<FileConfig>(&toml).expect("reparse");
-        let mut config2 = AppConfig::default();
-        config2.apply_file(reparsed);
-        assert_eq!(config2.ssh_profiles()[0].host, "old.example.com");
-    }
-
-    #[test]
-    fn ssh_profile_parsed_from_file_config() {
-        let mut config = AppConfig::default();
-        let file = toml::from_str::<FileConfig>(
-            r#"
-            [[ssh_profiles]]
+            [[profiles]]
             name = "My Server"
+            [profiles.kind]
+            type = "ssh"
             host = "example.com"
             port = 2222
             user = "admin"
+            auth_method = "key_file"
             identity_file = "~/.ssh/id_ed25519"
 
-            [[ssh_profiles]]
-            host = "bare.host"
-            "#,
-        )
-        .expect("file config should parse");
-
-        config.apply_file(file);
-        let sshs = config.ssh_profiles();
-        assert_eq!(sshs.len(), 2);
-
-        let p0 = &sshs[0];
-        assert_eq!(p0.name, "My Server");
-        assert_eq!(p0.host, "example.com");
-        assert_eq!(p0.port, 2222);
-        assert_eq!(p0.user, "admin");
-        assert_eq!(p0.auth_method, SshAuthMethod::KeyFile);
-        assert_eq!(p0.identity_file.as_deref(), Some("~/.ssh/id_ed25519"));
-        assert!(p0.password.is_none()); // password is never in config file
-
-        let p1 = &sshs[1];
-        assert_eq!(p1.name, "bare.host"); // name defaults to host
-        assert_eq!(p1.port, 22); // default port
-        assert_eq!(p1.auth_method, SshAuthMethod::Password);
-        assert!(p1.user.is_empty());
-    }
-
-    #[test]
-    fn ssh_profile_auth_method_parsed_and_serialized() {
-        let mut config = AppConfig::default();
-        let file = toml::from_str::<FileConfig>(
-            r#"
-            [[ssh_profiles]]
-            host = "key.host"
-            auth_method = "key_file"
-            identity_file = "~/.ssh/key"
-
-            [[ssh_profiles]]
-            host = "password.host"
-            auth_method = "password"
-            identity_file = "~/.ssh/ignored"
-            "#,
-        )
-        .expect("file config should parse");
-
-        config.apply_file(file);
-
-        let sshs = config.ssh_profiles();
-        assert_eq!(sshs[0].auth_method, SshAuthMethod::KeyFile);
-        assert_eq!(sshs[1].auth_method, SshAuthMethod::Password);
-
-        let serialized = toml::to_string_pretty(&FileConfig::from(&config)).unwrap();
-        assert!(serialized.contains("auth_method = \"key_file\""));
-        assert!(serialized.contains("auth_method = \"password\""));
-    }
-
-    #[test]
-    fn ssh_profile_proxy_command_parsed_and_serialized() {
-        let mut config = AppConfig::default();
-        let file = toml::from_str::<FileConfig>(
-            r#"
-            [[ssh_profiles]]
-            host = "remote.example.com"
-            proxy_command = "cloudflared access ssh --hostname %h"
-            "#,
-        )
-        .expect("file config should parse");
-
-        config.apply_file(file);
-
-        let sshs = config.ssh_profiles();
-        let profile = &sshs[0];
-        assert_eq!(
-            profile.proxy_command.as_deref(),
-            Some("cloudflared access ssh --hostname %h")
-        );
-
-        let serialized = toml::to_string_pretty(&FileConfig::from(&config)).unwrap();
-        assert!(serialized.contains("proxy_command = \"cloudflared access ssh --hostname %h\""));
-    }
-
-    #[test]
-    fn ssh_profile_skips_empty_host() {
-        let mut config = AppConfig::default();
-        let file = toml::from_str::<FileConfig>(
-            r#"
-            [[ssh_profiles]]
+            [[profiles]]
             name = "No Host"
+            [profiles.kind]
+            type = "ssh"
             host = "  "
             "#,
         )
         .expect("file config should parse");
 
         config.apply_file(file);
-        assert!(config.ssh_profiles().is_empty());
+        let sshs = config.ssh_profiles();
+        assert_eq!(sshs.len(), 1); // empty-host profile dropped
+        assert_eq!(sshs[0].host, "example.com");
+        assert_eq!(sshs[0].port, 2222);
+        assert_eq!(sshs[0].auth_method, crate::config::SshAuthMethod::KeyFile);
+        assert!(sshs[0].password.is_none());
     }
 
     #[test]

@@ -352,8 +352,6 @@ impl AppConfig {
             }
         }
 
-        // New unified `[[profiles]]` wins; otherwise migrate legacy
-        // `[[ssh_profiles]]`. Once saved, only `profiles` is emitted.
         if let Some(profiles) = file.profiles {
             self.profiles = profiles
                 .into_iter()
@@ -362,60 +360,8 @@ impl AppConfig {
                         .is_none_or(|ssh| !ssh.host.trim().is_empty())
                 })
                 .collect();
-        } else if let Some(legacy) = file.ssh_profiles {
-            self.profiles = legacy
-                .into_iter()
-                .filter_map(parse_legacy_ssh_profile)
-                .map(Profile::ssh)
-                .collect();
         }
     }
-}
-
-fn parse_legacy_ssh_profile(p: file::SshProfileFileConfig) -> Option<SshProfile> {
-    let host = p.host.as_deref().map(str::trim).unwrap_or("");
-    if host.is_empty() {
-        return None;
-    }
-    let identity_file = p
-        .identity_file
-        .as_deref()
-        .map(str::trim)
-        .filter(|s| !s.is_empty())
-        .map(String::from);
-    let auth_method = p.auth_method.unwrap_or_else(|| {
-        if identity_file.is_some() {
-            SshAuthMethod::KeyFile
-        } else {
-            SshAuthMethod::Password
-        }
-    });
-
-    Some(SshProfile {
-        name: p
-            .name
-            .as_deref()
-            .map(str::trim)
-            .filter(|s| !s.is_empty())
-            .unwrap_or(host)
-            .to_string(),
-        host: host.to_string(),
-        port: p.port.unwrap_or(22),
-        user: p.user.as_deref().map(str::trim).unwrap_or("").to_string(),
-        auth_method,
-        identity_file: if matches!(auth_method, SshAuthMethod::KeyFile) {
-            identity_file
-        } else {
-            None
-        },
-        password: None,
-        proxy_command: p
-            .proxy_command
-            .as_deref()
-            .map(str::trim)
-            .filter(|s| !s.is_empty())
-            .map(String::from),
-    })
 }
 
 #[cfg(test)]
