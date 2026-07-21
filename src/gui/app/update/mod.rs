@@ -28,6 +28,12 @@ impl App {
             .filter(|tab| matches!(tab.session, crate::gui::tab::TerminalSession::Active(_)))
     }
 
+    pub(super) fn dismiss_shell_picker(&mut self) {
+        self.show_shell_picker = false;
+        self.shell_picker_selected = 0;
+        self.modal_anim.go_mut(false, Instant::now());
+    }
+
     fn save_profiles(&mut self) {
         self.config.profiles = self.settings_draft.collect_profiles();
 
@@ -89,10 +95,10 @@ impl App {
             Message::OpenShellPicker => {
                 self.show_shell_picker = true;
                 self.shell_picker_selected = 0;
-                self.shell_picker_anim.go_mut(true, Instant::now());
+                self.modal_anim.go_mut(true, Instant::now());
             }
             Message::CloseShellPicker => {
-                self.shell_picker_anim.go_mut(false, Instant::now());
+                self.modal_anim.go_mut(false, Instant::now());
             }
             Message::CreateTab(profile) => return self.launch_profile(profile),
             Message::CreateSshTab(profile_index) => {
@@ -355,7 +361,7 @@ impl App {
             }
             Message::AnimationTick => {
                 let now = Instant::now();
-                if !self.shell_picker_anim.is_animating(now) && !self.shell_picker_anim.value() {
+                if !self.modal_anim.is_animating(now) && !self.modal_anim.value() {
                     self.show_shell_picker = false;
                     self.shell_picker_selected = 0;
                 }
@@ -434,7 +440,7 @@ impl App {
             return Task::none();
         }
 
-        if self.show_shell_picker {
+        if self.show_shell_picker && self.modal_anim.value() {
             match key {
                 Key::Named(Named::Escape) => {
                     return self.update(Message::CloseShellPicker);

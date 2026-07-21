@@ -168,7 +168,7 @@ impl App {
         let palette = self.palette;
         let now = Instant::now();
 
-        let progress: f32 = self.shell_picker_anim.interpolate(0.0f32, 1.0f32, now);
+        let progress: f32 = self.modal_anim.interpolate(0.0f32, 1.0f32, now);
 
         let backdrop_alpha = 0.5 * progress;
 

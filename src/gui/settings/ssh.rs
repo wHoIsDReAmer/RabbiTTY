@@ -29,6 +29,7 @@ pub fn modal_overlay<'a>(
     base: Element<'a, Message>,
     draft: &'a SettingsDraft,
     ssh_config_profiles: &'a [crate::config::SshProfile],
+    progress: f32,
     palette: Palette,
     animations_enabled: bool,
 ) -> Element<'a, Message> {
@@ -44,6 +45,7 @@ pub fn modal_overlay<'a>(
             mode,
             draft,
             ssh_config_profiles,
+            progress,
             palette,
             animations_enabled,
         );
@@ -58,7 +60,7 @@ fn delete_confirm_overlay<'a>(
     palette: Palette,
     animations_enabled: bool,
 ) -> Element<'a, Message> {
-    let backdrop = mouse_area(backdrop(palette))
+    let backdrop = mouse_area(backdrop(palette, 1.0))
         .on_press(Message::Settings(SettingsMessage::CancelRemoveProfile));
     let title = profile_title(profile);
     let description = format!("Delete \"{title}\"?");
@@ -340,13 +342,14 @@ fn modal_overlay_content<'a>(
     mode: ProfileModalMode,
     draft: &'a SettingsDraft,
     ssh_config_profiles: &'a [crate::config::SshProfile],
+    progress: f32,
     palette: Palette,
     animations_enabled: bool,
 ) -> Element<'a, Message> {
     let profile = &draft.profile_modal_draft;
     let error = draft.profiles_error.as_deref();
     let test_status = &draft.ssh_connection_test_status;
-    let backdrop = mouse_area(backdrop(palette))
+    let backdrop = mouse_area(backdrop(palette, progress))
         .on_press(Message::Settings(SettingsMessage::CloseProfileModal));
 
     let title = match mode {
@@ -480,7 +483,8 @@ fn connection_test_status_banner<'a>(
     }
 }
 
-fn backdrop(palette: Palette) -> container::Container<'static, Message> {
+fn backdrop(palette: Palette, progress: f32) -> container::Container<'static, Message> {
+    let alpha = 0.50 * progress.clamp(0.0, 1.0);
     container(text(""))
         .width(Length::Fill)
         .height(Length::Fill)
@@ -489,7 +493,7 @@ fn backdrop(palette: Palette) -> container::Container<'static, Message> {
                 r: palette.background.r,
                 g: palette.background.g,
                 b: palette.background.b,
-                a: 0.50,
+                a: alpha,
             })),
             ..Default::default()
         })
@@ -605,7 +609,6 @@ fn icon_picker<'a>(
     let current = selected.trim();
     let buttons = icons::PROFILE_ICON_NAMES.iter().map(|name| {
         let active = current.eq_ignore_ascii_case(name);
-        // Re-picking the active icon clears it, falling back to the type default.
         let next = if active {
             String::new()
         } else {

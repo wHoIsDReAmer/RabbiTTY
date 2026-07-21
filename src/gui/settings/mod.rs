@@ -358,7 +358,6 @@ pub struct SettingsDraft {
     pub profile_modal_draft: ProfileDraft,
     pub profile_delete_pending: Option<usize>,
     pub profile_modal_tab: ProfileModalTab,
-    /// Index into the `~/.ssh/config` host list the create-modal was seeded from.
     pub profile_modal_base: Option<usize>,
     pub ssh_connection_test_status: SshConnectionTestStatus,
 }
@@ -501,8 +500,6 @@ impl SettingsDraft {
         self.profile_modal_tab = tab;
     }
 
-    /// Seed the create-modal draft from a `~/.ssh/config` host. The new profile
-    /// is an independent copy: later edits never touch `~/.ssh/config`.
     pub fn apply_profile_modal_base(&mut self, index: Option<usize>, base: Option<&SshProfile>) {
         self.profiles_error = None;
         self.ssh_connection_test_status = SshConnectionTestStatus::Idle;
@@ -1338,7 +1335,6 @@ mod tests {
 
         assert_eq!(draft.profiles.len(), 1);
         assert_eq!(draft.profiles[0].host, "10.0.0.9");
-        // The originating ~/.ssh/config entry is untouched.
         assert_eq!(base.host, "192.168.0.230");
     }
 

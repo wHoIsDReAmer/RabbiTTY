@@ -145,9 +145,11 @@ impl App {
         match message {
             SettingsMessage::AddProfile => {
                 self.settings_draft.open_create_profile_modal();
+                self.modal_anim.go_mut(true, Instant::now());
             }
             SettingsMessage::EditProfile(index) => {
                 self.settings_draft.open_edit_profile_modal(index);
+                self.modal_anim.go_mut(true, Instant::now());
             }
             SettingsMessage::LaunchProfile(index) => {
                 if let Some(profile) = self
@@ -205,6 +207,7 @@ impl App {
             }
             SettingsMessage::CloseProfileModal => {
                 self.settings_draft.close_profile_modal();
+                self.modal_anim.go_mut(false, Instant::now());
             }
             SettingsMessage::SaveProfileModal => match self.settings_draft.save_profile_modal() {
                 Ok(Some(profile)) => {
@@ -219,8 +222,9 @@ impl App {
                         }
                     }
                     self.save_profiles();
+                    self.modal_anim.go_mut(false, Instant::now());
                 }
-                Ok(None) => {}
+                Ok(None) => self.modal_anim.go_mut(false, Instant::now()),
                 Err(err) => eprintln!("Failed to update profile draft: {err}"),
             },
             SettingsMessage::OpenTab => {

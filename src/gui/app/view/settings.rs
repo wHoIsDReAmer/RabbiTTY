@@ -151,6 +151,8 @@ impl App {
                 settings_layout,
                 &self.settings_draft,
                 &self.ssh_config_profiles,
+                self.modal_anim
+                    .interpolate(0.0f32, 1.0f32, iced::time::Instant::now()),
                 palette,
                 animations_enabled,
             )

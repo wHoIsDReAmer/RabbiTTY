@@ -62,8 +62,7 @@ impl App {
         );
         self.tabs.push(new_tab);
         self.active_tab = self.tabs.len() - 1;
-        self.show_shell_picker = false;
-        self.shell_picker_selected = 0;
+        self.dismiss_shell_picker();
         Task::none()
     }
 
@@ -171,8 +170,7 @@ impl App {
 
         if selected < ssh_profiles.len() {
             let profile = ssh_profiles[selected].clone();
-            self.show_shell_picker = false;
-            self.shell_picker_selected = 0;
+            self.dismiss_shell_picker();
             return self.request_ssh_tab(profile);
         }
 
@@ -188,8 +186,7 @@ impl App {
             return self.create_tab(shell);
         }
 
-        self.show_shell_picker = false;
-        self.shell_picker_selected = 0;
+        self.dismiss_shell_picker();
         Task::none()
     }
 

@@ -216,7 +216,7 @@ pub struct App {
     pub(super) settings_debounce_pending: bool,
     pub(super) settings_debounce_seq: u64,
     pub(super) settings_debounce_spawned_seq: u64,
-    pub(super) shell_picker_anim: Animation<bool>,
+    pub(super) modal_anim: Animation<bool>,
     pub(super) settings_category_transition: crate::gui::components::CategoryTransition,
     pub(super) palette: crate::gui::theme::Palette,
     pub(super) ime_active: bool,
@@ -321,7 +321,7 @@ impl App {
             cursor_position: iced::Point::ORIGIN,
             ime_active: false,
             ime_preedit: None,
-            shell_picker_anim: Animation::new(false)
+            modal_anim: Animation::new(false)
                 .duration(std::time::Duration::from_millis(250))
                 .easing(iced::animation::Easing::EaseOutQuint),
             settings_category_transition: crate::gui::components::CategoryTransition::new(),
@@ -469,5 +469,20 @@ mod tests {
 
         assert!(app.take_initial_shell_request());
         assert!(!app.take_initial_shell_request());
+    }
+
+    #[test]
+    fn dismissing_the_picker_rewinds_its_animation() {
+        let mut app = App::new(AppConfig::default());
+        let now = iced::time::Instant::now();
+
+        app.show_shell_picker = true;
+        app.modal_anim.go_mut(true, now);
+        assert!(app.modal_anim.value());
+
+        app.dismiss_shell_picker();
+
+        assert!(!app.show_shell_picker);
+        assert!(!app.modal_anim.value());
     }
 }

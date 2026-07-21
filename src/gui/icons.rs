@@ -20,7 +20,6 @@ pub struct ShellIcon {
     pub color: Color,
 }
 
-/// Icon names a profile may pin, in picker order.
 pub const PROFILE_ICON_NAMES: [&str; 6] = ["terminal", "bash", "zsh", "fish", "powershell", "ssh"];
 
 pub fn by_name(name: &str) -> ShellIcon {
@@ -56,7 +55,6 @@ pub fn ssh() -> ShellIcon {
     }
 }
 
-/// The shell binary the user's `$SHELL` points at, for default-shell profiles.
 pub fn default_shell_name() -> String {
     let shell = std::env::var("SHELL").unwrap_or_default();
     std::path::Path::new(&shell)

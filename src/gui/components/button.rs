@@ -188,7 +188,6 @@ pub fn icon_toggle<'a>(
     )
 }
 
-/// `icon_toggle` for content that is not a glyph (an SVG, say).
 pub fn icon_toggle_content<'a>(
     content: Element<'a, Message>,
     on_press: Message,
