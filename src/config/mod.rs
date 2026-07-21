@@ -14,6 +14,7 @@ pub use updates::AppConfigUpdates;
 
 pub(crate) use sanitize::parse_hex_color;
 
+use crate::gui::tab::Profile;
 use file::{FileConfig, config_path, ensure_config_file};
 use metrics::default_cell_metrics;
 use sanitize::*;
@@ -25,7 +26,17 @@ pub struct AppConfig {
     pub terminal: TerminalConfig,
     pub theme: ThemeConfig,
     pub shortcuts: ShortcutsConfig,
-    pub ssh_profiles: Vec<SshProfile>,
+    pub profiles: Vec<Profile>,
+}
+
+impl AppConfig {
+    /// The SSH connections among the configured profiles.
+    pub fn ssh_profiles(&self) -> Vec<SshProfile> {
+        self.profiles
+            .iter()
+            .filter_map(|p| p.ssh_profile().cloned())
+            .collect()
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -135,7 +146,7 @@ impl Default for AppConfig {
                 font_size_reset: DEFAULT_SHORTCUT_FONT_SIZE_RESET.to_string(),
                 duplicate_tab: DEFAULT_SHORTCUT_DUPLICATE_TAB.to_string(),
             },
-            ssh_profiles: vec![],
+            profiles: vec![],
         }
     }
 }
@@ -329,53 +340,12 @@ impl AppConfig {
             }
         }
 
-        if let Some(profiles) = file.ssh_profiles {
-            self.ssh_profiles = profiles
+        if let Some(profiles) = file.profiles {
+            self.profiles = profiles
                 .into_iter()
-                .filter_map(|p| {
-                    let host = p.host.as_deref().map(str::trim).unwrap_or("");
-                    if host.is_empty() {
-                        return None;
-                    }
-                    let identity_file = p
-                        .identity_file
-                        .as_deref()
-                        .map(str::trim)
-                        .filter(|s| !s.is_empty())
-                        .map(String::from);
-                    let auth_method = p.auth_method.unwrap_or_else(|| {
-                        if identity_file.is_some() {
-                            SshAuthMethod::KeyFile
-                        } else {
-                            SshAuthMethod::Password
-                        }
-                    });
-
-                    Some(SshProfile {
-                        name: p
-                            .name
-                            .as_deref()
-                            .map(str::trim)
-                            .filter(|s| !s.is_empty())
-                            .unwrap_or(host)
-                            .to_string(),
-                        host: host.to_string(),
-                        port: p.port.unwrap_or(22),
-                        user: p.user.as_deref().map(str::trim).unwrap_or("").to_string(),
-                        auth_method,
-                        identity_file: if matches!(auth_method, SshAuthMethod::KeyFile) {
-                            identity_file
-                        } else {
-                            None
-                        },
-                        password: None,
-                        proxy_command: p
-                            .proxy_command
-                            .as_deref()
-                            .map(str::trim)
-                            .filter(|s| !s.is_empty())
-                            .map(String::from),
-                    })
+                .filter(|p| {
+                    p.ssh_profile()
+                        .is_none_or(|ssh| !ssh.host.trim().is_empty())
                 })
                 .collect();
         }

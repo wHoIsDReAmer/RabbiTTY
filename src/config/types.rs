@@ -96,7 +96,8 @@ impl std::fmt::Display for RightClickAction {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
 pub struct SshProfile {
     pub name: String,
     pub host: String,
@@ -104,6 +105,7 @@ pub struct SshProfile {
     pub user: String,
     pub auth_method: SshAuthMethod,
     pub identity_file: Option<String>,
+    #[serde(skip)]
     pub password: Option<String>,
     pub proxy_command: Option<String>,
 }

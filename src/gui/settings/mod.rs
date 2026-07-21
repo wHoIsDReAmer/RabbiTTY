@@ -4,6 +4,7 @@ use crate::config::{
 };
 use crate::gui::app::{Message, SettingsMessage};
 use crate::gui::components::accent_toggler_style;
+use crate::gui::tab::{Profile, ProfileKind};
 use crate::gui::theme::{Palette, RADIUS_SMALL, SPACING_LARGE, SPACING_NORMAL, SPACING_SMALL};
 use iced::widget::{Space, button, column, container, row, rule, text, text_input, toggler};
 use iced::{Alignment, Background, Border, Color, Element, Length};
@@ -53,8 +54,10 @@ pub enum SettingsField {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum SshProfileField {
+pub enum ProfileField {
     Name,
+    Icon,
+    Program,
     Host,
     Port,
     User,
@@ -63,6 +66,39 @@ pub enum SshProfileField {
     Password,
     ProxyCommandEnabled,
     ProxyCommand,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ProfileDraftKind {
+    Local,
+    Ssh,
+}
+
+impl fmt::Display for ProfileDraftKind {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(match self {
+            Self::Ssh => crate::t!("settings.ssh.type_ssh"),
+            Self::Local => crate::t!("settings.ssh.type_local"),
+        })
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum ProfileModalTab {
+    #[default]
+    Connection,
+    Advanced,
+}
+
+impl ProfileModalTab {
+    pub const ALL: [Self; 2] = [Self::Connection, Self::Advanced];
+
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Connection => crate::t!("settings.ssh.tab_connection"),
+            Self::Advanced => crate::t!("settings.ssh.tab_advanced"),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -105,8 +141,11 @@ impl SettingsCategory {
 }
 
 #[derive(Debug, Clone)]
-pub struct SshProfileDraft {
+pub struct ProfileDraft {
+    pub kind: ProfileDraftKind,
     pub name: String,
+    pub icon: String,
+    pub program: String,
     pub host: String,
     pub port: String,
     pub user: String,
@@ -118,9 +157,33 @@ pub struct SshProfileDraft {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum SshProfileModalMode {
+pub enum ProfileModalMode {
+    TemplatePicker,
     Create,
     Edit(usize),
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TemplateGroup {
+    Basic,
+    Shell,
+    SshConfig,
+}
+
+impl TemplateGroup {
+    pub fn label(self) -> Option<&'static str> {
+        match self {
+            Self::Basic => None,
+            Self::Shell => Some(crate::t!("settings.ssh.template_shells")),
+            Self::SshConfig => Some(crate::t!("settings.ssh.template_ssh_config")),
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct ProfileTemplate {
+    pub group: TemplateGroup,
+    pub draft: ProfileDraft,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -131,16 +194,21 @@ pub enum SshConnectionTestStatus {
     Failure(String),
 }
 
-impl Default for SshProfileDraft {
+impl Default for ProfileDraft {
     fn default() -> Self {
-        Self::from_profile(&SshProfile::default())
+        let mut draft = Self::from_ssh_fields(&SshProfile::default());
+        draft.kind = ProfileDraftKind::Local;
+        draft
     }
 }
 
-impl SshProfileDraft {
-    pub fn from_profile(profile: &SshProfile) -> Self {
+impl ProfileDraft {
+    pub fn from_ssh_fields(profile: &SshProfile) -> Self {
         Self {
+            kind: ProfileDraftKind::Ssh,
             name: profile.name.clone(),
+            icon: String::new(),
+            program: String::new(),
             host: profile.host.clone(),
             port: profile.port.to_string(),
             user: profile.user.clone(),
@@ -155,7 +223,37 @@ impl SshProfileDraft {
         }
     }
 
-    pub fn to_profile(&self) -> Option<SshProfile> {
+    pub fn from_profile(profile: &Profile) -> Self {
+        let icon = profile.icon.clone().unwrap_or_default();
+        match &profile.kind {
+            ProfileKind::Local { program, .. } => Self {
+                kind: ProfileDraftKind::Local,
+                name: profile.name.clone(),
+                icon,
+                program: program.clone().unwrap_or_default(),
+                ..Self::default()
+            },
+            ProfileKind::Ssh(ssh) => {
+                let mut draft = Self::from_ssh_fields(ssh);
+                draft.icon = icon;
+                draft
+            }
+        }
+    }
+
+    fn icon_option(&self) -> Option<String> {
+        let v = self.icon.trim();
+        if v.is_empty() {
+            None
+        } else {
+            Some(v.to_string())
+        }
+    }
+
+    pub fn to_ssh_profile(&self) -> Option<SshProfile> {
+        if !matches!(self.kind, ProfileDraftKind::Ssh) {
+            return None;
+        }
         let host = self.host.trim();
         if host.is_empty() {
             return None;
@@ -199,14 +297,47 @@ impl SshProfileDraft {
         })
     }
 
+    pub fn to_profile(&self) -> Option<Profile> {
+        match self.kind {
+            ProfileDraftKind::Local => {
+                let program = self.program.trim();
+                let (program, args) = if program.is_empty() {
+                    (None, Vec::new())
+                } else {
+                    (Some(program.to_string()), vec!["-l".to_string()])
+                };
+                Some(Profile {
+                    name: self.name.trim().to_string(),
+                    icon: self.icon_option(),
+                    kind: ProfileKind::Local { program, args },
+                })
+            }
+            ProfileDraftKind::Ssh => {
+                let ssh = self.to_ssh_profile()?;
+                let mut profile = Profile::ssh(ssh);
+                profile.icon = self.icon_option();
+                Some(profile)
+            }
+        }
+    }
+
     fn is_blank(&self) -> bool {
-        self.name.trim().is_empty()
-            && self.host.trim().is_empty()
-            && self.user.trim().is_empty()
-            && self.identity_file.trim().is_empty()
-            && self.password.trim().is_empty()
-            && (!self.proxy_command_enabled || self.proxy_command.trim().is_empty())
-            && self.port.trim().parse::<u16>().unwrap_or(22) == 22
+        match self.kind {
+            ProfileDraftKind::Local => {
+                self.name.trim().is_empty()
+                    && self.program.trim().is_empty()
+                    && self.icon.trim().is_empty()
+            }
+            ProfileDraftKind::Ssh => {
+                self.name.trim().is_empty()
+                    && self.host.trim().is_empty()
+                    && self.user.trim().is_empty()
+                    && self.identity_file.trim().is_empty()
+                    && self.password.trim().is_empty()
+                    && (!self.proxy_command_enabled || self.proxy_command.trim().is_empty())
+                    && self.port.trim().parse::<u16>().unwrap_or(22) == 22
+            }
+        }
     }
 }
 
@@ -241,11 +372,12 @@ pub struct SettingsDraft {
     pub shortcut_next_tab: String,
     pub shortcut_prev_tab: String,
     pub shortcut_quit: String,
-    pub ssh_profiles: Vec<SshProfileDraft>,
-    pub ssh_profiles_error: Option<String>,
-    pub ssh_profile_modal_mode: Option<SshProfileModalMode>,
-    pub ssh_profile_modal_draft: SshProfileDraft,
-    pub ssh_profile_delete_pending: Option<usize>,
+    pub profiles: Vec<ProfileDraft>,
+    pub profiles_error: Option<String>,
+    pub profile_modal_mode: Option<ProfileModalMode>,
+    pub profile_modal_draft: ProfileDraft,
+    pub profile_delete_pending: Option<usize>,
+    pub profile_modal_tab: ProfileModalTab,
     pub ssh_connection_test_status: SshConnectionTestStatus,
 }
 
@@ -285,96 +417,112 @@ impl SettingsDraft {
             shortcut_next_tab: config.shortcuts.next_tab.clone(),
             shortcut_prev_tab: config.shortcuts.prev_tab.clone(),
             shortcut_quit: config.shortcuts.quit.clone(),
-            ssh_profiles: config
-                .ssh_profiles
+            profiles: config
+                .profiles
                 .iter()
-                .map(SshProfileDraft::from_profile)
+                .map(ProfileDraft::from_profile)
                 .collect(),
-            ssh_profiles_error: None,
-            ssh_profile_modal_mode: None,
-            ssh_profile_modal_draft: SshProfileDraft::default(),
-            ssh_profile_delete_pending: None,
+            profiles_error: None,
+            profile_modal_mode: None,
+            profile_modal_draft: ProfileDraft::default(),
+            profile_delete_pending: None,
+            profile_modal_tab: ProfileModalTab::default(),
             ssh_connection_test_status: SshConnectionTestStatus::Idle,
         }
     }
 
     #[cfg(test)]
-    pub fn update_ssh_profile(&mut self, index: usize, field: SshProfileField, value: String) {
-        self.ssh_profiles_error = None;
-        if let Some(draft) = self.ssh_profiles.get_mut(index) {
-            update_ssh_profile_draft(draft, field, value);
+    pub fn update_profile(&mut self, index: usize, field: ProfileField, value: String) {
+        self.profiles_error = None;
+        if let Some(draft) = self.profiles.get_mut(index) {
+            update_profile_draft(draft, field, value);
         }
     }
 
     #[cfg(test)]
-    pub fn add_ssh_profile(&mut self) {
-        self.ssh_profiles_error = None;
-        self.ssh_profiles.push(SshProfileDraft::default());
+    pub fn add_profile(&mut self) {
+        self.profiles_error = None;
+        self.profiles.push(ProfileDraft::default());
     }
 
-    pub fn request_delete_ssh_profile(&mut self, index: usize) {
-        if index < self.ssh_profiles.len() {
-            self.ssh_profiles_error = None;
-            self.ssh_profile_delete_pending = Some(index);
+    pub fn request_delete_profile(&mut self, index: usize) {
+        if index < self.profiles.len() {
+            self.profiles_error = None;
+            self.profile_delete_pending = Some(index);
         }
     }
 
-    pub fn cancel_delete_ssh_profile(&mut self) {
-        self.ssh_profile_delete_pending = None;
+    pub fn cancel_delete_profile(&mut self) {
+        self.profile_delete_pending = None;
     }
 
-    pub fn confirm_delete_ssh_profile(&mut self) -> Option<(String, String)> {
-        let index = self.ssh_profile_delete_pending.take()?;
-        self.ssh_profiles_error = None;
-        if index < self.ssh_profiles.len() {
-            let profile = self.ssh_profiles.remove(index);
-            return Some((profile.host, profile.user));
+    pub fn confirm_delete_profile(&mut self) -> Option<ProfileDraft> {
+        let index = self.profile_delete_pending.take()?;
+        self.profiles_error = None;
+        if index < self.profiles.len() {
+            return Some(self.profiles.remove(index));
         }
         None
     }
 
-    pub fn open_create_ssh_profile_modal(&mut self) {
-        self.ssh_profiles_error = None;
-        self.ssh_profile_modal_mode = Some(SshProfileModalMode::Create);
-        self.ssh_profile_modal_draft = SshProfileDraft::default();
+    pub fn open_template_picker(&mut self) {
+        self.profiles_error = None;
+        self.profile_modal_mode = Some(ProfileModalMode::TemplatePicker);
+        self.profile_modal_draft = ProfileDraft::default();
+        self.profile_modal_tab = ProfileModalTab::default();
         self.ssh_connection_test_status = SshConnectionTestStatus::Idle;
     }
 
-    pub fn open_edit_ssh_profile_modal(&mut self, index: usize) {
-        if let Some(profile) = self.ssh_profiles.get(index) {
-            self.ssh_profiles_error = None;
-            self.ssh_profile_modal_mode = Some(SshProfileModalMode::Edit(index));
+    pub fn start_from_template(&mut self, draft: ProfileDraft) {
+        self.profiles_error = None;
+        self.profile_modal_mode = Some(ProfileModalMode::Create);
+        self.profile_modal_draft = draft;
+        self.profile_modal_tab = ProfileModalTab::default();
+        self.ssh_connection_test_status = SshConnectionTestStatus::Idle;
+    }
+
+    pub fn open_edit_profile_modal(&mut self, index: usize) {
+        if let Some(profile) = self.profiles.get(index) {
+            self.profiles_error = None;
+            self.profile_modal_mode = Some(ProfileModalMode::Edit(index));
             let mut draft = profile.clone();
-            if matches!(draft.auth_method, SshAuthMethod::Password)
+            if matches!(draft.kind, ProfileDraftKind::Ssh)
+                && matches!(draft.auth_method, SshAuthMethod::Password)
                 && draft.password.is_empty()
                 && let Some(pw) = crate::keychain::get_password(&draft.host, &draft.user)
             {
                 draft.password = pw;
             }
-            self.ssh_profile_modal_draft = draft;
+            self.profile_modal_draft = draft;
+            self.profile_modal_tab = ProfileModalTab::default();
             self.ssh_connection_test_status = SshConnectionTestStatus::Idle;
         }
     }
 
-    pub fn close_ssh_profile_modal(&mut self) {
-        self.ssh_profile_modal_mode = None;
-        self.ssh_profile_modal_draft = SshProfileDraft::default();
+    pub fn close_profile_modal(&mut self) {
+        self.profile_modal_mode = None;
+        self.profile_modal_draft = ProfileDraft::default();
+        self.profile_modal_tab = ProfileModalTab::default();
         self.ssh_connection_test_status = SshConnectionTestStatus::Idle;
     }
 
-    pub fn update_ssh_profile_modal(&mut self, field: SshProfileField, value: String) {
-        self.ssh_profiles_error = None;
+    pub fn update_profile_modal(&mut self, field: ProfileField, value: String) {
+        self.profiles_error = None;
         self.ssh_connection_test_status = SshConnectionTestStatus::Idle;
-        update_ssh_profile_draft(&mut self.ssh_profile_modal_draft, field, value);
+        update_profile_draft(&mut self.profile_modal_draft, field, value);
+    }
+
+    pub fn set_profile_modal_tab(&mut self, tab: ProfileModalTab) {
+        self.profile_modal_tab = tab;
     }
 
     pub fn begin_ssh_connection_test(&mut self) -> Result<SshProfile, String> {
-        let Some(profile) = self.ssh_profile_modal_draft.to_profile() else {
+        let Some(profile) = self.profile_modal_draft.to_ssh_profile() else {
             let message = crate::t!("settings.ssh.status.host_required").to_string();
             self.ssh_connection_test_status = SshConnectionTestStatus::Failure(message.clone());
             return Err(message);
         };
-        self.ssh_profiles_error = None;
+        self.profiles_error = None;
         self.ssh_connection_test_status = SshConnectionTestStatus::Testing;
         Ok(profile)
     }
@@ -388,57 +536,47 @@ impl SettingsDraft {
         };
     }
 
-    pub fn save_ssh_profile_modal(&mut self) -> Result<Option<SshProfile>, String> {
-        if self.ssh_profile_modal_mode.is_none() {
+    pub fn save_profile_modal(&mut self) -> Result<Option<Profile>, String> {
+        if self.profile_modal_mode.is_none() {
             return Ok(None);
         }
-        let Some(profile) = self.ssh_profile_modal_draft.to_profile() else {
+        let Some(profile) = self.profile_modal_draft.to_profile() else {
             let message = crate::t!("settings.ssh.status.host_required_save").to_string();
-            self.ssh_profiles_error = Some(message.clone());
+            self.profiles_error = Some(message.clone());
             return Err(message);
         };
 
-        match self.ssh_profile_modal_mode {
-            Some(SshProfileModalMode::Create) => {
-                self.ssh_profiles.push(self.ssh_profile_modal_draft.clone());
+        match self.profile_modal_mode {
+            Some(ProfileModalMode::Create) => {
+                self.profiles.push(self.profile_modal_draft.clone());
             }
-            Some(SshProfileModalMode::Edit(index)) => {
-                if let Some(slot) = self.ssh_profiles.get_mut(index) {
-                    *slot = self.ssh_profile_modal_draft.clone();
+            Some(ProfileModalMode::TemplatePicker) | None => {}
+            Some(ProfileModalMode::Edit(index)) => {
+                if let Some(slot) = self.profiles.get_mut(index) {
+                    *slot = self.profile_modal_draft.clone();
                 }
             }
-            None => {}
         }
 
-        self.close_ssh_profile_modal();
-        self.ssh_profiles_error = None;
+        self.close_profile_modal();
+        self.profiles_error = None;
         Ok(Some(profile))
     }
 
-    pub fn apply_ssh_profiles_to(&mut self, profiles: &mut Vec<SshProfile>) -> Result<(), String> {
-        let mut next = Vec::new();
-        for (index, draft) in self.ssh_profiles.iter().enumerate() {
-            let Some(profile) = draft.to_profile() else {
-                if draft.is_blank() {
-                    continue;
-                }
-                let message = format!("SSH profile {} needs a Host before saving.", index + 1);
-                self.ssh_profiles_error = Some(message.clone());
-                return Err(message);
-            };
-            next.push(profile);
-        }
-        *profiles = next;
-        self.ssh_profiles_error = None;
-        Ok(())
+    pub fn collect_profiles(&self) -> Vec<Profile> {
+        self.profiles
+            .iter()
+            .filter(|draft| !draft.is_blank())
+            .filter_map(|draft| draft.to_profile())
+            .collect()
     }
 
-    pub fn set_ssh_profiles_error(&mut self, message: impl Into<String>) {
-        self.ssh_profiles_error = Some(message.into());
+    pub fn set_profiles_error(&mut self, message: impl Into<String>) {
+        self.profiles_error = Some(message.into());
     }
 
-    pub fn set_ssh_profiles_saved(&mut self) {
-        self.ssh_profiles_error = Some(crate::t!("settings.ssh.status.profiles_saved").to_string());
+    pub fn set_profiles_saved(&mut self) {
+        self.profiles_error = Some(crate::t!("settings.ssh.status.profiles_saved").to_string());
     }
 
     pub fn update(&mut self, field: SettingsField, value: String) {
@@ -531,25 +669,27 @@ fn parse_f32(value: &str) -> Option<f32> {
     value.trim().parse::<f32>().ok()
 }
 
-fn update_ssh_profile_draft(draft: &mut SshProfileDraft, field: SshProfileField, value: String) {
+fn update_profile_draft(draft: &mut ProfileDraft, field: ProfileField, value: String) {
     match field {
-        SshProfileField::Name => draft.name = value,
-        SshProfileField::Host => draft.host = value,
-        SshProfileField::Port => draft.port = value,
-        SshProfileField::User => draft.user = value,
-        SshProfileField::AuthMethod => {
+        ProfileField::Name => draft.name = value,
+        ProfileField::Icon => draft.icon = value,
+        ProfileField::Program => draft.program = value,
+        ProfileField::Host => draft.host = value,
+        ProfileField::Port => draft.port = value,
+        ProfileField::User => draft.user = value,
+        ProfileField::AuthMethod => {
             draft.auth_method = match value.as_str() {
                 "key_file" => SshAuthMethod::KeyFile,
                 "password" => SshAuthMethod::Password,
                 _ => draft.auth_method,
             };
         }
-        SshProfileField::IdentityFile => draft.identity_file = value,
-        SshProfileField::Password => draft.password = value,
-        SshProfileField::ProxyCommandEnabled => {
+        ProfileField::IdentityFile => draft.identity_file = value,
+        ProfileField::Password => draft.password = value,
+        ProfileField::ProxyCommandEnabled => {
             draft.proxy_command_enabled = value == "true";
         }
-        SshProfileField::ProxyCommand => draft.proxy_command = value,
+        ProfileField::ProxyCommand => draft.proxy_command = value,
     }
 }
 
@@ -561,7 +701,6 @@ pub fn view_category<'a>(
     font_combo_state: &'a iced::widget::combo_box::State<TerminalFontOption>,
     show_all_fonts: bool,
     all_font_options: &'a [TerminalFontOption],
-    ssh_config_profiles: &'a [SshProfile],
     palette: Palette,
 ) -> Element<'a, Message> {
     let animations_enabled = config.ui.animations_enabled;
@@ -582,7 +721,7 @@ pub fn view_category<'a>(
         SettingsCategory::Terminal => terminal::view(config, draft, palette),
         SettingsCategory::Theme => theme::view(config, draft, palette),
         SettingsCategory::Shortcuts => shortcuts::view(config, draft, palette),
-        SettingsCategory::Ssh => ssh::view(draft, ssh_config_profiles, palette, animations_enabled),
+        SettingsCategory::Ssh => ssh::view(draft, palette, animations_enabled),
     }
 }
 
@@ -925,6 +1064,10 @@ mod tests {
     use super::*;
     use crate::config::{SshAuthMethod, SshProfile};
 
+    fn ssh_draft(profile: &SshProfile) -> ProfileDraft {
+        ProfileDraft::from_profile(&Profile::ssh(profile.clone()))
+    }
+
     #[test]
     fn ssh_draft_roundtrip_with_password() {
         let profile = SshProfile {
@@ -938,7 +1081,8 @@ mod tests {
             proxy_command: None,
         };
 
-        let draft = SshProfileDraft::from_profile(&profile);
+        let draft = ssh_draft(&profile);
+        assert_eq!(draft.kind, ProfileDraftKind::Ssh);
         assert_eq!(draft.name, "prod");
         assert_eq!(draft.host, "10.0.0.1");
         assert_eq!(draft.port, "2222");
@@ -947,7 +1091,7 @@ mod tests {
         assert_eq!(draft.identity_file, "~/.ssh/id_rsa");
         assert_eq!(draft.password, "s3cret");
 
-        let back = draft.to_profile().unwrap();
+        let back = draft.to_ssh_profile().unwrap();
         assert_eq!(back.auth_method, SshAuthMethod::Password);
         assert!(back.identity_file.is_none());
         assert_eq!(back.password.as_deref(), Some("s3cret"));
@@ -956,8 +1100,11 @@ mod tests {
 
     #[test]
     fn ssh_draft_key_file_auth_ignores_password() {
-        let draft = SshProfileDraft {
+        let draft = ProfileDraft {
+            kind: ProfileDraftKind::Ssh,
             name: "test".into(),
+            icon: String::new(),
+            program: String::new(),
             host: "host".into(),
             port: "22".into(),
             user: "me".into(),
@@ -968,7 +1115,7 @@ mod tests {
             proxy_command: "  cloudflared access ssh --hostname %h  ".into(),
         };
 
-        let profile = draft.to_profile().unwrap();
+        let profile = draft.to_ssh_profile().unwrap();
 
         assert_eq!(profile.auth_method, SshAuthMethod::KeyFile);
         assert_eq!(profile.identity_file.as_deref(), Some("~/.ssh/id_ed25519"));
@@ -981,8 +1128,11 @@ mod tests {
 
     #[test]
     fn ssh_draft_proxy_command_requires_enabled_flag() {
-        let mut draft = SshProfileDraft {
+        let mut draft = ProfileDraft {
+            kind: ProfileDraftKind::Ssh,
             name: "test".into(),
+            icon: String::new(),
+            program: String::new(),
             host: "host".into(),
             port: "22".into(),
             user: "me".into(),
@@ -993,11 +1143,11 @@ mod tests {
             proxy_command: "cloudflared access ssh --hostname %h".into(),
         };
 
-        let disabled = draft.to_profile().unwrap();
+        let disabled = draft.to_ssh_profile().unwrap();
         assert!(disabled.proxy_command.is_none());
 
         draft.proxy_command_enabled = true;
-        let enabled = draft.to_profile().unwrap();
+        let enabled = draft.to_ssh_profile().unwrap();
         assert_eq!(
             enabled.proxy_command.as_deref(),
             Some("cloudflared access ssh --hostname %h")
@@ -1017,7 +1167,7 @@ mod tests {
             proxy_command: Some("cloudflared access ssh --hostname %h".into()),
         };
 
-        let draft = SshProfileDraft::from_profile(&profile);
+        let draft = ssh_draft(&profile);
 
         assert!(draft.proxy_command_enabled);
         assert_eq!(draft.proxy_command, "cloudflared access ssh --hostname %h");
@@ -1025,8 +1175,11 @@ mod tests {
 
     #[test]
     fn ssh_draft_empty_password_becomes_none() {
-        let draft = SshProfileDraft {
+        let draft = ProfileDraft {
+            kind: ProfileDraftKind::Ssh,
             name: "test".into(),
+            icon: String::new(),
+            program: String::new(),
             host: "host".into(),
             port: "22".into(),
             user: "".into(),
@@ -1036,15 +1189,18 @@ mod tests {
             proxy_command_enabled: false,
             proxy_command: "".into(),
         };
-        let profile = draft.to_profile().unwrap();
+        let profile = draft.to_ssh_profile().unwrap();
         assert!(profile.password.is_none());
         assert!(profile.identity_file.is_none());
     }
 
     #[test]
     fn ssh_draft_empty_host_returns_none() {
-        let draft = SshProfileDraft {
+        let draft = ProfileDraft {
+            kind: ProfileDraftKind::Ssh,
             name: "test".into(),
+            icon: String::new(),
+            program: String::new(),
             host: "  ".into(),
             port: "22".into(),
             user: "".into(),
@@ -1054,13 +1210,49 @@ mod tests {
             proxy_command_enabled: false,
             proxy_command: "".into(),
         };
+        assert!(draft.to_ssh_profile().is_none());
         assert!(draft.to_profile().is_none());
+    }
+
+    #[test]
+    fn local_draft_roundtrips_program_and_icon() {
+        let profile = Profile {
+            name: "My fish".into(),
+            icon: Some("fish".into()),
+            kind: ProfileKind::Local {
+                program: Some("/opt/bin/fish".into()),
+                args: vec!["-l".into()],
+            },
+        };
+        let draft = ProfileDraft::from_profile(&profile);
+        assert_eq!(draft.kind, ProfileDraftKind::Local);
+        assert_eq!(draft.name, "My fish");
+        assert_eq!(draft.icon, "fish");
+        assert_eq!(draft.program, "/opt/bin/fish");
+
+        let back = draft.to_profile().unwrap();
+        assert_eq!(back.name, "My fish");
+        assert_eq!(back.icon.as_deref(), Some("fish"));
+        assert!(matches!(
+            back.kind,
+            ProfileKind::Local { program: Some(p), args } if p == "/opt/bin/fish" && args == vec!["-l".to_string()]
+        ));
+    }
+
+    #[test]
+    fn local_draft_without_program_has_empty_args() {
+        let draft = ProfileDraft::default();
+        let profile = draft.to_profile().unwrap();
+        assert!(matches!(
+            profile.kind,
+            ProfileKind::Local { program: None, args } if args.is_empty()
+        ));
     }
 
     #[test]
     fn update_ssh_profile_password_field() {
         let config = crate::config::AppConfig {
-            ssh_profiles: vec![SshProfile {
+            profiles: vec![SshProfile {
                 name: "srv".into(),
                 host: "h".into(),
                 port: 22,
@@ -1069,36 +1261,119 @@ mod tests {
                 identity_file: None,
                 password: None,
                 proxy_command: None,
-            }],
+            }]
+            .into_iter()
+            .map(crate::gui::tab::Profile::ssh)
+            .collect(),
             ..Default::default()
         };
         let mut draft = SettingsDraft::from_config(&config);
-        assert_eq!(draft.ssh_profiles[0].password, "");
+        assert_eq!(draft.profiles[0].password, "");
 
-        draft.update_ssh_profile(0, SshProfileField::Password, "newpass".into());
-        assert_eq!(draft.ssh_profiles[0].password, "newpass");
+        draft.update_profile(0, ProfileField::Password, "newpass".into());
+        assert_eq!(draft.profiles[0].password, "newpass");
     }
 
     #[test]
-    fn ssh_profile_modal_create_appends_profile() {
+    fn profile_modal_create_appends_ssh_profile() {
         let mut draft = SettingsDraft::from_config(&crate::config::AppConfig::default());
 
-        draft.open_create_ssh_profile_modal();
-        draft.update_ssh_profile_modal(SshProfileField::Name, "prod".into());
-        draft.update_ssh_profile_modal(SshProfileField::Host, "10.0.0.1".into());
-        draft.update_ssh_profile_modal(SshProfileField::User, "deploy".into());
-        draft.save_ssh_profile_modal().unwrap();
+        draft.start_from_template(ssh_template());
+        draft.update_profile_modal(ProfileField::Name, "prod".into());
+        draft.update_profile_modal(ProfileField::Host, "10.0.0.1".into());
+        draft.update_profile_modal(ProfileField::User, "deploy".into());
+        draft.save_profile_modal().unwrap();
 
-        assert_eq!(draft.ssh_profiles.len(), 1);
-        assert_eq!(draft.ssh_profiles[0].name, "prod");
-        assert_eq!(draft.ssh_profiles[0].host, "10.0.0.1");
-        assert!(draft.ssh_profile_modal_mode.is_none());
+        assert_eq!(draft.profiles.len(), 1);
+        assert_eq!(draft.profiles[0].name, "prod");
+        assert_eq!(draft.profiles[0].host, "10.0.0.1");
+        assert!(draft.profile_modal_mode.is_none());
+    }
+
+    fn ssh_config_host() -> SshProfile {
+        SshProfile {
+            name: "kube-1".into(),
+            host: "192.168.0.230".into(),
+            port: 2222,
+            user: "root".into(),
+            auth_method: SshAuthMethod::KeyFile,
+            identity_file: Some("~/.ssh/id_ed25519".into()),
+            password: None,
+            proxy_command: None,
+        }
+    }
+
+    fn ssh_template() -> ProfileDraft {
+        ProfileDraft {
+            kind: ProfileDraftKind::Ssh,
+            ..ProfileDraft::default()
+        }
     }
 
     #[test]
-    fn ssh_profile_modal_edit_replaces_selected_profile() {
+    fn template_seeds_modal_from_ssh_config_host() {
+        let mut draft = SettingsDraft::from_config(&crate::config::AppConfig::default());
+
+        draft.open_template_picker();
+        assert_eq!(
+            draft.profile_modal_mode,
+            Some(ProfileModalMode::TemplatePicker)
+        );
+
+        draft.start_from_template(ProfileDraft::from_ssh_fields(&ssh_config_host()));
+
+        assert_eq!(draft.profile_modal_mode, Some(ProfileModalMode::Create));
+        let modal = &draft.profile_modal_draft;
+        assert!(matches!(modal.kind, ProfileDraftKind::Ssh));
+        assert_eq!(modal.host, "192.168.0.230");
+        assert_eq!(modal.port, "2222");
+        assert_eq!(modal.user, "root");
+        assert_eq!(modal.identity_file, "~/.ssh/id_ed25519");
+    }
+
+    #[test]
+    fn profile_built_from_template_is_independent_of_its_source() {
+        let mut draft = SettingsDraft::from_config(&crate::config::AppConfig::default());
+        let source = ssh_config_host();
+
+        draft.start_from_template(ProfileDraft::from_ssh_fields(&source));
+        draft.update_profile_modal(ProfileField::Host, "10.0.0.9".into());
+        draft.save_profile_modal().unwrap();
+
+        assert_eq!(draft.profiles.len(), 1);
+        assert_eq!(draft.profiles[0].host, "10.0.0.9");
+        assert_eq!(source.host, "192.168.0.230");
+    }
+
+    #[test]
+    fn template_resets_the_modal_tab() {
+        let mut draft = SettingsDraft::from_config(&crate::config::AppConfig::default());
+
+        draft.start_from_template(ssh_template());
+        draft.set_profile_modal_tab(ProfileModalTab::Advanced);
+        draft.start_from_template(ProfileDraft::default());
+
+        assert_eq!(draft.profile_modal_tab, ProfileModalTab::Connection);
+    }
+
+    #[test]
+    fn profile_modal_create_appends_local_profile() {
+        let mut draft = SettingsDraft::from_config(&crate::config::AppConfig::default());
+
+        draft.start_from_template(ProfileDraft::default());
+        draft.update_profile_modal(ProfileField::Name, "scratch".into());
+        draft.update_profile_modal(ProfileField::Program, "/bin/bash".into());
+        draft.save_profile_modal().unwrap();
+
+        assert_eq!(draft.profiles.len(), 1);
+        assert_eq!(draft.profiles[0].kind, ProfileDraftKind::Local);
+        assert_eq!(draft.profiles[0].program, "/bin/bash");
+    }
+
+    #[test]
+    fn profile_modal_edit_replaces_selected_profile() {
         let mut draft = SettingsDraft::from_config(&crate::config::AppConfig {
-            ssh_profiles: vec![SshProfile {
+            profiles: vec![SshProfile {
                 name: "old".into(),
                 host: "old.example.com".into(),
                 port: 22,
@@ -1107,25 +1382,28 @@ mod tests {
                 identity_file: Some("~/.ssh/id_ed25519".into()),
                 password: None,
                 proxy_command: None,
-            }],
+            }]
+            .into_iter()
+            .map(crate::gui::tab::Profile::ssh)
+            .collect(),
             ..Default::default()
         });
 
-        draft.open_edit_ssh_profile_modal(0);
-        draft.update_ssh_profile_modal(SshProfileField::Name, "new".into());
-        draft.update_ssh_profile_modal(SshProfileField::Host, "new.example.com".into());
-        draft.save_ssh_profile_modal().unwrap();
+        draft.open_edit_profile_modal(0);
+        draft.update_profile_modal(ProfileField::Name, "new".into());
+        draft.update_profile_modal(ProfileField::Host, "new.example.com".into());
+        draft.save_profile_modal().unwrap();
 
-        assert_eq!(draft.ssh_profiles.len(), 1);
-        assert_eq!(draft.ssh_profiles[0].name, "new");
-        assert_eq!(draft.ssh_profiles[0].host, "new.example.com");
-        assert_eq!(draft.ssh_profiles[0].identity_file, "~/.ssh/id_ed25519");
+        assert_eq!(draft.profiles.len(), 1);
+        assert_eq!(draft.profiles[0].name, "new");
+        assert_eq!(draft.profiles[0].host, "new.example.com");
+        assert_eq!(draft.profiles[0].identity_file, "~/.ssh/id_ed25519");
     }
 
     #[test]
-    fn ssh_profile_modal_cancel_leaves_profiles_unchanged() {
+    fn profile_modal_cancel_leaves_profiles_unchanged() {
         let mut draft = SettingsDraft::from_config(&crate::config::AppConfig {
-            ssh_profiles: vec![SshProfile {
+            profiles: vec![SshProfile {
                 name: "prod".into(),
                 host: "prod.example.com".into(),
                 port: 22,
@@ -1134,35 +1412,38 @@ mod tests {
                 identity_file: None,
                 password: Some("secret".into()),
                 proxy_command: None,
-            }],
+            }]
+            .into_iter()
+            .map(crate::gui::tab::Profile::ssh)
+            .collect(),
             ..Default::default()
         });
 
-        draft.open_edit_ssh_profile_modal(0);
-        draft.update_ssh_profile_modal(SshProfileField::Host, "changed.example.com".into());
-        draft.close_ssh_profile_modal();
+        draft.open_edit_profile_modal(0);
+        draft.update_profile_modal(ProfileField::Host, "changed.example.com".into());
+        draft.close_profile_modal();
 
-        assert_eq!(draft.ssh_profiles[0].host, "prod.example.com");
-        assert!(draft.ssh_profile_modal_mode.is_none());
+        assert_eq!(draft.profiles[0].host, "prod.example.com");
+        assert!(draft.profile_modal_mode.is_none());
     }
 
     #[test]
-    fn ssh_profile_modal_save_requires_host() {
+    fn profile_modal_save_requires_host_for_ssh() {
         let mut draft = SettingsDraft::from_config(&crate::config::AppConfig::default());
 
-        draft.open_create_ssh_profile_modal();
-        draft.update_ssh_profile_modal(SshProfileField::Name, "missing-host".into());
-        let err = draft.save_ssh_profile_modal().unwrap_err();
+        draft.start_from_template(ssh_template());
+        draft.update_profile_modal(ProfileField::Name, "missing-host".into());
+        let err = draft.save_profile_modal().unwrap_err();
 
         assert_eq!(err, crate::t!("settings.ssh.status.host_required_save"));
-        assert!(draft.ssh_profiles.is_empty());
-        assert!(draft.ssh_profile_modal_mode.is_some());
+        assert!(draft.profiles.is_empty());
+        assert!(draft.profile_modal_mode.is_some());
     }
 
     #[test]
-    fn ssh_profile_delete_requires_confirmation() {
+    fn profile_delete_requires_confirmation() {
         let mut draft = SettingsDraft::from_config(&crate::config::AppConfig {
-            ssh_profiles: vec![
+            profiles: vec![
                 SshProfile {
                     name: "prod".into(),
                     host: "prod.example.com".into(),
@@ -1183,32 +1464,31 @@ mod tests {
                     password: None,
                     proxy_command: None,
                 },
-            ],
+            ]
+            .into_iter()
+            .map(crate::gui::tab::Profile::ssh)
+            .collect(),
             ..Default::default()
         });
 
-        draft.request_delete_ssh_profile(0);
+        draft.request_delete_profile(0);
 
-        assert_eq!(draft.ssh_profile_delete_pending, Some(0));
-        assert_eq!(draft.ssh_profiles.len(), 2);
+        assert_eq!(draft.profile_delete_pending, Some(0));
+        assert_eq!(draft.profiles.len(), 2);
 
-        let removed = draft.confirm_delete_ssh_profile();
+        let removed = draft.confirm_delete_profile().unwrap();
 
-        assert_eq!(
-            removed
-                .as_ref()
-                .map(|(host, user)| (host.as_str(), user.as_str())),
-            Some(("prod.example.com", "deploy"))
-        );
-        assert_eq!(draft.ssh_profiles.len(), 1);
-        assert_eq!(draft.ssh_profiles[0].host, "stage.example.com");
-        assert!(draft.ssh_profile_delete_pending.is_none());
+        assert_eq!(removed.host, "prod.example.com");
+        assert_eq!(removed.user, "deploy");
+        assert_eq!(draft.profiles.len(), 1);
+        assert_eq!(draft.profiles[0].host, "stage.example.com");
+        assert!(draft.profile_delete_pending.is_none());
     }
 
     #[test]
-    fn ssh_profile_delete_cancel_leaves_profile_unchanged() {
+    fn profile_delete_cancel_leaves_profile_unchanged() {
         let mut draft = SettingsDraft::from_config(&crate::config::AppConfig {
-            ssh_profiles: vec![SshProfile {
+            profiles: vec![SshProfile {
                 name: "prod".into(),
                 host: "prod.example.com".into(),
                 port: 22,
@@ -1217,23 +1497,26 @@ mod tests {
                 identity_file: None,
                 password: Some("secret".into()),
                 proxy_command: None,
-            }],
+            }]
+            .into_iter()
+            .map(crate::gui::tab::Profile::ssh)
+            .collect(),
             ..Default::default()
         });
 
-        draft.request_delete_ssh_profile(0);
-        draft.cancel_delete_ssh_profile();
+        draft.request_delete_profile(0);
+        draft.cancel_delete_profile();
 
-        assert_eq!(draft.ssh_profiles.len(), 1);
-        assert_eq!(draft.ssh_profiles[0].host, "prod.example.com");
-        assert!(draft.ssh_profile_delete_pending.is_none());
+        assert_eq!(draft.profiles.len(), 1);
+        assert_eq!(draft.profiles[0].host, "prod.example.com");
+        assert!(draft.profile_delete_pending.is_none());
     }
 
     #[test]
     fn ssh_connection_test_requires_host() {
         let mut draft = SettingsDraft::from_config(&crate::config::AppConfig::default());
 
-        draft.open_create_ssh_profile_modal();
+        draft.start_from_template(ssh_template());
         let result = draft.begin_ssh_connection_test();
 
         assert!(result.is_err());
@@ -1247,8 +1530,8 @@ mod tests {
     fn ssh_connection_test_tracks_testing_and_result() {
         let mut draft = SettingsDraft::from_config(&crate::config::AppConfig::default());
 
-        draft.open_create_ssh_profile_modal();
-        draft.update_ssh_profile_modal(SshProfileField::Host, "example.com".into());
+        draft.start_from_template(ssh_template());
+        draft.update_profile_modal(ProfileField::Host, "example.com".into());
         let profile = draft.begin_ssh_connection_test().unwrap();
 
         assert_eq!(profile.host, "example.com");
@@ -1273,93 +1556,27 @@ mod tests {
     }
 
     #[test]
-    fn apply_ssh_profiles_skips_blank_new_profile_without_clearing_existing_profiles() {
-        let existing = SshProfile {
-            name: "existing".into(),
-            host: "existing.host".into(),
-            port: 22,
-            user: "u".into(),
-            auth_method: SshAuthMethod::Password,
-            identity_file: None,
-            password: None,
-            proxy_command: None,
-        };
-        let mut profiles = vec![existing.clone()];
+    fn collect_profiles_skips_blank_draft_and_keeps_valid_ones() {
         let mut draft = SettingsDraft::from_config(&crate::config::AppConfig {
-            ssh_profiles: profiles.clone(),
+            profiles: vec![SshProfile {
+                name: "existing".into(),
+                host: "existing.host".into(),
+                port: 22,
+                user: "u".into(),
+                auth_method: SshAuthMethod::Password,
+                identity_file: None,
+                password: None,
+                proxy_command: None,
+            }]
+            .into_iter()
+            .map(crate::gui::tab::Profile::ssh)
+            .collect(),
             ..Default::default()
         });
-        draft.add_ssh_profile();
+        draft.add_profile();
 
-        let result = draft.apply_ssh_profiles_to(&mut profiles);
-
-        assert!(result.is_ok());
+        let profiles = draft.collect_profiles();
         assert_eq!(profiles.len(), 1);
-        assert_eq!(profiles[0].host, "existing.host");
-        assert!(draft.ssh_profiles_error.is_none());
-    }
-
-    #[test]
-    fn apply_ssh_profiles_rejects_partial_profile_without_host() {
-        let existing = SshProfile {
-            name: "existing".into(),
-            host: "existing.host".into(),
-            port: 22,
-            user: "u".into(),
-            auth_method: SshAuthMethod::Password,
-            identity_file: None,
-            password: None,
-            proxy_command: None,
-        };
-        let mut profiles = vec![existing.clone()];
-        let mut draft = SettingsDraft::from_config(&crate::config::AppConfig {
-            ssh_profiles: profiles.clone(),
-            ..Default::default()
-        });
-        draft.add_ssh_profile();
-        draft.update_ssh_profile(1, SshProfileField::Name, "partial".into());
-
-        let result = draft.apply_ssh_profiles_to(&mut profiles);
-
-        assert!(result.is_err());
-        assert_eq!(profiles.len(), 1);
-        assert_eq!(profiles[0].host, "existing.host");
-        assert_eq!(
-            draft.ssh_profiles_error.as_deref(),
-            Some("SSH profile 2 needs a Host before saving.")
-        );
-    }
-
-    #[test]
-    fn apply_ssh_profiles_saves_valid_new_profile_when_blank_card_exists() {
-        let existing = SshProfile {
-            name: "existing".into(),
-            host: "existing.host".into(),
-            port: 22,
-            user: "u".into(),
-            auth_method: SshAuthMethod::Password,
-            identity_file: None,
-            password: None,
-            proxy_command: None,
-        };
-        let mut profiles = vec![existing.clone()];
-        let mut draft = SettingsDraft::from_config(&crate::config::AppConfig {
-            ssh_profiles: profiles.clone(),
-            ..Default::default()
-        });
-        draft.add_ssh_profile();
-        draft.update_ssh_profile(1, SshProfileField::Name, "new".into());
-        draft.update_ssh_profile(1, SshProfileField::Host, "new.host".into());
-        draft.update_ssh_profile(1, SshProfileField::User, "new-user".into());
-        draft.add_ssh_profile();
-
-        let result = draft.apply_ssh_profiles_to(&mut profiles);
-
-        assert!(result.is_ok());
-        assert_eq!(profiles.len(), 2);
-        assert_eq!(profiles[0].host, "existing.host");
-        assert_eq!(profiles[1].name, "new");
-        assert_eq!(profiles[1].host, "new.host");
-        assert_eq!(profiles[1].user, "new-user");
+        assert_eq!(profiles[0].ssh_profile().unwrap().host, "existing.host");
     }
 }

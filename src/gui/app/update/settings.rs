@@ -1,7 +1,9 @@
 use super::super::{App, Message, SETTINGS_TAB_INDEX, SettingsMessage};
 use crate::config::AppConfigUpdates;
-use crate::gui::settings::SettingsDraft;
 use crate::gui::settings::SettingsField;
+use crate::gui::settings::{
+    ProfileDraft, ProfileDraftKind, ProfileTemplate, SettingsDraft, TemplateGroup,
+};
 use crate::terminal::TerminalTheme;
 use iced::time::Instant;
 use iced::{Size, Task, window};
@@ -141,28 +143,77 @@ impl App {
 }
 
 impl App {
+    pub(in crate::gui) fn profile_templates(&self) -> Vec<ProfileTemplate> {
+        let mut out = vec![
+            ProfileTemplate {
+                group: TemplateGroup::Basic,
+                draft: ProfileDraft {
+                    kind: ProfileDraftKind::Ssh,
+                    ..ProfileDraft::default()
+                },
+            },
+            ProfileTemplate {
+                group: TemplateGroup::Basic,
+                draft: ProfileDraft::default(),
+            },
+        ];
+        out.extend(self.available_shells.iter().map(|shell| ProfileTemplate {
+            group: TemplateGroup::Shell,
+            draft: ProfileDraft::from_profile(shell),
+        }));
+        out.extend(self.ssh_config_profiles.iter().map(|host| ProfileTemplate {
+            group: TemplateGroup::SshConfig,
+            draft: ProfileDraft::from_ssh_fields(host),
+        }));
+        out
+    }
+}
+
+impl App {
     pub(super) fn update_settings_message(&mut self, message: SettingsMessage) -> Task<Message> {
         match message {
-            SettingsMessage::AddSshProfile => {
-                self.settings_draft.open_create_ssh_profile_modal();
+            SettingsMessage::AddProfile => {
+                self.settings_draft.open_template_picker();
+                self.modal_anim.go_mut(true, Instant::now());
             }
-            SettingsMessage::EditSshProfile(index) => {
-                self.settings_draft.open_edit_ssh_profile_modal(index);
-            }
-            SettingsMessage::RequestRemoveSshProfile(index) => {
-                self.settings_draft.request_delete_ssh_profile(index);
-            }
-            SettingsMessage::CancelRemoveSshProfile => {
-                self.settings_draft.cancel_delete_ssh_profile();
-            }
-            SettingsMessage::ConfirmRemoveSshProfile => {
-                if let Some((host, user)) = self.settings_draft.confirm_delete_ssh_profile() {
-                    crate::keychain::delete_password(&host, &user);
-                    self.save_ssh_profiles();
+            SettingsMessage::ProfileTemplateSelected(index) => {
+                if let Some(template) = self.profile_templates().into_iter().nth(index) {
+                    self.settings_draft.start_from_template(template.draft);
                 }
             }
-            SettingsMessage::SshProfileModalFieldChanged(field, value) => {
-                self.settings_draft.update_ssh_profile_modal(field, value);
+            SettingsMessage::EditProfile(index) => {
+                self.settings_draft.open_edit_profile_modal(index);
+                self.modal_anim.go_mut(true, Instant::now());
+            }
+            SettingsMessage::LaunchProfile(index) => {
+                if let Some(profile) = self
+                    .settings_draft
+                    .profiles
+                    .get(index)
+                    .and_then(|draft| draft.to_profile())
+                {
+                    return self.launch_profile(profile);
+                }
+            }
+            SettingsMessage::RequestRemoveProfile(index) => {
+                self.settings_draft.request_delete_profile(index);
+            }
+            SettingsMessage::CancelRemoveProfile => {
+                self.settings_draft.cancel_delete_profile();
+            }
+            SettingsMessage::ConfirmRemoveProfile => {
+                if let Some(removed) = self.settings_draft.confirm_delete_profile() {
+                    if let Some(ssh) = removed.to_ssh_profile() {
+                        crate::keychain::delete_password(&ssh.host, &ssh.user);
+                    }
+                    self.save_profiles();
+                }
+            }
+            SettingsMessage::ProfileModalFieldChanged(field, value) => {
+                self.settings_draft.update_profile_modal(field, value);
+            }
+            SettingsMessage::ProfileModalTabSelected(tab) => {
+                self.settings_draft.set_profile_modal_tab(tab);
             }
             SettingsMessage::TestSshConnection => match self
                 .settings_draft
@@ -181,26 +232,28 @@ impl App {
             SettingsMessage::SshConnectionTestFinished(result) => {
                 self.settings_draft.finish_ssh_connection_test(result);
             }
-            SettingsMessage::CloseSshProfileModal => {
-                self.settings_draft.close_ssh_profile_modal();
+            SettingsMessage::CloseProfileModal => {
+                self.settings_draft.close_profile_modal();
+                self.modal_anim.go_mut(false, Instant::now());
             }
-            SettingsMessage::SaveSshProfileModal => {
-                match self.settings_draft.save_ssh_profile_modal() {
-                    Ok(Some(profile)) => {
-                        match profile.password.as_deref() {
+            SettingsMessage::SaveProfileModal => match self.settings_draft.save_profile_modal() {
+                Ok(Some(profile)) => {
+                    if let Some(ssh) = profile.ssh_profile() {
+                        match ssh.password.as_deref() {
                             Some(pw) => {
-                                crate::keychain::set_password(&profile.host, &profile.user, pw);
+                                crate::keychain::set_password(&ssh.host, &ssh.user, pw);
                             }
                             None => {
-                                crate::keychain::delete_password(&profile.host, &profile.user);
+                                crate::keychain::delete_password(&ssh.host, &ssh.user);
                             }
                         }
-                        self.save_ssh_profiles();
                     }
-                    Ok(None) => {}
-                    Err(err) => eprintln!("Failed to update SSH profile draft: {err}"),
+                    self.save_profiles();
+                    self.modal_anim.go_mut(false, Instant::now());
                 }
-            }
+                Ok(None) => self.modal_anim.go_mut(false, Instant::now()),
+                Err(err) => eprintln!("Failed to update profile draft: {err}"),
+            },
             SettingsMessage::OpenTab => {
                 self.settings_open = true;
                 self.active_tab = SETTINGS_TAB_INDEX;

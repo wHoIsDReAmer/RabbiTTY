@@ -2,7 +2,6 @@
 
 use super::super::{App, Message, SETTINGS_TAB_INDEX, SftpMessage};
 use crate::gui::sftp::{SftpDrawerState, TransferRow};
-use crate::gui::tab::ShellKind;
 use crate::ssh::SshSessionHandle;
 use crate::ssh::sftp;
 use iced::Task;
@@ -17,7 +16,7 @@ impl App {
             SftpMessage::ToggleDrawer => {
                 if self.active_tab != SETTINGS_TAB_INDEX
                     && let Some(tab) = self.tabs.get_mut(self.active_tab)
-                    && matches!(tab.shell, ShellKind::Ssh(_))
+                    && tab.profile.ssh_profile().is_some()
                 {
                     let was_open = tab.sftp.open;
                     tab.sftp.anim.go_mut(!was_open, Instant::now());
@@ -105,7 +104,7 @@ impl App {
             SftpMessage::RequestUpload => {
                 if self.active_tab != SETTINGS_TAB_INDEX
                     && let Some(tab) = self.tabs.get(self.active_tab)
-                    && matches!(tab.shell, ShellKind::Ssh(_))
+                    && tab.profile.ssh_profile().is_some()
                 {
                     let tab_id = tab.id;
                     return Task::perform(

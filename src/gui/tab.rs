@@ -4,6 +4,7 @@ use crate::session::{LaunchSpec, OutputEvent, Session, SessionError};
 use crate::terminal::{CellVisual, Selection, TerminalEngine, TerminalSize, TerminalTheme};
 use iced::futures::channel::mpsc;
 use iced::keyboard::{Key, Modifiers, key::Named};
+use serde::{Deserialize, Serialize};
 use std::borrow::Cow;
 use std::fmt::{Display, Formatter};
 use std::io::Write;
@@ -13,8 +14,7 @@ use std::sync::{Arc, Mutex};
 pub struct TerminalTab {
     pub id: u64,
     pub title: String,
-    #[allow(dead_code)]
-    pub shell: ShellKind,
+    pub profile: Profile,
     pub session: TerminalSession,
     pub selection: Option<Selection>,
     pub sftp: SftpDrawerState,
@@ -28,8 +28,8 @@ pub enum TerminalSession {
 }
 
 impl TerminalTab {
-    pub fn from_shell(
-        shell: ShellKind,
+    pub fn from_profile(
+        profile: Profile,
         columns: usize,
         lines: usize,
         theme: TerminalTheme,
@@ -38,7 +38,7 @@ impl TerminalTab {
         config: &AppConfig,
     ) -> Self {
         Self::launch(
-            shell,
+            profile,
             columns,
             lines,
             theme,
@@ -49,7 +49,7 @@ impl TerminalTab {
     }
 
     fn launch(
-        shell: ShellKind,
+        profile: Profile,
         columns: usize,
         lines: usize,
         theme: TerminalTheme,
@@ -59,16 +59,15 @@ impl TerminalTab {
     ) -> Self {
         let size = TerminalSize::new(columns, lines);
 
-        let title = shell.display_name();
+        let title = profile.display_name();
 
-        let (session, writer) = if let ShellKind::Ssh(ref profile) = shell {
-            let s =
-                Session::spawn_ssh(profile.clone(), id, lines as u16, columns as u16, output_tx);
+        let (session, writer) = if let Some(ssh) = profile.ssh_profile() {
+            let s = Session::spawn_ssh(ssh.clone(), id, lines as u16, columns as u16, output_tx);
 
             let w = s.writer();
             (TerminalSession::Active(s), w)
         } else {
-            let spec = shell.launch_spec(size);
+            let spec = profile.launch_spec(size);
             match Session::spawn(spec, id, output_tx) {
                 Ok(s) => {
                     let w = s.writer();
@@ -90,7 +89,7 @@ impl TerminalTab {
         Self {
             id,
             title,
-            shell,
+            profile,
             session,
             selection: None,
             sftp: SftpDrawerState::new(),
@@ -328,19 +327,75 @@ impl TerminalTab {
     }
 }
 
-#[derive(Debug, Clone)]
-pub enum ShellKind {
-    Default,
-    Shell { name: String, path: String },
+/// A launchable session descriptor: a local shell (default or a specific
+/// program) or an SSH connection. The unifying type behind every tab.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Profile {
+    pub name: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub icon: Option<String>,
+    pub kind: ProfileKind,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum ProfileKind {
+    /// A local PTY. `program: None` resolves the user's default shell.
+    Local {
+        program: Option<String>,
+        #[serde(default)]
+        args: Vec<String>,
+    },
     Ssh(SshProfile),
 }
 
-impl ShellKind {
+impl Profile {
+    pub fn default_shell() -> Self {
+        Self {
+            name: default_shell_display_name(),
+            icon: None,
+            kind: ProfileKind::Local {
+                program: None,
+                args: Vec::new(),
+            },
+        }
+    }
+
+    pub fn shell(name: String, path: String) -> Self {
+        Self {
+            name,
+            icon: None,
+            kind: ProfileKind::Local {
+                program: Some(path),
+                args: vec!["-l".to_string()],
+            },
+        }
+    }
+
+    pub fn ssh(profile: SshProfile) -> Self {
+        Self {
+            name: profile.tab_title(),
+            icon: None,
+            kind: ProfileKind::Ssh(profile),
+        }
+    }
+
+    /// The SSH connection this profile launches, if any.
+    pub fn ssh_profile(&self) -> Option<&SshProfile> {
+        match &self.kind {
+            ProfileKind::Ssh(p) => Some(p),
+            ProfileKind::Local { .. } => None,
+        }
+    }
+
     fn launch_spec(&self, size: TerminalSize) -> LaunchSpec {
-        let (program, args) = match self {
-            ShellKind::Ssh(_) => unreachable!("SSH uses native russh, not launch_spec"),
-            ShellKind::Default => resolve_default_shell(),
-            ShellKind::Shell { path, .. } => (path.clone(), vec!["-l".to_string()]),
+        let (program, args) = match &self.kind {
+            ProfileKind::Ssh(_) => unreachable!("SSH uses native russh, not launch_spec"),
+            ProfileKind::Local { program: None, .. } => resolve_default_shell(),
+            ProfileKind::Local {
+                program: Some(path),
+                args,
+            } => (path.clone(), args.clone()),
         };
 
         let env = title_env_for_shell(&program);
@@ -355,10 +410,9 @@ impl ShellKind {
     }
 
     pub fn display_name(&self) -> String {
-        match self {
-            ShellKind::Default => default_shell_display_name(),
-            ShellKind::Shell { name, .. } => name.clone(),
-            ShellKind::Ssh(profile) => format!("SSH: {}", profile.tab_title()),
+        match &self.kind {
+            ProfileKind::Ssh(profile) => format!("SSH: {}", profile.tab_title()),
+            _ => self.name.clone(),
         }
     }
 }
@@ -448,8 +502,8 @@ fn command_exists(program: &str) -> bool {
 }
 
 /// Discover available shells from `/etc/shells` (Unix) or known Windows shells.
-pub fn discover_available_shells() -> Vec<ShellKind> {
-    let mut shells = vec![ShellKind::Default];
+pub fn discover_available_shells() -> Vec<Profile> {
+    let mut shells = vec![Profile::default_shell()];
 
     #[cfg(target_family = "unix")]
     {
@@ -487,30 +541,23 @@ pub fn discover_available_shells() -> Vec<ShellKind> {
             if !seen_names.insert(name.to_string()) {
                 continue;
             }
-            shells.push(ShellKind::Shell {
-                name: name.to_string(),
-                path: line.to_string(),
-            });
+            shells.push(Profile::shell(name.to_string(), line.to_string()));
         }
     }
 
     #[cfg(target_family = "windows")]
     {
-        shells.push(ShellKind::Shell {
-            name: "cmd".to_string(),
-            path: "cmd".to_string(),
-        });
+        shells.push(Profile::shell("cmd".to_string(), "cmd".to_string()));
     }
 
     shells
 }
 
-impl Display for ShellKind {
+impl Display for Profile {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        match self {
-            ShellKind::Default => write!(f, "shell"),
-            ShellKind::Shell { name, .. } => write!(f, "{name}"),
-            ShellKind::Ssh(profile) => write!(f, "ssh: {}", profile.tab_title()),
+        match &self.kind {
+            ProfileKind::Ssh(profile) => write!(f, "ssh: {}", profile.tab_title()),
+            _ => write!(f, "{}", self.name),
         }
     }
 }
@@ -565,5 +612,47 @@ mod tests {
             proxy_command: None,
         };
         assert_eq!(no_name_no_user.tab_title(), "bare.host");
+    }
+
+    #[test]
+    fn ssh_profile_snapshot_never_serializes_password() {
+        let profile = Profile::ssh(SshProfile {
+            name: "Prod".into(),
+            host: "prod.example.com".into(),
+            port: 2222,
+            user: "deploy".into(),
+            auth_method: crate::config::SshAuthMethod::Password,
+            identity_file: None,
+            password: Some("hunter2".into()),
+            proxy_command: None,
+        });
+
+        let toml = toml::to_string(&profile).expect("serialize");
+        assert!(!toml.contains("hunter2"), "{toml}");
+        assert!(!toml.contains("password ="), "{toml}");
+
+        let restored: Profile = toml::from_str(&toml).expect("deserialize");
+        assert_eq!(restored.ssh_profile().unwrap().host, "prod.example.com");
+        assert_eq!(restored.ssh_profile().unwrap().port, 2222);
+        assert!(restored.ssh_profile().unwrap().password.is_none());
+    }
+
+    #[test]
+    fn local_profile_round_trips() {
+        let default = Profile::default_shell();
+        let toml = toml::to_string(&default).expect("serialize");
+        let restored: Profile = toml::from_str(&toml).expect("deserialize");
+        assert!(matches!(
+            restored.kind,
+            ProfileKind::Local { program: None, .. }
+        ));
+
+        let shell = Profile::shell("fish".into(), "/opt/bin/fish".into());
+        let restored: Profile =
+            toml::from_str(&toml::to_string(&shell).expect("serialize")).expect("deserialize");
+        assert!(matches!(
+            restored.kind,
+            ProfileKind::Local { program: Some(p), .. } if p == "/opt/bin/fish"
+        ));
     }
 }

@@ -7,7 +7,7 @@ pub mod ime_wrapper;
 pub mod tab_bar;
 pub mod widget_styles;
 
-pub use button::{icon as button_icon, menu_item, primary, secondary};
+pub use button::{icon as button_icon, icon_toggle_content, menu_item, primary, secondary};
 pub use category_transition::CategoryTransition;
 pub use container::panel;
 pub use hover_fade::{HoverStyle, hover_fade};

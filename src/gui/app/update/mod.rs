@@ -1,11 +1,11 @@
 mod settings;
 mod sftp;
-mod tab;
+pub(in crate::gui) mod tab;
 mod terminal;
 
 use super::{App, Message, SETTINGS_TAB_INDEX};
 use crate::gui::settings::SettingsDraft;
-use crate::gui::tab::ShellKind;
+use crate::gui::tab::Profile;
 use iced::keyboard::{Key, key::Named};
 use iced::time::Instant;
 use iced::{Task, widget};
@@ -28,24 +28,24 @@ impl App {
             .filter(|tab| matches!(tab.session, crate::gui::tab::TerminalSession::Active(_)))
     }
 
-    fn save_ssh_profiles(&mut self) {
-        if let Err(err) = self
-            .settings_draft
-            .apply_ssh_profiles_to(&mut self.config.ssh_profiles)
-        {
-            eprintln!("Failed to save SSH profiles: {err}");
-            return;
-        }
+    pub(super) fn dismiss_shell_picker(&mut self) {
+        self.show_shell_picker = false;
+        self.shell_picker_selected = 0;
+        self.modal_anim.go_mut(false, Instant::now());
+    }
+
+    fn save_profiles(&mut self) {
+        self.config.profiles = self.settings_draft.collect_profiles();
 
         match self.config.save() {
             Ok(()) => {
                 self.settings_draft = SettingsDraft::from_config(&self.config);
-                self.settings_draft.set_ssh_profiles_saved();
+                self.settings_draft.set_profiles_saved();
             }
             Err(err) => {
-                let message = format!("Failed to save SSH profiles: {err}");
+                let message = format!("Failed to save profiles: {err}");
                 eprintln!("{message}");
-                self.settings_draft.set_ssh_profiles_error(message);
+                self.settings_draft.set_profiles_error(message);
             }
         }
     }
@@ -95,36 +95,23 @@ impl App {
             Message::OpenShellPicker => {
                 self.show_shell_picker = true;
                 self.shell_picker_selected = 0;
-                self.shell_picker_anim.go_mut(true, Instant::now());
+                self.modal_anim.go_mut(true, Instant::now());
             }
             Message::CloseShellPicker => {
-                self.shell_picker_anim.go_mut(false, Instant::now());
+                self.modal_anim.go_mut(false, Instant::now());
             }
-            Message::CreateTab(shell) => match shell {
-                ShellKind::Ssh(profile) => return self.request_ssh_tab(profile),
-                shell => return self.create_tab(shell),
-            },
-            Message::CreateSshTab(profile_index) => {
-                if let Some(profile) = self.session_ssh_profiles().get(profile_index).cloned() {
-                    return self.request_ssh_tab(profile);
-                }
-            }
+            Message::CreateTab(profile) => return self.launch_profile(profile),
             Message::LaunchFromHistory(index) => {
-                if let Some(entry) = self.session_history.entries.get(index).cloned()
-                    && let Some(shell) = entry.kind.to_shell_kind(&self.config.ssh_profiles)
-                {
-                    return match shell {
-                        ShellKind::Ssh(profile) => self.request_ssh_tab(profile),
-                        shell => self.create_tab(shell),
-                    };
+                if let Some(entry) = self.session_history.entries.get(index).cloned() {
+                    return self.launch_profile(entry.profile);
                 }
             }
             Message::DuplicateTab => {
                 let index = self.tab_context_menu.unwrap_or(self.active_tab);
                 self.tab_context_menu = None;
                 if let Some(tab) = self.tabs.get(index) {
-                    let shell = tab.shell.clone();
-                    return self.create_tab(shell);
+                    let profile = tab.profile.clone();
+                    return self.launch_profile(profile);
                 }
             }
             Message::Sftp(message) => return self.update_sftp(message),
@@ -146,16 +133,11 @@ impl App {
                     if prompt.save_to_keychain {
                         crate::keychain::set_password(&profile.host, &profile.user, &prompt.draft);
                     }
-                    return self.create_tab(crate::gui::tab::ShellKind::Ssh(profile));
+                    return self.create_tab(Profile::ssh(profile));
                 }
             }
             Message::SshPasswordPromptCancel => {
                 self.password_prompt = None;
-            }
-            Message::CreateSshTabFromConfig(index) => {
-                if let Some(profile) = self.ssh_config_profiles.get(index).cloned() {
-                    return self.request_ssh_tab(profile);
-                }
             }
             Message::ShowTabContextMenu(index) => {
                 self.tab_context_menu = Some(index);
@@ -206,7 +188,7 @@ impl App {
             Message::PtySenderReady(sender) => {
                 self.pty_sender = Some(sender);
                 if self.take_initial_shell_request() {
-                    return self.create_tab(ShellKind::Default);
+                    return self.create_tab(Profile::default_shell());
                 }
             }
             Message::PtyOutput(event) => {
@@ -374,7 +356,7 @@ impl App {
             }
             Message::AnimationTick => {
                 let now = Instant::now();
-                if !self.shell_picker_anim.is_animating(now) && !self.shell_picker_anim.value() {
+                if !self.modal_anim.is_animating(now) && !self.modal_anim.value() {
                     self.show_shell_picker = false;
                     self.shell_picker_selected = 0;
                 }
@@ -453,7 +435,7 @@ impl App {
             return Task::none();
         }
 
-        if self.show_shell_picker {
+        if self.show_shell_picker && self.modal_anim.value() {
             match key {
                 Key::Named(Named::Escape) => {
                     return self.update(Message::CloseShellPicker);

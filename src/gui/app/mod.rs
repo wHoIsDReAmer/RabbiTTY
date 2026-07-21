@@ -1,8 +1,9 @@
 use crate::config::AppConfig;
 use crate::gui::settings::{
-    SettingsCategory, SettingsDraft, SettingsField, SshProfileField, TerminalFontOption,
+    ProfileField, ProfileModalTab, SettingsCategory, SettingsDraft, SettingsField,
+    TerminalFontOption,
 };
-use crate::gui::tab::{ShellKind, TerminalTab, discover_available_shells};
+use crate::gui::tab::{Profile, TerminalTab, discover_available_shells};
 use crate::session::OutputEvent;
 use crate::session::history::SessionHistory;
 use crate::terminal::font::discover_system_terminal_fonts;
@@ -29,9 +30,8 @@ pub enum Message {
     CloseTab(usize),
     OpenShellPicker,
     CloseShellPicker,
-    CreateTab(ShellKind),
+    CreateTab(Profile),
     Settings(SettingsMessage),
-    CreateSshTab(usize),
     LaunchFromHistory(usize),
     DuplicateTab,
     Sftp(SftpMessage),
@@ -39,7 +39,6 @@ pub enum Message {
     SshPasswordPromptToggleSave(bool),
     SshPasswordPromptSubmit,
     SshPasswordPromptCancel,
-    CreateSshTabFromConfig(usize),
     ShowTabContextMenu(usize),
     CloseTabContextMenu,
     TerminalRightClick,
@@ -121,16 +120,19 @@ pub enum SettingsMessage {
     FontSelected(TerminalFontOption),
     ToggleShowAllFonts(bool),
 
-    AddSshProfile,
-    EditSshProfile(usize),
-    RequestRemoveSshProfile(usize),
-    CancelRemoveSshProfile,
-    ConfirmRemoveSshProfile,
-    SshProfileModalFieldChanged(SshProfileField, String),
+    AddProfile,
+    EditProfile(usize),
+    LaunchProfile(usize),
+    RequestRemoveProfile(usize),
+    CancelRemoveProfile,
+    ConfirmRemoveProfile,
+    ProfileTemplateSelected(usize),
+    ProfileModalFieldChanged(ProfileField, String),
+    ProfileModalTabSelected(ProfileModalTab),
     TestSshConnection,
     SshConnectionTestFinished(Result<(), String>),
-    CloseSshProfileModal,
-    SaveSshProfileModal,
+    CloseProfileModal,
+    SaveProfileModal,
 
     #[cfg(target_os = "macos")]
     ConfirmRestartForBlur,
@@ -192,7 +194,7 @@ pub struct App {
     pub(super) font_combo_state: combo_box::State<TerminalFontOption>,
     pub(super) show_all_fonts: bool,
     pub(super) all_font_options: Vec<TerminalFontOption>,
-    pub(super) available_shells: Vec<ShellKind>,
+    pub(super) available_shells: Vec<Profile>,
     pub(super) config: AppConfig,
     pub(super) pty_sender: Option<mpsc::UnboundedSender<OutputEvent>>,
     pub(super) initial_shell_opened: bool,
@@ -212,7 +214,7 @@ pub struct App {
     pub(super) settings_debounce_pending: bool,
     pub(super) settings_debounce_seq: u64,
     pub(super) settings_debounce_spawned_seq: u64,
-    pub(super) shell_picker_anim: Animation<bool>,
+    pub(super) modal_anim: Animation<bool>,
     pub(super) settings_category_transition: crate::gui::components::CategoryTransition,
     pub(super) palette: crate::gui::theme::Palette,
     pub(super) ime_active: bool,
@@ -317,7 +319,7 @@ impl App {
             cursor_position: iced::Point::ORIGIN,
             ime_active: false,
             ime_preedit: None,
-            shell_picker_anim: Animation::new(false)
+            modal_anim: Animation::new(false)
                 .duration(std::time::Duration::from_millis(250))
                 .easing(iced::animation::Easing::EaseOutQuint),
             settings_category_transition: crate::gui::components::CategoryTransition::new(),
@@ -465,5 +467,136 @@ mod tests {
 
         assert!(app.take_initial_shell_request());
         assert!(!app.take_initial_shell_request());
+    }
+
+    #[test]
+    fn dismissing_the_picker_rewinds_its_animation() {
+        let mut app = App::new(AppConfig::default());
+        let now = iced::time::Instant::now();
+
+        app.show_shell_picker = true;
+        app.modal_anim.go_mut(true, now);
+        assert!(app.modal_anim.value());
+
+        app.dismiss_shell_picker();
+
+        assert!(!app.show_shell_picker);
+        assert!(!app.modal_anim.value());
+    }
+
+    #[test]
+    fn profile_templates_start_with_blank_ssh_and_local() {
+        let app = App::new(AppConfig::default());
+        let templates = app.profile_templates();
+
+        assert!(templates.len() >= 2);
+        assert!(matches!(
+            templates[0].draft.kind,
+            crate::gui::settings::ProfileDraftKind::Ssh
+        ));
+        assert!(templates[0].draft.host.is_empty());
+        assert!(matches!(
+            templates[1].draft.kind,
+            crate::gui::settings::ProfileDraftKind::Local
+        ));
+    }
+
+    #[test]
+    fn ssh_config_hosts_become_templates() {
+        let mut app = App::new(AppConfig::default());
+        app.ssh_config_profiles = vec![crate::config::SshProfile {
+            name: "kube-1".into(),
+            host: "192.168.0.230".into(),
+            port: 2222,
+            user: "root".into(),
+            ..Default::default()
+        }];
+
+        let seeded = app
+            .profile_templates()
+            .into_iter()
+            .find(|t| t.draft.name == "kube-1")
+            .expect("ssh config host should be offered as a template");
+
+        assert_eq!(seeded.group, crate::gui::settings::TemplateGroup::SshConfig);
+        assert_eq!(seeded.draft.host, "192.168.0.230");
+        assert_eq!(seeded.draft.port, "2222");
+    }
+
+    fn ssh(name: &str) -> crate::config::SshProfile {
+        crate::config::SshProfile {
+            name: name.into(),
+            host: format!("{name}.example.com"),
+            port: 22,
+            user: "root".into(),
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn ssh_config_hosts_sit_below_user_profiles() {
+        use crate::gui::app::update::tab::PickerSection;
+
+        let mut app = App::new(AppConfig {
+            profiles: vec![Profile::ssh(ssh("mine"))],
+            ..Default::default()
+        });
+        app.ssh_config_profiles = vec![ssh("from-config")];
+
+        let sections: Vec<_> = app
+            .shell_picker_entries()
+            .into_iter()
+            .map(|e| (e.section, e.label))
+            .collect();
+
+        let ssh_section: Vec<_> = sections
+            .iter()
+            .filter(|(s, _)| *s == PickerSection::Ssh)
+            .map(|(_, l)| l.as_str())
+            .collect();
+        let config_section: Vec<_> = sections
+            .iter()
+            .filter(|(s, _)| *s == PickerSection::SshConfig)
+            .map(|(_, l)| l.as_str())
+            .collect();
+
+        assert_eq!(ssh_section, vec!["mine"]);
+        assert_eq!(config_section, vec!["from-config"]);
+    }
+
+    #[test]
+    fn a_user_profile_shadows_the_ssh_config_host_it_shares_a_name_with() {
+        let mut app = App::new(AppConfig {
+            profiles: vec![Profile::ssh(ssh("kube-1"))],
+            ..Default::default()
+        });
+        app.ssh_config_profiles = vec![ssh("kube-1")];
+
+        let named: Vec<_> = app
+            .shell_picker_entries()
+            .into_iter()
+            .filter(|e| e.label == "kube-1")
+            .collect();
+
+        assert_eq!(named.len(), 1);
+    }
+
+    #[test]
+    fn picker_selection_maps_to_the_entry_at_that_position() {
+        let mut app = App::new(AppConfig {
+            profiles: vec![Profile::ssh(ssh("first"))],
+            ..Default::default()
+        });
+        app.ssh_config_profiles = vec![ssh("second")];
+
+        let entries = app.shell_picker_entries();
+        assert_eq!(app.shell_picker_option_count(), entries.len());
+
+        app.shell_picker_selected = 1;
+        let expected = entries[1].label.clone();
+        assert_eq!(
+            app.shell_picker_entries()[app.shell_picker_selected].label,
+            expected
+        );
     }
 }

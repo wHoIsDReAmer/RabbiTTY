@@ -1,5 +1,6 @@
 pub mod app;
 pub mod components;
+pub mod icons;
 pub mod render;
 pub mod settings;
 pub mod sftp;

@@ -1,27 +1,13 @@
+use crate::gui::tab::Profile;
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 const MAX_ENTRIES: usize = 10;
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-#[serde(tag = "type")]
-pub enum SessionKind {
-    Default,
-    Shell {
-        name: String,
-        path: String,
-    },
-    Ssh {
-        host: String,
-        port: u16,
-        user: String,
-    },
-}
-
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SessionHistoryEntry {
-    pub kind: SessionKind,
+    pub profile: Profile,
     pub display_name: String,
     pub timestamp: u64,
 }
@@ -52,12 +38,12 @@ impl SessionHistory {
         }
     }
 
-    pub fn record(&mut self, kind: SessionKind, display_name: String) {
-        self.entries.retain(|e| e.kind != kind);
+    pub fn record(&mut self, profile: Profile, display_name: String) {
+        self.entries.retain(|e| e.display_name != display_name);
         self.entries.insert(
             0,
             SessionHistoryEntry {
-                kind,
+                profile,
                 display_name,
                 timestamp: SystemTime::now()
                     .duration_since(UNIX_EPOCH)
@@ -67,44 +53,6 @@ impl SessionHistory {
         );
         self.entries.truncate(MAX_ENTRIES);
         self.save();
-    }
-}
-
-impl From<&crate::gui::tab::ShellKind> for SessionKind {
-    fn from(shell: &crate::gui::tab::ShellKind) -> Self {
-        use crate::gui::tab::ShellKind;
-        match shell {
-            ShellKind::Default => SessionKind::Default,
-            ShellKind::Shell { name, path } => SessionKind::Shell {
-                name: name.clone(),
-                path: path.clone(),
-            },
-            ShellKind::Ssh(p) => SessionKind::Ssh {
-                host: p.host.clone(),
-                port: p.port,
-                user: p.user.clone(),
-            },
-        }
-    }
-}
-
-impl SessionKind {
-    pub fn to_shell_kind(
-        &self,
-        ssh_profiles: &[crate::config::SshProfile],
-    ) -> Option<crate::gui::tab::ShellKind> {
-        use crate::gui::tab::ShellKind;
-        match self {
-            SessionKind::Default => Some(ShellKind::Default),
-            SessionKind::Shell { name, path } => Some(ShellKind::Shell {
-                name: name.clone(),
-                path: path.clone(),
-            }),
-            SessionKind::Ssh { host, port, user } => ssh_profiles
-                .iter()
-                .find(|p| p.host == *host && p.port == *port && p.user == *user)
-                .map(|p| ShellKind::Ssh(p.clone())),
-        }
     }
 }
 

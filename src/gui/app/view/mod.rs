@@ -48,7 +48,9 @@ impl App {
         let tab_alpha = (ui_alpha * 0.6).clamp(0.0, 1.0);
         let sftp_toggle = if self.active_tab != SETTINGS_TAB_INDEX {
             self.tabs.get(self.active_tab).and_then(|tab| {
-                matches!(tab.shell, crate::gui::tab::ShellKind::Ssh(_))
+                tab.profile
+                    .ssh_profile()
+                    .is_some()
                     .then_some((Message::Sftp(SftpMessage::ToggleDrawer), tab.sftp.open))
             })
         } else {
@@ -354,12 +356,12 @@ impl App {
 
             for (i, entry) in self.session_history.entries.iter().enumerate() {
                 let name = entry.display_name.clone();
-                let kind_label = match &entry.kind {
-                    crate::session::history::SessionKind::Default => {
+                let kind_label = match &entry.profile.kind {
+                    crate::gui::tab::ProfileKind::Local { program: None, .. } => {
                         t!("session_kind.default_shell")
                     }
-                    crate::session::history::SessionKind::Shell { .. } => t!("session_kind.shell"),
-                    crate::session::history::SessionKind::Ssh { .. } => t!("session_kind.ssh"),
+                    crate::gui::tab::ProfileKind::Local { .. } => t!("session_kind.shell"),
+                    crate::gui::tab::ProfileKind::Ssh(_) => t!("session_kind.ssh"),
                 };
 
                 let label_col = column![
