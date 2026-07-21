@@ -813,13 +813,7 @@ pub fn section<'a>(
     palette: Palette,
 ) -> Element<'a, Message> {
     column(vec![
-        text(title)
-            .size(11)
-            .color(Color {
-                a: 0.75,
-                ..palette.text_secondary
-            })
-            .into(),
+        text(title).size(22).color(palette.text).into(),
         column(vec![body]).spacing(SPACING_LARGE).into(),
     ])
     .spacing(SPACING_LARGE)

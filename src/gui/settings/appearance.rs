@@ -1,15 +1,16 @@
 use crate::config::{AppConfig, TabBarPosition};
 use crate::gui::app::{Message, SettingsMessage};
 use crate::gui::components::{
-    accent_combo_box_input_style, accent_combo_box_menu_style, accent_toggler_style,
+    accent_combo_box_input_style, accent_combo_box_menu_style, accent_pick_list_style,
+    accent_toggler_style,
 };
 use crate::gui::settings::{
-    ROW_SPACING, SettingsDraft, SettingsField, TerminalFontOption, hint_text,
+    ROW_SPACING, SECTION_SPACING, SettingsDraft, SettingsField, TerminalFontOption, hint_text,
     input_row_with_suffix, section, segmented_control, setting_row,
 };
-use crate::gui::theme::{Palette, SPACING_NORMAL};
+use crate::gui::theme::Palette;
 use crate::i18n::AVAILABLE_LOCALES;
-use iced::widget::{checkbox, column, combo_box, row, toggler};
+use iced::widget::{checkbox, column, combo_box, pick_list, row, toggler};
 use iced::{Element, Length};
 
 pub fn view<'a>(
@@ -22,7 +23,7 @@ pub fn view<'a>(
 ) -> Element<'a, Message> {
     let language_section = section(
         t!("settings.language.section_title"),
-        language_picker(&draft.language, palette, config.ui.animations_enabled),
+        language_picker(&draft.language, palette),
         palette,
     );
 
@@ -136,7 +137,7 @@ pub fn view<'a>(
         font_section,
         padding_section,
     ])
-    .spacing(SPACING_NORMAL)
+    .spacing(SECTION_SPACING)
     .width(Length::Fill)
     .into()
 }
@@ -148,30 +149,43 @@ fn tab_bar_position_label(position: TabBarPosition) -> &'static str {
     }
 }
 
-fn language_picker<'a>(
-    current: &'a str,
-    palette: Palette,
-    animations_enabled: bool,
-) -> Element<'a, Message> {
-    let mut segments: Vec<(&'a str, Message, bool)> =
-        Vec::with_capacity(AVAILABLE_LOCALES.len() + 1);
-    segments.push((
-        t!("settings.language.auto"),
-        Message::Settings(SettingsMessage::InputCommitted(
-            SettingsField::AppearanceLanguage,
-            "auto".to_string(),
-        )),
-        current == "auto",
-    ));
+#[derive(Clone, PartialEq, Eq)]
+struct LanguageOption {
+    tag: &'static str,
+    label: &'static str,
+}
+
+impl std::fmt::Display for LanguageOption {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.label)
+    }
+}
+
+fn language_picker<'a>(current: &'a str, palette: Palette) -> Element<'a, Message> {
+    let mut options: Vec<LanguageOption> = Vec::with_capacity(AVAILABLE_LOCALES.len() + 1);
+    options.push(LanguageOption {
+        tag: "auto",
+        label: t!("settings.language.auto"),
+    });
     for locale in AVAILABLE_LOCALES {
-        segments.push((
-            locale.native_label,
+        options.push(LanguageOption {
+            tag: locale.tag,
+            label: locale.native_label,
+        });
+    }
+    let selected = options.iter().find(|o| o.tag == current).cloned();
+
+    setting_row(
+        "",
+        pick_list(options, selected, |option: LanguageOption| {
             Message::Settings(SettingsMessage::InputCommitted(
                 SettingsField::AppearanceLanguage,
-                locale.tag.to_string(),
-            )),
-            current == locale.tag,
-        ));
-    }
-    segmented_control("", segments, palette, animations_enabled)
+                option.tag.to_string(),
+            ))
+        })
+        .width(Length::Fixed(180.0))
+        .style(accent_pick_list_style(palette))
+        .menu_style(accent_combo_box_menu_style(palette)),
+        palette,
+    )
 }

@@ -88,25 +88,6 @@ impl App {
             ..Default::default()
         });
 
-        let breadcrumb = row![
-            text("Settings").size(18),
-            text("/").size(16).color(Color {
-                a: 0.3,
-                ..palette.text
-            }),
-            text(self.settings_category.label())
-                .size(16)
-                .color(palette.text),
-        ]
-        .align_y(iced::Alignment::Center)
-        .spacing(SPACING_SMALL);
-
-        let header: Element<Message> = row![breadcrumb, container("").width(Length::Fill),]
-            .align_y(iced::Alignment::Center)
-            .spacing(SPACING_NORMAL)
-            .width(Length::Fill)
-            .into();
-
         let body_content = container(settings::view_category(
             self.settings_category,
             &self.config,
@@ -117,7 +98,7 @@ impl App {
             &self.ssh_config_profiles,
             palette,
         ))
-        .padding([0, 12])
+        .padding([SPACING_LARGE, 12.0])
         .max_width(CONTENT_MAX_WIDTH)
         .width(Length::Fill);
 
@@ -150,15 +131,10 @@ impl App {
             body_scroll
         };
 
-        let content = container(
-            column(vec![header, body])
-                .spacing(SPACING_NORMAL)
-                .height(Length::Fill)
-                .width(Length::Fill),
-        )
-        .width(Length::Fill)
-        .height(Length::Fill)
-        .padding(SPACING_LARGE);
+        let content = container(body)
+            .width(Length::Fill)
+            .height(Length::Fill)
+            .padding(SPACING_LARGE);
 
         let settings_layout: Element<Message> = row![sidebar, content]
             .spacing(SPACING_LARGE)
