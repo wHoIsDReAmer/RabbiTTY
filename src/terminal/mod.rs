@@ -1,6 +1,7 @@
 mod engine;
 pub mod font;
 pub mod theme;
+pub mod url;
 
 pub use engine::TerminalEngine;
 pub use theme::TerminalTheme;
@@ -148,7 +149,7 @@ mod selection_tests {
     }
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone)]
 pub struct CellVisual {
     pub ch: char,
     pub col: usize,
@@ -157,4 +158,5 @@ pub struct CellVisual {
     pub bg: [f32; 4],
     pub underline: bool,
     pub wide: bool,
+    pub hyperlink: Option<std::sync::Arc<str>>,
 }

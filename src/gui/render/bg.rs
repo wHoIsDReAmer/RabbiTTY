@@ -184,6 +184,7 @@ impl BackgroundPipeline {
         cursor_shape: CursorShape,
         cursor_color: [f32; 4],
         background_opacity: f32,
+        link_row: Option<(usize, usize, usize)>,
     ) {
         self.instances.clear();
         let needed = cells.len().saturating_sub(self.instances.capacity());
@@ -206,6 +207,35 @@ impl BackgroundPipeline {
                 color: bg,
             }
         }));
+
+        self.instances.extend(
+            cells
+                .iter()
+                .filter(|cell| cell.underline)
+                .map(|cell| InstanceRaw {
+                    pos: [cell.col as u32, cell.row as u32],
+                    rect_offset: [0.0, 0.9],
+                    rect_size: [1.0, 0.06],
+                    color: cell.fg,
+                }),
+        );
+
+        if let Some((row, start, end)) = link_row {
+            let cols = cells.iter().map(|c| c.col).max().unwrap_or(0);
+            for col in start..=end.min(cols) {
+                let color = cells
+                    .iter()
+                    .find(|c| c.row == row && c.col == col)
+                    .map(|c| c.fg)
+                    .unwrap_or([1.0, 1.0, 1.0, 1.0]);
+                self.instances.push(InstanceRaw {
+                    pos: [col as u32, row as u32],
+                    rect_offset: [0.0, 0.9],
+                    rect_size: [1.0, 0.06],
+                    color,
+                });
+            }
+        }
 
         if let Some(pos) = cursor {
             let (rect_offset, rect_size) = match cursor_shape {
