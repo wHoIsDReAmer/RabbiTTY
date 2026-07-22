@@ -8,6 +8,8 @@ use iced::widget::shader::{Action, Pipeline, Primitive, Shader, Viewport};
 use iced::{Event, Length, Point, Rectangle};
 use std::sync::Arc;
 
+pub const SCROLLBAR_WIDTH: f32 = 8.0;
+
 mod bg;
 mod composite;
 mod text;
@@ -21,6 +23,7 @@ const SELECTION_BG: [f32; 4] = [0.25, 0.38, 0.60, 1.0];
 #[derive(Debug, Clone)]
 pub struct PaneView {
     pub id: u64,
+    pub scroll_history: usize,
     pub cells: Arc<Vec<CellVisual>>,
     pub grid_size: TerminalSize,
     pub selection: Option<Selection>,
@@ -33,6 +36,7 @@ pub struct PaneView {
 
 pub struct TerminalProgram {
     pub panes: Vec<PaneView>,
+    pub scrollbar_color: [f32; 4],
     pub focused: u64,
     pub focus_color: [f32; 4],
     pub divider_color: [f32; 4],
@@ -202,6 +206,35 @@ impl TerminalProgram {
         self.panes.iter().find(|p| p.id == id)
     }
 
+    fn scrollbar_at(&self, pos: Point, bounds: Rectangle) -> Option<(u64, Rectangle)> {
+        let regions = self.regions(bounds);
+        regions.into_iter().find_map(|(id, rect)| {
+            let pane = self.pane(id)?;
+            if pane.scroll_history == 0 {
+                return None;
+            }
+            let bar = Rectangle {
+                x: rect.x + rect.width - SCROLLBAR_WIDTH,
+                y: rect.y,
+                width: SCROLLBAR_WIDTH,
+                height: rect.height,
+            };
+            bar.contains(pos).then_some((id, rect))
+        })
+    }
+
+    fn scroll_rel_at(&self, id: u64, pos: Point, bounds: Rectangle) -> Option<f32> {
+        let pane = self.pane(id)?;
+        let rect = self
+            .regions(bounds)
+            .into_iter()
+            .find(|(rid, _)| *rid == id)?
+            .1;
+        let total = (pane.scroll_history + pane.grid_size.lines).max(1) as f32;
+        let thumb = (rect.height * pane.grid_size.lines as f32 / total).max(16.0);
+        Some(scrollbar_rel(pos.y, rect.y, rect.height, thumb))
+    }
+
     fn pane_under(&self, pos: Point, bounds: Rectangle) -> Option<(&PaneView, Rectangle)> {
         let regions = self.regions(bounds);
         let id = crate::gui::pane::pane_at(&regions, pos)?;
@@ -218,6 +251,7 @@ pub struct TerminalShaderState {
     /// Last left-button click, used to detect double/triple clicks.
     last_click: Option<Click>,
     drag_pane: Option<u64>,
+    scrollbar_drag: Option<u64>,
     last_bounds: Rectangle,
     modifiers: iced::keyboard::Modifiers,
 }
@@ -245,6 +279,11 @@ fn clamp_to_bounds(absolute: Point, bounds: Rectangle) -> Point {
         (absolute.x - bounds.x).clamp(0.0, bounds.width.max(0.0)),
         (absolute.y - bounds.y).clamp(0.0, bounds.height.max(0.0)),
     )
+}
+
+fn scrollbar_rel(pos_y: f32, rect_y: f32, rect_height: f32, thumb: f32) -> f32 {
+    let travel = (rect_height - thumb).max(1.0);
+    ((pos_y - rect_y - thumb / 2.0) / travel).clamp(0.0, 1.0)
 }
 
 fn link_modifier(modifiers: iced::keyboard::Modifiers) -> bool {
@@ -284,6 +323,17 @@ impl ShaderProgram<Message> for TerminalProgram {
             }
             Event::Mouse(mouse::Event::ButtonPressed(mouse::Button::Left)) => {
                 let pos = cursor.position_in(bounds)?;
+
+                if let Some((id, _)) = self.scrollbar_at(pos, bounds) {
+                    state.scrollbar_drag = Some(id);
+                    if let Some(rel) = self.scroll_rel_at(id, pos, bounds) {
+                        return Some(
+                            Action::publish(Message::PaneScrollTo { pane: id, rel }).and_capture(),
+                        );
+                    }
+                    return None;
+                }
+
                 let (pane, rect) = self.pane_under(pos, bounds)?;
                 let grid_pos = pane.pixel_to_grid(pos, rect, padding, self.cell_size);
 
@@ -368,6 +418,16 @@ impl ShaderProgram<Message> for TerminalProgram {
                             .unwrap_or(Point::ORIGIN)
                     })
                 });
+                if let Some(id) = state.scrollbar_drag {
+                    let pos = cursor
+                        .position_in(bounds)
+                        .or_else(|| cursor.position().map(|p| clamp_to_bounds(p, bounds)))?;
+                    let rel = self.scroll_rel_at(id, pos, bounds)?;
+                    return Some(
+                        Action::publish(Message::PaneScrollTo { pane: id, rel }).and_capture(),
+                    );
+                }
+
                 let pos = pos_dragging?;
                 let regions = self.regions(bounds);
                 let (pane, rect) = state
@@ -446,6 +506,9 @@ impl ShaderProgram<Message> for TerminalProgram {
                         .and_capture(),
                     );
                 }
+                if state.scrollbar_drag.take().is_some() {
+                    return None;
+                }
                 if state.dragging {
                     state.dragging = false;
                     state.drag_pane = None;
@@ -488,10 +551,19 @@ impl ShaderProgram<Message> for TerminalProgram {
                             p.link_span_at(grid)
                                 .map(|(start, end)| (grid.row, start, end))
                         });
+                let scrollbar = (pane.scroll_history > 0).then(|| {
+                    let total = (pane.scroll_history + pane.grid_size.lines).max(1) as f32;
+                    let height = pane.grid_size.lines as f32 / total;
+                    let top = (pane.scroll_history - pane.display_offset.min(pane.scroll_history))
+                        as f32
+                        / total;
+                    [top, height]
+                });
                 Some(PanePrimitive {
                     cells: Arc::clone(&pane.cells),
                     origin: [inner.x, inner.y],
                     rect: [rect.x, rect.y, rect.width, rect.height],
+                    scrollbar,
                     focused: pane.id == self.focused,
                     selection: pane.selection,
                     display_offset: pane.display_offset,
@@ -504,6 +576,7 @@ impl ShaderProgram<Message> for TerminalProgram {
 
         TerminalPrimitive {
             panes,
+            scrollbar_color: self.scrollbar_color,
             focus_color: self.focus_color,
             divider_color: self.divider_color,
             cell_size: self.cell_size,
@@ -572,6 +645,7 @@ struct PaneSignature {
     cells_len: usize,
     origin: [f32; 2],
     rect: [f32; 4],
+    scrollbar: Option<[u32; 2]>,
     focused: bool,
     selection: Option<Selection>,
     display_offset: usize,
@@ -585,6 +659,7 @@ pub struct PanePrimitive {
     cells: Arc<Vec<CellVisual>>,
     origin: [f32; 2],
     rect: [f32; 4],
+    scrollbar: Option<[f32; 2]>,
     focused: bool,
     selection: Option<Selection>,
     display_offset: usize,
@@ -606,6 +681,9 @@ impl PanePrimitive {
                 self.rect[3] * scale,
             ],
             focused: self.focused,
+            scrollbar: self
+                .scrollbar
+                .map(|[top, height]| [(top * 4096.0) as u32, (height * 4096.0) as u32]),
             selection: self.selection,
             display_offset: self.display_offset,
             cursor: self.cursor,
@@ -618,6 +696,7 @@ impl PanePrimitive {
 #[derive(Debug)]
 pub struct TerminalPrimitive {
     panes: Vec<PanePrimitive>,
+    scrollbar_color: [f32; 4],
     focus_color: [f32; 4],
     divider_color: [f32; 4],
     cell_size: [f32; 2],
@@ -708,6 +787,34 @@ impl Primitive for TerminalPrimitive {
                     .filter(|_| self.cursor_shape == crate::config::CursorShape::Block),
                 pane.cursor_color,
                 origin,
+            );
+        }
+
+        for pane in &self.panes {
+            let Some([top, height]) = pane.scrollbar else {
+                continue;
+            };
+            let [x, y, w, h] = pane.rect.map(|v| v * scale);
+            let bar_w = SCROLLBAR_WIDTH * scale;
+            let bar_x = x + w - bar_w;
+            pipeline.bg.push_px_rect(
+                [bar_x, y],
+                [bar_w, h],
+                cell_size,
+                [
+                    self.divider_color[0],
+                    self.divider_color[1],
+                    self.divider_color[2],
+                    self.divider_color[3] * 0.6,
+                ],
+            );
+            let thumb_h = (h * height).max(16.0 * scale).min(h);
+            let thumb_y = y + (h - thumb_h) * (top / (1.0 - height).max(0.0001)).clamp(0.0, 1.0);
+            pipeline.bg.push_px_rect(
+                [bar_x, thumb_y],
+                [bar_w, thumb_h],
+                cell_size,
+                self.scrollbar_color,
             );
         }
 
@@ -833,5 +940,34 @@ impl Primitive for TerminalPrimitive {
         composite_pass.set_bind_group(0, composite.bind_group(), &[]);
         composite_pass.set_vertex_buffer(0, composite.quad_buffer().slice(..));
         composite_pass.draw(0..6, 0..1);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn dragging_the_scrollbar_to_the_top_scrolls_back_through_history() {
+        // `Pane::scroll_to_relative` reads 0.0 as the oldest line and 1.0 as
+        // the newest, so the top of the track must map to 0.0.
+        let top = scrollbar_rel(0.0, 0.0, 600.0, 60.0);
+        let bottom = scrollbar_rel(600.0, 0.0, 600.0, 60.0);
+
+        assert_eq!(top, 0.0);
+        assert_eq!(bottom, 1.0);
+        assert!(top < bottom, "scrollbar axis is inverted");
+    }
+
+    #[test]
+    fn the_scrollbar_midpoint_lands_mid_history() {
+        let mid = scrollbar_rel(300.0, 0.0, 600.0, 60.0);
+        assert!((mid - 0.5).abs() < 0.01, "midpoint mapped to {mid}");
+    }
+
+    #[test]
+    fn scrollbar_rel_is_offset_by_the_pane_position() {
+        let inside_second_pane = scrollbar_rel(400.0, 400.0, 600.0, 60.0);
+        assert_eq!(inside_second_pane, 0.0);
     }
 }

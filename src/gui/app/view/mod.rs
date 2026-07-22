@@ -14,7 +14,7 @@ use crate::gui::components::ime_wrapper::ImeEnabled;
 use crate::gui::components::{panel, secondary as button_secondary, tab_bar};
 use crate::gui::render::TerminalProgram;
 use crate::gui::theme::{RADIUS_SMALL, SPACING_LARGE, SPACING_NORMAL, SPACING_SMALL};
-use iced::widget::{button, column, container, image, row, scrollable, stack, text};
+use iced::widget::{button, column, container, image, stack, text};
 use iced::{Alignment, Background, Border, Color, Element, Length};
 use std::sync::LazyLock;
 
@@ -172,16 +172,16 @@ impl App {
 
         // identical to other panes (e.g. Settings) and avoids double blending.
         let clear_color = [0.0, 0.0, 0.0, 0.0];
-        let (_, scroll_history) = active_tab.scroll_position();
         let cursor_visible = !self.config.terminal.cursor_blink || self.cursor_blink_on;
         let terminal_widget = TerminalProgram {
             panes: tab
                 .panes
                 .iter()
                 .map(|pane| {
-                    let (pane_offset, _) = pane.scroll_position();
+                    let (pane_offset, pane_history) = pane.scroll_position();
                     crate::gui::render::PaneView {
                         id: pane.id,
+                        scroll_history: pane_history,
                         cells: pane.render_cells(),
                         grid_size: pane.size(),
                         selection: pane.selection,
@@ -199,6 +199,12 @@ impl App {
             cell_size: [
                 self.config.terminal.cell_width.max(1.0),
                 self.config.terminal.cell_height.max(1.0),
+            ],
+            scrollbar_color: [
+                self.palette.text_secondary.r,
+                self.palette.text_secondary.g,
+                self.palette.text_secondary.b,
+                0.45,
             ],
             focused: tab.focused,
             focus_color: [
@@ -228,34 +234,7 @@ impl App {
         .width(Length::Fill)
         .height(Length::Fill);
 
-        let terminal_view: Element<Message> = if scroll_history > 0 {
-            let cell_height = self.config.terminal.cell_height.max(1.0);
-            let content_height = (scroll_history + dims.lines) as f32 * cell_height;
-            let scroll_content = container("")
-                .width(Length::Fill)
-                .height(Length::Fixed(content_height));
-
-            let scrollbar = scrollable(scroll_content)
-                .id(crate::gui::app::update::TERMINAL_SCROLLABLE_ID.clone())
-                .direction(scrollable::Direction::Vertical(
-                    scrollable::Scrollbar::new().width(8).scroller_width(8),
-                ))
-                .anchor_bottom()
-                .on_scroll(|viewport: scrollable::Viewport| {
-                    let rel = viewport.relative_offset();
-                    Message::TerminalScroll(rel.y)
-                })
-                .style(crate::gui::theme::scrollbar_style(self.palette))
-                .width(Length::Fixed(8.0))
-                .height(Length::Fill);
-
-            row![terminal_widget, scrollbar]
-                .height(Length::Fill)
-                .width(Length::Fill)
-                .into()
-        } else {
-            terminal_widget.into()
-        };
+        let terminal_view: Element<Message> = terminal_widget.into();
 
         let now = iced::time::Instant::now();
         let drawer_progress: f32 = active_tab

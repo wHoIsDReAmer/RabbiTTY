@@ -87,7 +87,10 @@ pub enum Message {
     ImeStateChanged(bool),
     ImeCommit(String),
     ImePreedit(String, Option<std::ops::Range<usize>>),
-    TerminalScroll(f32),
+    PaneScrollTo {
+        pane: u64,
+        rel: f32,
+    },
     TerminalWheelScroll(f32),
 
     WindowResized(Size),
@@ -207,7 +210,6 @@ pub struct App {
     pub(super) initial_shell_opened: bool,
     pub(super) next_tab_id: u64,
     pub(super) tab_bar_scroll_x: f32,
-    pub(super) ignore_scrollable_sync: u8,
     pub(super) scroll_follow_bottom: bool,
     pub(super) dragging_tab: Option<usize>,
     pub(super) drag_target: Option<usize>,
@@ -307,7 +309,6 @@ impl App {
             initial_shell_opened: false,
             next_tab_id: 1,
             tab_bar_scroll_x: 0.0,
-            ignore_scrollable_sync: 0,
             scroll_follow_bottom: true,
             dragging_tab: None,
             drag_target: None,
@@ -743,5 +744,36 @@ mod tests {
                 "{rect:?} collapsed; splits are not alternating"
             );
         }
+    }
+
+    #[test]
+    fn each_pane_scrolls_on_its_own() {
+        let mut app = app_with_pty();
+        let _ = app.update(Message::CreateTab(Profile::default_shell()));
+        app.terminal_area = Size::new(1000.0, 600.0);
+        let _ = app.split_focused(crate::gui::pane::Axis::Vertical);
+
+        let ids = app.tabs[0].layout.leaves();
+        let (left, right) = (ids[0], ids[1]);
+
+        for _ in 0..200 {
+            app.tabs[0].pane_mut(left).unwrap().feed_bytes(b"line\r\n");
+        }
+        assert!(app.tabs[0].pane_mut(left).unwrap().scroll_position().1 > 0);
+
+        let _ = app.update(Message::PaneScrollTo {
+            pane: left,
+            rel: 0.0,
+        });
+
+        assert!(
+            app.tabs[0].pane_mut(left).unwrap().scroll_position().0 > 0,
+            "scrollbar did not scroll its own pane"
+        );
+        assert_eq!(
+            app.tabs[0].pane_mut(right).unwrap().scroll_position().0,
+            0,
+            "scrolling one pane moved another"
+        );
     }
 }

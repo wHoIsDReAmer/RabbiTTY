@@ -1,8 +1,8 @@
 use super::super::{App, Message, SETTINGS_TAB_INDEX};
-use super::{TAB_BAR_SCROLLABLE_ID, TERMINAL_SCROLLABLE_ID};
+use super::TAB_BAR_SCROLLABLE_ID;
 use crate::config::{AppConfigUpdates, BellMode};
 use crate::session::OutputEvent;
-use iced::widget::operation::{scroll_to, snap_to};
+use iced::widget::operation::scroll_to;
 use iced::widget::scrollable;
 use iced::{Size, Task};
 
@@ -56,43 +56,6 @@ impl App {
                 }
             }
         }
-    }
-
-    pub(super) fn sync_terminal_scrollable_forced(&self) -> Task<Message> {
-        if self.active_tab == SETTINGS_TAB_INDEX {
-            return Task::none();
-        }
-        let Some(pane) = self.focused_pane() else {
-            return Task::none();
-        };
-        let (offset, history) = pane.scroll_position();
-        if history == 0 {
-            return Task::none();
-        }
-        // With anchor_bottom: rel_y=0 is bottom, rel_y=1 is top
-        let rel_y = (offset as f32 / history as f32).clamp(0.0, 1.0);
-        snap_to(
-            TERMINAL_SCROLLABLE_ID.clone(),
-            scrollable::RelativeOffset { x: 0.0, y: rel_y },
-        )
-    }
-
-    pub(super) fn sync_terminal_scrollable(&self) -> Task<Message> {
-        if self.active_tab == SETTINGS_TAB_INDEX {
-            return Task::none();
-        }
-
-        let Some(pane) = self.focused_pane() else {
-            return Task::none();
-        };
-
-        let (_offset, history) = pane.scroll_position();
-        if history == 0 {
-            return Task::none();
-        }
-
-        // No explicit snap needed.
-        Task::none()
     }
 
     pub(super) fn handle_tab_bar_scroll(&mut self, delta: f32) -> Task<Message> {

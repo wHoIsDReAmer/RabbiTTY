@@ -13,10 +13,6 @@ use std::sync::LazyLock;
 
 pub(in crate::gui) static TAB_BAR_SCROLLABLE_ID: LazyLock<widget::Id> =
     LazyLock::new(widget::Id::unique);
-pub(in crate::gui) static TERMINAL_SCROLLABLE_ID: LazyLock<widget::Id> =
-    LazyLock::new(widget::Id::unique);
-
-const IGNORE_SCROLL_SYNC_COUNT: u8 = 2;
 
 impl App {
     fn active_session_mut(&mut self) -> Option<&mut crate::gui::tab::Pane> {
@@ -193,15 +189,13 @@ impl App {
             }
             Message::PtyOutput(event) => {
                 self.handle_pty_event(event);
-                self.ignore_scrollable_sync = IGNORE_SCROLL_SYNC_COUNT;
-                return self.sync_terminal_scrollable();
+                return Task::none();
             }
             Message::PtyOutputBatch(events) => {
                 for event in events {
                     self.handle_pty_event(event);
                 }
-                self.ignore_scrollable_sync = IGNORE_SCROLL_SYNC_COUNT;
-                return self.sync_terminal_scrollable();
+                return Task::none();
             }
             Message::KeyPressed {
                 key,
@@ -289,8 +283,7 @@ impl App {
                 }
                 self.ime_preedit = None;
                 self.scroll_follow_bottom = true;
-                self.ignore_scrollable_sync = IGNORE_SCROLL_SYNC_COUNT;
-                return self.sync_terminal_scrollable_forced();
+                return Task::none();
             }
             Message::ImePreedit(text, cursor) => {
                 if text.is_empty() {
@@ -299,17 +292,11 @@ impl App {
                     self.ime_preedit = Some((text, cursor));
                 }
             }
-            Message::TerminalScroll(rel_y) => {
-                if self.ignore_scrollable_sync > 0 {
-                    self.ignore_scrollable_sync -= 1;
-                } else if self.active_tab != SETTINGS_TAB_INDEX
-                    && let Some(pane) = self.focused_pane_mut()
+            Message::PaneScrollTo { pane, rel } => {
+                if let Some(tab) = self.tabs.get_mut(self.active_tab)
+                    && let Some(pane) = tab.pane_mut(pane)
                 {
-                    // With anchor_bottom: rel_y=0 is bottom, rel_y=1 is top.
-                    // scroll_to_relative expects rel=1.0 as bottom, rel=0.0 as top.
-                    pane.scroll_to_relative(1.0 - rel_y);
-                    let (offset, _) = pane.scroll_position();
-                    self.scroll_follow_bottom = offset == 0;
+                    pane.scroll_to_relative(rel);
                 }
             }
             Message::TerminalWheelScroll(raw_delta) => {
@@ -353,8 +340,7 @@ impl App {
                 self.scroll_accumulator = accumulator;
                 self.scroll_follow_bottom = follow_bottom;
                 if sync {
-                    self.ignore_scrollable_sync = IGNORE_SCROLL_SYNC_COUNT;
-                    return self.sync_terminal_scrollable_forced();
+                    return Task::none();
                 }
             }
             Message::WindowResized(size) => {
@@ -536,8 +522,7 @@ impl App {
             pane.scroll_to_bottom();
         }
         self.scroll_follow_bottom = true;
-        self.ignore_scrollable_sync = IGNORE_SCROLL_SYNC_COUNT;
-        self.sync_terminal_scrollable_forced()
+        Task::none()
     }
 
     fn advance_selection_autoscroll(&mut self) -> Task<Message> {
@@ -576,8 +561,7 @@ impl App {
             offset
         };
         self.scroll_follow_bottom = offset == 0;
-        self.ignore_scrollable_sync = IGNORE_SCROLL_SYNC_COUNT;
-        self.sync_terminal_scrollable_forced()
+        Task::none()
     }
 
     fn perform_paste(&mut self, text: String) -> Task<Message> {
@@ -600,8 +584,7 @@ impl App {
             pane.scroll_to_bottom();
         }
         self.scroll_follow_bottom = true;
-        self.ignore_scrollable_sync = IGNORE_SCROLL_SYNC_COUNT;
-        self.sync_terminal_scrollable_forced()
+        Task::none()
     }
 
     fn handle_apply_window_style(&mut self) -> Task<Message> {
