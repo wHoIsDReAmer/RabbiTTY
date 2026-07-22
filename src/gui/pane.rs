@@ -9,6 +9,16 @@ pub enum Axis {
     Vertical,
 }
 
+impl Axis {
+    pub fn for_rect(rect: Rectangle) -> Self {
+        if rect.width >= rect.height {
+            Self::Vertical
+        } else {
+            Self::Horizontal
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Direction {
     Left,
@@ -375,5 +385,42 @@ mod tests {
         assert_eq!(after[0].1.width, before.width);
         assert_eq!(after[0].1.height, before.height);
         assert!(after[1].1.height < before.height);
+    }
+
+    #[test]
+    fn auto_axis_splits_across_the_longer_side() {
+        let wide = Rectangle {
+            x: 0.0,
+            y: 0.0,
+            width: 1200.0,
+            height: 800.0,
+        };
+        let tall = Rectangle {
+            width: 600.0,
+            ..wide
+        };
+        assert_eq!(Axis::for_rect(wide), Axis::Vertical);
+        assert_eq!(Axis::for_rect(tall), Axis::Horizontal);
+    }
+
+    #[test]
+    fn repeated_auto_splits_alternate_direction() {
+        let mut root = PaneNode::Leaf(1);
+        let mut next = 2;
+        for _ in 0..3 {
+            let regions = root.regions(area());
+            let focused = regions.last().expect("region").1;
+            root.split(next - 1, Axis::for_rect(focused), next);
+            next += 1;
+        }
+
+        let regions = root.regions(area());
+        assert_eq!(regions.len(), 4);
+        // No pane should be a thin sliver: an always-vertical split of a
+        // 801px area would leave the last pane around 100px wide.
+        for (_, rect) in &regions {
+            assert!(rect.width > 150.0, "{rect:?} is too narrow");
+            assert!(rect.height > 100.0, "{rect:?} is too short");
+        }
     }
 }

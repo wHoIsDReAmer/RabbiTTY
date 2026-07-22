@@ -55,6 +55,15 @@ impl App {
         }
     }
 
+    pub(in crate::gui) fn focused_pane_rect(&self) -> Option<iced::Rectangle> {
+        let tab = self.tabs.get(self.active_tab)?;
+        tab.layout
+            .regions(self.terminal_area_rect())
+            .into_iter()
+            .find(|(id, _)| *id == tab.focused)
+            .map(|(_, rect)| rect)
+    }
+
     pub(in crate::gui) fn focus_pane(&mut self, id: u64) {
         if let Some(tab) = self.tabs.get_mut(self.active_tab)
             && tab.pane_mut(id).is_some()
@@ -397,6 +406,13 @@ impl App {
         let action = ShortcutAction::resolve(key, modifiers, &self.config.shortcuts)?;
 
         match action {
+            ShortcutAction::SplitAuto => {
+                let axis = self
+                    .focused_pane_rect()
+                    .map(Axis::for_rect)
+                    .unwrap_or(Axis::Vertical);
+                Some(self.split_focused(axis))
+            }
             ShortcutAction::SplitRight => Some(self.split_focused(Axis::Vertical)),
             ShortcutAction::SplitDown => Some(self.split_focused(Axis::Horizontal)),
             ShortcutAction::ClosePane => {

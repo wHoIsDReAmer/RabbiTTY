@@ -13,6 +13,7 @@ pub enum ShortcutId {
     FontSizeDecrease,
     FontSizeReset,
     DuplicateTab,
+    SplitAuto,
     SplitRight,
     SplitDown,
     ClosePane,
@@ -23,12 +24,13 @@ pub enum ShortcutId {
 }
 
 impl ShortcutId {
-    pub const ALL: [Self; 17] = [
+    pub const ALL: [Self; 18] = [
         Self::NewTab,
         Self::CloseTab,
         Self::DuplicateTab,
         Self::NextTab,
         Self::PrevTab,
+        Self::SplitAuto,
         Self::SplitRight,
         Self::SplitDown,
         Self::ClosePane,
@@ -55,6 +57,7 @@ impl ShortcutId {
             Self::FontSizeDecrease => "font_size_decrease",
             Self::FontSizeReset => "font_size_reset",
             Self::DuplicateTab => "duplicate_tab",
+            Self::SplitAuto => "split_auto",
             Self::SplitRight => "split_right",
             Self::SplitDown => "split_down",
             Self::ClosePane => "close_pane",
@@ -77,6 +80,7 @@ impl ShortcutId {
             Self::FontSizeDecrease => crate::t!("settings.shortcuts.font_size_decrease"),
             Self::FontSizeReset => crate::t!("settings.shortcuts.font_size_reset"),
             Self::DuplicateTab => crate::t!("settings.shortcuts.duplicate_tab"),
+            Self::SplitAuto => crate::t!("settings.shortcuts.split_auto"),
             Self::SplitRight => crate::t!("settings.shortcuts.split_right"),
             Self::SplitDown => crate::t!("settings.shortcuts.split_down"),
             Self::ClosePane => crate::t!("settings.shortcuts.close_pane"),
@@ -99,6 +103,7 @@ impl ShortcutId {
             Self::FontSizeDecrease => DEFAULT_SHORTCUT_FONT_SIZE_DECREASE,
             Self::FontSizeReset => DEFAULT_SHORTCUT_FONT_SIZE_RESET,
             Self::DuplicateTab => DEFAULT_SHORTCUT_DUPLICATE_TAB,
+            Self::SplitAuto => DEFAULT_SHORTCUT_SPLIT_AUTO,
             Self::SplitRight => DEFAULT_SHORTCUT_SPLIT_RIGHT,
             Self::SplitDown => DEFAULT_SHORTCUT_SPLIT_DOWN,
             Self::ClosePane => DEFAULT_SHORTCUT_CLOSE_PANE,

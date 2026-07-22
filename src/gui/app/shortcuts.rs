@@ -74,6 +74,7 @@ pub(super) enum ShortcutAction {
     FontSizeDecrease,
     FontSizeReset,
     DuplicateTab,
+    SplitAuto,
     SplitRight,
     SplitDown,
     ClosePane,
@@ -94,6 +95,7 @@ impl ShortcutAction {
             ShortcutId::FontSizeDecrease => Self::FontSizeDecrease,
             ShortcutId::FontSizeReset => Self::FontSizeReset,
             ShortcutId::DuplicateTab => Self::DuplicateTab,
+            ShortcutId::SplitAuto => Self::SplitAuto,
             ShortcutId::SplitRight => Self::SplitRight,
             ShortcutId::SplitDown => Self::SplitDown,
             ShortcutId::ClosePane => Self::ClosePane,
@@ -305,7 +307,7 @@ mod tests {
 
         assert!(matches!(
             ShortcutAction::resolve(&key, modifiers, &shortcuts),
-            Some(ShortcutAction::SplitRight)
+            Some(ShortcutAction::SplitAuto)
         ));
     }
 
@@ -331,5 +333,20 @@ mod tests {
                 "{named:?} resolved to {action:?}"
             );
         }
+    }
+
+    #[test]
+    fn auto_split_shortcut_resolves_from_defaults() {
+        let shortcuts = crate::config::AppConfig::default().shortcuts;
+        let modifiers = if cfg!(target_os = "macos") {
+            Modifiers::LOGO | Modifiers::SHIFT
+        } else {
+            Modifiers::CTRL | Modifiers::SHIFT
+        };
+        let action = ShortcutAction::resolve(&Key::Character("E".into()), modifiers, &shortcuts);
+        assert!(
+            matches!(action, Some(ShortcutAction::SplitAuto)),
+            "resolved to {action:?}"
+        );
     }
 }

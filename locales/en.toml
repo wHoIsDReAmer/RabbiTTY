@@ -119,6 +119,7 @@ prev_tab = "Previous tab"
 quit = "Quit"
 
 duplicate_tab = "Duplicate tab"
+split_auto = "Split (auto)"
 split_right = "Split right"
 split_down = "Split down"
 close_pane = "Close pane"

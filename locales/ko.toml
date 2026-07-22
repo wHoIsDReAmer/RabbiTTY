@@ -119,6 +119,7 @@ prev_tab = "이전 탭"
 quit = "종료"
 
 duplicate_tab = "탭 복제"
+split_auto = "분할 (자동)"
 split_right = "오른쪽 분할"
 split_down = "아래 분할"
 close_pane = "패널 닫기"

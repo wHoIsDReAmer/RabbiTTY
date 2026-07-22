@@ -59,14 +59,19 @@ pub const DEFAULT_SHORTCUT_DUPLICATE_TAB: &str = "Command+D";
 pub const DEFAULT_SHORTCUT_DUPLICATE_TAB: &str = "Ctrl+Shift+D";
 
 #[cfg(target_os = "macos")]
-pub const DEFAULT_SHORTCUT_SPLIT_RIGHT: &str = "Command+Shift+E";
+pub const DEFAULT_SHORTCUT_SPLIT_AUTO: &str = "Command+Shift+E";
 #[cfg(not(target_os = "macos"))]
-pub const DEFAULT_SHORTCUT_SPLIT_RIGHT: &str = "Ctrl+Shift+E";
+pub const DEFAULT_SHORTCUT_SPLIT_AUTO: &str = "Ctrl+Shift+E";
 
 #[cfg(target_os = "macos")]
-pub const DEFAULT_SHORTCUT_SPLIT_DOWN: &str = "Command+Shift+O";
+pub const DEFAULT_SHORTCUT_SPLIT_RIGHT: &str = "Command+Alt+E";
 #[cfg(not(target_os = "macos"))]
-pub const DEFAULT_SHORTCUT_SPLIT_DOWN: &str = "Ctrl+Shift+O";
+pub const DEFAULT_SHORTCUT_SPLIT_RIGHT: &str = "Ctrl+Alt+E";
+
+#[cfg(target_os = "macos")]
+pub const DEFAULT_SHORTCUT_SPLIT_DOWN: &str = "Command+Alt+O";
+#[cfg(not(target_os = "macos"))]
+pub const DEFAULT_SHORTCUT_SPLIT_DOWN: &str = "Ctrl+Alt+O";
 
 #[cfg(target_os = "macos")]
 pub const DEFAULT_SHORTCUT_CLOSE_PANE: &str = "Command+Shift+W";

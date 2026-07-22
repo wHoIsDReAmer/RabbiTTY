@@ -631,4 +631,117 @@ mod tests {
             expected
         );
     }
+
+    fn app_with_pty() -> App {
+        let mut app = App::new(AppConfig::default());
+        let (tx, _rx) = mpsc::unbounded();
+        app.pty_sender = Some(tx);
+        app
+    }
+
+    #[test]
+    fn a_split_shortcut_actually_creates_a_pane() {
+        let mut app = app_with_pty();
+        let _ = app.update(Message::CreateTab(Profile::default_shell()));
+        assert_eq!(app.tabs.len(), 1, "tab was not created");
+        assert_eq!(app.tabs[0].panes.len(), 1);
+
+        let modifiers = if cfg!(target_os = "macos") {
+            Modifiers::LOGO | Modifiers::SHIFT
+        } else {
+            Modifiers::CTRL | Modifiers::SHIFT
+        };
+        let _ = app.update(Message::KeyPressed {
+            key: Key::Character("E".into()),
+            modifiers,
+            text: None,
+        });
+
+        assert_eq!(
+            app.tabs[0].panes.len(),
+            2,
+            "split shortcut did not add a pane"
+        );
+        assert_eq!(app.tabs[0].layout.leaves().len(), 2);
+    }
+
+    #[test]
+    fn clicking_another_pane_moves_focus() {
+        let mut app = app_with_pty();
+        let _ = app.update(Message::CreateTab(Profile::default_shell()));
+        let _ = app.split_focused(crate::gui::pane::Axis::Vertical);
+
+        let ids = app.tabs[0].layout.leaves();
+        assert_eq!(ids.len(), 2, "split did not happen");
+        let (first, second) = (ids[0], ids[1]);
+        assert_eq!(app.tabs[0].focused, second);
+
+        let _ = app.update(Message::SelectionChanged {
+            pane: first,
+            selection: None,
+        });
+        assert_eq!(app.tabs[0].focused, first, "click did not move focus");
+
+        let _ = app.update(Message::TerminalRightClick(second));
+        assert_eq!(
+            app.tabs[0].focused, second,
+            "right click did not move focus"
+        );
+    }
+
+    #[test]
+    fn focus_shortcut_moves_between_panes() {
+        let mut app = app_with_pty();
+        let _ = app.update(Message::CreateTab(Profile::default_shell()));
+        app.terminal_area = Size::new(1000.0, 600.0);
+        let _ = app.split_focused(crate::gui::pane::Axis::Vertical);
+
+        let ids = app.tabs[0].layout.leaves();
+        let (left, right) = (ids[0], ids[1]);
+        assert_eq!(app.tabs[0].focused, right);
+
+        let modifiers = if cfg!(target_os = "macos") {
+            Modifiers::LOGO | Modifiers::ALT
+        } else {
+            Modifiers::CTRL | Modifiers::ALT
+        };
+        let _ = app.update(Message::KeyPressed {
+            key: Key::Named(iced::keyboard::key::Named::ArrowLeft),
+            modifiers,
+            text: None,
+        });
+        assert_eq!(
+            app.tabs[0].focused, left,
+            "focus shortcut did not move left"
+        );
+    }
+
+    #[test]
+    fn repeated_auto_splits_keep_panes_usable() {
+        let mut app = app_with_pty();
+        let _ = app.update(Message::CreateTab(Profile::default_shell()));
+        app.terminal_area = Size::new(1200.0, 700.0);
+
+        let modifiers = if cfg!(target_os = "macos") {
+            Modifiers::LOGO | Modifiers::SHIFT
+        } else {
+            Modifiers::CTRL | Modifiers::SHIFT
+        };
+        for _ in 0..3 {
+            let _ = app.update(Message::KeyPressed {
+                key: Key::Character("E".into()),
+                modifiers,
+                text: None,
+            });
+        }
+
+        let regions = app.tabs[0].layout.regions(app.terminal_area_rect());
+        assert_eq!(regions.len(), 4);
+        for (_, rect) in &regions {
+            assert!(
+                rect.width > 250.0 && rect.height > 150.0,
+                "{rect:?} collapsed; splits are not alternating"
+            );
+        }
+    }
 }
