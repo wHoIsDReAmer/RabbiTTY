@@ -211,6 +211,8 @@ pub struct App {
     pub(super) next_tab_id: u64,
     pub(super) tab_bar_scroll_x: f32,
     pub(super) scroll_follow_bottom: bool,
+    pub(super) wheel_last_event: Option<std::time::Instant>,
+    pub(super) wheel_suppressed: bool,
     pub(super) dragging_tab: Option<usize>,
     pub(super) drag_target: Option<usize>,
     pub(super) scroll_accumulator: f32,
@@ -310,6 +312,8 @@ impl App {
             next_tab_id: 1,
             tab_bar_scroll_x: 0.0,
             scroll_follow_bottom: true,
+            wheel_last_event: None,
+            wheel_suppressed: false,
             dragging_tab: None,
             drag_target: None,
             scroll_accumulator: 0.0,
@@ -826,28 +830,5 @@ mod tests {
         }));
 
         assert_eq!(app.tabs[0].focused, focused, "focus jumped to another pane");
-    }
-
-    #[test]
-    fn probe_typing_while_scrolled_up() {
-        let mut app = app_with_pty();
-        let _ = app.update(Message::CreateTab(Profile::default_shell()));
-        app.terminal_area = Size::new(1000.0, 600.0);
-        app.resize_panes();
-
-        let pane_id = app.tabs[0].focused;
-        let _ = app.update(Message::PtyOutput(crate::session::OutputEvent::Data {
-            tab_id: pane_id,
-            bytes: b"line\r\n".repeat(300).to_vec(),
-        }));
-        app.focused_pane_mut().unwrap().scroll(40);
-        let before = app.focused_pane().unwrap().scroll_position();
-        let _ = app.update(Message::KeyPressed {
-            key: iced::keyboard::Key::Character("a".into()),
-            modifiers: Modifiers::empty(),
-            text: Some("a".to_string()),
-        });
-        let after = app.focused_pane().unwrap().scroll_position();
-        panic!("before={before:?} after={after:?}");
     }
 }

@@ -14,6 +14,12 @@ use std::sync::LazyLock;
 pub(in crate::gui) static TAB_BAR_SCROLLABLE_ID: LazyLock<widget::Id> =
     LazyLock::new(widget::Id::unique);
 
+const WHEEL_GESTURE_IDLE: std::time::Duration = std::time::Duration::from_millis(100);
+
+fn is_gesture_tail(suppressed: bool, gap: Option<std::time::Duration>) -> bool {
+    suppressed && gap.is_some_and(|gap| gap <= WHEEL_GESTURE_IDLE)
+}
+
 impl App {
     fn active_session_mut(&mut self) -> Option<&mut crate::gui::tab::Pane> {
         self.focused_pane_mut()
@@ -283,6 +289,7 @@ impl App {
                 }
                 self.ime_preedit = None;
                 self.scroll_follow_bottom = true;
+                self.wheel_suppressed = true;
                 return Task::none();
             }
             Message::ImePreedit(text, cursor) => {
@@ -300,6 +307,14 @@ impl App {
                 }
             }
             Message::TerminalWheelScroll(raw_delta) => {
+                let now = std::time::Instant::now();
+                let gap = self.wheel_last_event.map(|last| now.duration_since(last));
+                self.wheel_last_event = Some(now);
+                if is_gesture_tail(self.wheel_suppressed, gap) {
+                    return Task::none();
+                }
+                self.wheel_suppressed = false;
+
                 let raw_delta = raw_delta * self.config.terminal.scroll_multiplier;
                 let mut accumulator = self.scroll_accumulator;
                 let mut follow_bottom = self.scroll_follow_bottom;
@@ -522,6 +537,7 @@ impl App {
             pane.scroll_to_bottom();
         }
         self.scroll_follow_bottom = true;
+        self.wheel_suppressed = true;
         Task::none()
     }
 
@@ -584,6 +600,7 @@ impl App {
             pane.scroll_to_bottom();
         }
         self.scroll_follow_bottom = true;
+        self.wheel_suppressed = true;
         Task::none()
     }
 
@@ -631,4 +648,26 @@ fn is_paste_shortcut(key: &Key, modifiers: iced::keyboard::Modifiers) -> bool {
         return modifiers.control() && modifiers.shift();
     }
     false
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::time::Duration;
+
+    #[test]
+    fn typing_swallows_the_tail_of_an_in_flight_scroll() {
+        assert!(is_gesture_tail(true, Some(Duration::from_millis(16))));
+    }
+
+    #[test]
+    fn a_fresh_gesture_after_typing_still_scrolls() {
+        assert!(!is_gesture_tail(true, Some(Duration::from_millis(400))));
+        assert!(!is_gesture_tail(true, None));
+    }
+
+    #[test]
+    fn scrolling_is_untouched_without_typing() {
+        assert!(!is_gesture_tail(false, Some(Duration::from_millis(16))));
+    }
 }
