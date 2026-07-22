@@ -166,6 +166,9 @@ impl App {
                 return iced::clipboard::read()
                     .map(|content| Message::PasteClipboard(content.unwrap_or_default()));
             }
+            Message::OpenUrl(url) => {
+                crate::platform::open_url(&url);
+            }
             Message::TerminalContextCopy => {
                 self.terminal_context_menu = false;
                 if let Some(tab) = self.tabs.get_mut(self.active_tab)

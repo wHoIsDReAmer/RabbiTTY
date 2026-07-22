@@ -218,6 +218,7 @@ impl TerminalEngine {
             fg: default_fg,
             bg: default_bg,
             underline: false,
+            hyperlink: None,
             wide: false,
         };
 
@@ -283,6 +284,10 @@ impl TerminalEngine {
                     slot.bg = bg;
                     slot.underline = indexed.cell.flags.intersects(Flags::ALL_UNDERLINES);
                     slot.wide = indexed.cell.flags.contains(Flags::WIDE_CHAR);
+                    slot.hyperlink = indexed
+                        .cell
+                        .hyperlink()
+                        .map(|link| std::sync::Arc::from(link.uri()));
                 }
             }
         }

@@ -56,6 +56,57 @@ impl TerminalProgram {
     }
 
     /// Character at a viewport cell, or a space when out of range.
+    fn row_chars(&self, row: usize) -> Vec<char> {
+        let cols = self.grid_size.columns;
+        if cols == 0 || row >= self.grid_size.lines {
+            return Vec::new();
+        }
+        (0..cols).map(|col| self.cell_char(row, col)).collect()
+    }
+
+    fn link_at(&self, grid: GridPos) -> Option<String> {
+        if let Some(uri) = self
+            .cells
+            .get(grid.row * self.grid_size.columns.max(1) + grid.col)
+            .and_then(|cell| cell.hyperlink.clone())
+        {
+            return crate::terminal::url::is_openable(&uri).then(|| uri.to_string());
+        }
+        crate::terminal::url::url_at(&self.row_chars(grid.row), grid.col).map(|span| span.url)
+    }
+
+    fn link_span_at(&self, grid: GridPos) -> Option<(usize, usize)> {
+        let row = self.row_chars(grid.row);
+        if let Some(cell) = self
+            .cells
+            .get(grid.row * self.grid_size.columns.max(1) + grid.col)
+            && let Some(uri) = cell.hyperlink.as_deref()
+            && crate::terminal::url::is_openable(uri)
+        {
+            return Some(self.hyperlink_run(grid, uri));
+        }
+        crate::terminal::url::url_at(&row, grid.col).map(|span| (span.start, span.end))
+    }
+
+    fn hyperlink_run(&self, grid: GridPos, uri: &str) -> (usize, usize) {
+        let cols = self.grid_size.columns.max(1);
+        let same = |col: usize| {
+            self.cells
+                .get(grid.row * cols + col)
+                .and_then(|c| c.hyperlink.as_deref())
+                == Some(uri)
+        };
+        let mut start = grid.col;
+        while start > 0 && same(start - 1) {
+            start -= 1;
+        }
+        let mut end = grid.col;
+        while end + 1 < self.grid_size.columns && same(end + 1) {
+            end += 1;
+        }
+        (start, end)
+    }
+
     fn cell_char(&self, row: usize, col: usize) -> char {
         let cols = self.grid_size.columns;
         if cols == 0 || col >= cols || row >= self.grid_size.lines {
@@ -125,6 +176,7 @@ pub struct TerminalShaderState {
     drag_anchor_offset: usize,
     /// Last left-button click, used to detect double/triple clicks.
     last_click: Option<Click>,
+    modifiers: iced::keyboard::Modifiers,
 }
 
 /// Word delimiter check (alacritty-style). A "word" is a run of non-whitespace
@@ -152,6 +204,17 @@ fn clamp_to_bounds(absolute: Point, bounds: Rectangle) -> Point {
     )
 }
 
+fn link_modifier(modifiers: iced::keyboard::Modifiers) -> bool {
+    #[cfg(target_os = "macos")]
+    {
+        modifiers.logo()
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        modifiers.control()
+    }
+}
+
 impl ShaderProgram<Message> for TerminalProgram {
     type State = TerminalShaderState;
     type Primitive = TerminalPrimitive;
@@ -164,9 +227,17 @@ impl ShaderProgram<Message> for TerminalProgram {
         cursor: mouse::Cursor,
     ) -> Option<Action<Message>> {
         match event {
+            Event::Keyboard(iced::keyboard::Event::ModifiersChanged(modifiers)) => {
+                state.modifiers = *modifiers;
+            }
             Event::Mouse(mouse::Event::ButtonPressed(mouse::Button::Left)) => {
                 if let Some(pos) = cursor.position_in(bounds) {
                     let grid_pos = self.pixel_to_grid(pos, bounds);
+                    if link_modifier(state.modifiers)
+                        && let Some(url) = self.link_at(grid_pos)
+                    {
+                        return Some(Action::publish(Message::OpenUrl(url)).and_capture());
+                    }
                     if self.mouse_mode {
                         state.dragging = true;
                         return Some(
@@ -301,10 +372,18 @@ impl ShaderProgram<Message> for TerminalProgram {
 
     fn draw(
         &self,
-        _state: &Self::State,
-        _cursor: mouse::Cursor,
+        state: &Self::State,
+        cursor: mouse::Cursor,
         bounds: Rectangle,
     ) -> Self::Primitive {
+        let link_row = link_modifier(state.modifiers)
+            .then(|| cursor.position_in(bounds))
+            .flatten()
+            .map(|pos| self.pixel_to_grid(pos, bounds))
+            .and_then(|grid| {
+                self.link_span_at(grid)
+                    .map(|(start, end)| (grid.row, start, end))
+            });
         let pad_x = self.padding[0];
         let pad_y = self.padding[1];
         let columns = self.grid_size.columns.max(1) as f32;
@@ -327,20 +406,24 @@ impl ShaderProgram<Message> for TerminalProgram {
             cursor_visible: self.cursor_visible,
             cursor_color: self.cursor_color,
             background_opacity: self.background_opacity,
+            link_row,
         }
     }
 
     fn mouse_interaction(
         &self,
-        _state: &Self::State,
+        state: &Self::State,
         bounds: Rectangle,
         cursor: mouse::Cursor,
     ) -> mouse::Interaction {
-        if cursor.is_over(bounds) {
-            mouse::Interaction::Text
-        } else {
-            mouse::Interaction::default()
+        let Some(pos) = cursor.position_in(bounds) else {
+            return mouse::Interaction::default();
+        };
+        if link_modifier(state.modifiers) && self.link_at(self.pixel_to_grid(pos, bounds)).is_some()
+        {
+            return mouse::Interaction::Pointer;
         }
+        mouse::Interaction::Text
     }
 }
 
@@ -403,6 +486,7 @@ pub struct TerminalPrimitive {
     cursor_visible: bool,
     cursor_color: [f32; 4],
     background_opacity: f32,
+    link_row: Option<(usize, usize, usize)>,
 }
 
 impl Primitive for TerminalPrimitive {
@@ -480,6 +564,7 @@ impl Primitive for TerminalPrimitive {
             self.cursor_shape,
             self.cursor_color,
             self.background_opacity,
+            self.link_row,
         );
 
         pipeline

@@ -45,6 +45,7 @@ pub enum Message {
     CloseTerminalContextMenu,
     TerminalContextPaste,
     TerminalContextCopy,
+    OpenUrl(String),
     CursorMoved(iced::Point),
     PtySenderReady(mpsc::UnboundedSender<OutputEvent>),
     PtyOutput(OutputEvent),
