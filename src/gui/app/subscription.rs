@@ -14,7 +14,11 @@ impl App {
             .bell_flash_start
             .is_some_and(|start| start.elapsed() < super::BELL_FLASH_DURATION);
         let has_animation = self.modal_anim.is_animating(now)
-            || self.tabs.iter().any(|tab| tab.sftp.anim.is_animating(now))
+            || self
+                .tabs
+                .iter()
+                .flat_map(|tab| tab.panes.iter())
+                .any(|pane| pane.sftp.anim.is_animating(now))
             || self.settings_category_transition.is_animating(now)
             || bell_flashing;
 

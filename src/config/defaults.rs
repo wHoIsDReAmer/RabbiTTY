@@ -58,6 +58,46 @@ pub const DEFAULT_SHORTCUT_DUPLICATE_TAB: &str = "Command+D";
 #[cfg(not(target_os = "macos"))]
 pub const DEFAULT_SHORTCUT_DUPLICATE_TAB: &str = "Ctrl+Shift+D";
 
+#[cfg(target_os = "macos")]
+pub const DEFAULT_SHORTCUT_SPLIT_AUTO: &str = "Command+Shift+E";
+#[cfg(not(target_os = "macos"))]
+pub const DEFAULT_SHORTCUT_SPLIT_AUTO: &str = "Ctrl+Shift+E";
+
+#[cfg(target_os = "macos")]
+pub const DEFAULT_SHORTCUT_SPLIT_RIGHT: &str = "Command+Alt+E";
+#[cfg(not(target_os = "macos"))]
+pub const DEFAULT_SHORTCUT_SPLIT_RIGHT: &str = "Ctrl+Alt+E";
+
+#[cfg(target_os = "macos")]
+pub const DEFAULT_SHORTCUT_SPLIT_DOWN: &str = "Command+Alt+O";
+#[cfg(not(target_os = "macos"))]
+pub const DEFAULT_SHORTCUT_SPLIT_DOWN: &str = "Ctrl+Alt+O";
+
+#[cfg(target_os = "macos")]
+pub const DEFAULT_SHORTCUT_CLOSE_PANE: &str = "Command+Shift+W";
+#[cfg(not(target_os = "macos"))]
+pub const DEFAULT_SHORTCUT_CLOSE_PANE: &str = "Ctrl+Shift+W";
+
+#[cfg(target_os = "macos")]
+pub const DEFAULT_SHORTCUT_FOCUS_LEFT: &str = "Command+Alt+ArrowLeft";
+#[cfg(not(target_os = "macos"))]
+pub const DEFAULT_SHORTCUT_FOCUS_LEFT: &str = "Ctrl+Alt+ArrowLeft";
+
+#[cfg(target_os = "macos")]
+pub const DEFAULT_SHORTCUT_FOCUS_RIGHT: &str = "Command+Alt+ArrowRight";
+#[cfg(not(target_os = "macos"))]
+pub const DEFAULT_SHORTCUT_FOCUS_RIGHT: &str = "Ctrl+Alt+ArrowRight";
+
+#[cfg(target_os = "macos")]
+pub const DEFAULT_SHORTCUT_FOCUS_UP: &str = "Command+Alt+ArrowUp";
+#[cfg(not(target_os = "macos"))]
+pub const DEFAULT_SHORTCUT_FOCUS_UP: &str = "Ctrl+Alt+ArrowUp";
+
+#[cfg(target_os = "macos")]
+pub const DEFAULT_SHORTCUT_FOCUS_DOWN: &str = "Command+Alt+ArrowDown";
+#[cfg(not(target_os = "macos"))]
+pub const DEFAULT_SHORTCUT_FOCUS_DOWN: &str = "Ctrl+Alt+ArrowDown";
+
 pub const DEFAULT_TERMINAL_FONT_SIZE: f32 = 14.0;
 pub const DEFAULT_TERMINAL_PADDING_X: f32 = 4.0;
 pub const DEFAULT_TERMINAL_PADDING_Y: f32 = 4.0;

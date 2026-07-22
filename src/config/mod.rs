@@ -2,11 +2,13 @@ mod defaults;
 mod file;
 mod metrics;
 mod sanitize;
+mod shortcuts;
 mod types;
 mod updates;
 
 pub use defaults::*;
 pub use metrics::cell_metrics_for_selection;
+pub use shortcuts::{ShortcutId, ShortcutsConfig};
 pub use types::{
     BellMode, CursorShape, RightClickAction, SshAuthMethod, SshProfile, TabBarPosition,
 };
@@ -82,20 +84,6 @@ pub struct ThemeConfig {
     pub macos_blur_radius: i32,
 }
 
-#[derive(Debug, Clone)]
-pub struct ShortcutsConfig {
-    pub new_tab: String,
-    pub close_tab: String,
-    pub open_settings: String,
-    pub next_tab: String,
-    pub prev_tab: String,
-    pub quit: String,
-    pub font_size_increase: String,
-    pub font_size_decrease: String,
-    pub font_size_reset: String,
-    pub duplicate_tab: String,
-}
-
 impl Default for AppConfig {
     fn default() -> Self {
         let (cell_width, cell_height) = default_cell_metrics();
@@ -134,18 +122,7 @@ impl Default for AppConfig {
                 blur_enabled: DEFAULT_BLUR_ENABLED,
                 macos_blur_radius: DEFAULT_MACOS_BLUR_RADIUS,
             },
-            shortcuts: ShortcutsConfig {
-                new_tab: DEFAULT_SHORTCUT_NEW_TAB.to_string(),
-                close_tab: DEFAULT_SHORTCUT_CLOSE_TAB.to_string(),
-                open_settings: DEFAULT_SHORTCUT_OPEN_SETTINGS.to_string(),
-                next_tab: DEFAULT_SHORTCUT_NEXT_TAB.to_string(),
-                prev_tab: DEFAULT_SHORTCUT_PREV_TAB.to_string(),
-                quit: DEFAULT_SHORTCUT_QUIT.to_string(),
-                font_size_increase: DEFAULT_SHORTCUT_FONT_SIZE_INCREASE.to_string(),
-                font_size_decrease: DEFAULT_SHORTCUT_FONT_SIZE_DECREASE.to_string(),
-                font_size_reset: DEFAULT_SHORTCUT_FONT_SIZE_RESET.to_string(),
-                duplicate_tab: DEFAULT_SHORTCUT_DUPLICATE_TAB.to_string(),
-            },
+            shortcuts: ShortcutsConfig::default(),
             profiles: vec![],
         }
     }
@@ -303,40 +280,11 @@ impl AppConfig {
         }
 
         if let Some(shortcuts) = file.shortcuts {
-            if let Some(value) = shortcuts.new_tab.as_deref() {
-                self.shortcuts.new_tab = sanitize_shortcut(value, &self.shortcuts.new_tab);
-            }
-            if let Some(value) = shortcuts.close_tab.as_deref() {
-                self.shortcuts.close_tab = sanitize_shortcut(value, &self.shortcuts.close_tab);
-            }
-            if let Some(value) = shortcuts.open_settings.as_deref() {
-                self.shortcuts.open_settings =
-                    sanitize_shortcut(value, &self.shortcuts.open_settings);
-            }
-            if let Some(value) = shortcuts.next_tab.as_deref() {
-                self.shortcuts.next_tab = sanitize_shortcut(value, &self.shortcuts.next_tab);
-            }
-            if let Some(value) = shortcuts.prev_tab.as_deref() {
-                self.shortcuts.prev_tab = sanitize_shortcut(value, &self.shortcuts.prev_tab);
-            }
-            if let Some(value) = shortcuts.quit.as_deref() {
-                self.shortcuts.quit = sanitize_shortcut(value, &self.shortcuts.quit);
-            }
-            if let Some(value) = shortcuts.font_size_increase.as_deref() {
-                self.shortcuts.font_size_increase =
-                    sanitize_shortcut(value, &self.shortcuts.font_size_increase);
-            }
-            if let Some(value) = shortcuts.font_size_decrease.as_deref() {
-                self.shortcuts.font_size_decrease =
-                    sanitize_shortcut(value, &self.shortcuts.font_size_decrease);
-            }
-            if let Some(value) = shortcuts.font_size_reset.as_deref() {
-                self.shortcuts.font_size_reset =
-                    sanitize_shortcut(value, &self.shortcuts.font_size_reset);
-            }
-            if let Some(value) = shortcuts.duplicate_tab.as_deref() {
-                self.shortcuts.duplicate_tab =
-                    sanitize_shortcut(value, &self.shortcuts.duplicate_tab);
+            for (key, value) in shortcuts {
+                if let Some(id) = ShortcutId::from_key(&key) {
+                    let sanitized = sanitize_shortcut(&value, self.shortcuts.get(id));
+                    self.shortcuts.set(id, sanitized);
+                }
             }
         }
 

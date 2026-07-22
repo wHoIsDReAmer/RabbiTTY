@@ -18,6 +18,7 @@ struct InstanceRaw {
     rect_offset: [f32; 2],
     rect_size: [f32; 2],
     color: [f32; 4],
+    origin: [f32; 2],
 }
 
 #[derive(Debug)]
@@ -116,7 +117,8 @@ impl BackgroundPipeline {
                             1 => Uint32x2,
                             2 => Float32x2,
                             3 => Float32x2,
-                            4 => Float32x4
+                            4 => Float32x4,
+                            5 => Float32x2
                         ],
                     },
                 ],
@@ -172,11 +174,13 @@ impl BackgroundPipeline {
         queue.write_buffer(&self.uniform_buffer, 0, bytemuck::bytes_of(&uniforms));
     }
 
+    pub(super) fn begin(&mut self) {
+        self.instances.clear();
+    }
+
     #[allow(clippy::too_many_arguments)]
-    pub(super) fn prepare_instances(
+    pub(super) fn push_pane(
         &mut self,
-        device: &wgpu::Device,
-        queue: &wgpu::Queue,
         cells: &[CellVisual],
         selection: Option<&Selection>,
         display_offset: usize,
@@ -185,8 +189,8 @@ impl BackgroundPipeline {
         cursor_color: [f32; 4],
         background_opacity: f32,
         link_row: Option<(usize, usize, usize)>,
+        origin: [f32; 2],
     ) {
-        self.instances.clear();
         let needed = cells.len().saturating_sub(self.instances.capacity());
         if needed > 0 {
             self.instances.reserve(needed);
@@ -205,6 +209,7 @@ impl BackgroundPipeline {
                 rect_offset: [0.0, 0.0],
                 rect_size: [1.0, 1.0],
                 color: bg,
+                origin,
             }
         }));
 
@@ -217,6 +222,7 @@ impl BackgroundPipeline {
                     rect_offset: [0.0, 0.9],
                     rect_size: [1.0, 0.06],
                     color: cell.fg,
+                    origin,
                 }),
         );
 
@@ -233,6 +239,7 @@ impl BackgroundPipeline {
                     rect_offset: [0.0, 0.9],
                     rect_size: [1.0, 0.06],
                     color,
+                    origin,
                 });
             }
         }
@@ -248,9 +255,30 @@ impl BackgroundPipeline {
                 rect_offset,
                 rect_size,
                 color: cursor_color,
+                origin,
             });
         }
+    }
 
+    pub(super) fn push_px_rect(
+        &mut self,
+        origin: [f32; 2],
+        size: [f32; 2],
+        cell_size: [f32; 2],
+        color: [f32; 4],
+    ) {
+        let cw = cell_size[0].max(0.001);
+        let ch = cell_size[1].max(0.001);
+        self.instances.push(InstanceRaw {
+            pos: [0, 0],
+            rect_offset: [0.0, 0.0],
+            rect_size: [size[0] / cw, size[1] / ch],
+            color,
+            origin,
+        });
+    }
+
+    pub(super) fn upload(&mut self, device: &wgpu::Device, queue: &wgpu::Queue) {
         let required = self.instances.len().max(1);
 
         if required > self.instance_capacity {
@@ -279,13 +307,12 @@ impl BackgroundPipeline {
                     rect_offset: [0.0, 0.0],
                     rect_size: [1.0, 1.0],
                     color: [0.0, 0.0, 0.0, 0.0],
+                    origin: [0.0, 0.0],
                 }]),
             );
         }
     }
-
-    /// Number of background instances queued by the last `prepare_instances`
-    /// call (cells plus an optional cursor instance).
+    /// Number of background instances queued since the last `begin`.
     pub(super) fn instance_count(&self) -> usize {
         self.instances.len()
     }

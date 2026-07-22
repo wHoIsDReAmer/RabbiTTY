@@ -59,19 +59,7 @@ pub(super) struct ThemeFileConfig {
     pub(super) macos_blur_radius: Option<i32>,
 }
 
-#[derive(Debug, Deserialize, Serialize)]
-pub(super) struct ShortcutsFileConfig {
-    pub(super) new_tab: Option<String>,
-    pub(super) close_tab: Option<String>,
-    pub(super) open_settings: Option<String>,
-    pub(super) next_tab: Option<String>,
-    pub(super) prev_tab: Option<String>,
-    pub(super) quit: Option<String>,
-    pub(super) font_size_increase: Option<String>,
-    pub(super) font_size_decrease: Option<String>,
-    pub(super) font_size_reset: Option<String>,
-    pub(super) duplicate_tab: Option<String>,
-}
+pub(super) type ShortcutsFileConfig = std::collections::BTreeMap<String, String>;
 
 impl From<&AppConfig> for FileConfig {
     fn from(config: &AppConfig) -> Self {
@@ -132,18 +120,13 @@ impl From<&AppConfig> for FileConfig {
                 blur_enabled: Some(config.theme.blur_enabled),
                 macos_blur_radius: Some(config.theme.macos_blur_radius),
             }),
-            shortcuts: Some(ShortcutsFileConfig {
-                new_tab: Some(config.shortcuts.new_tab.clone()),
-                close_tab: Some(config.shortcuts.close_tab.clone()),
-                open_settings: Some(config.shortcuts.open_settings.clone()),
-                next_tab: Some(config.shortcuts.next_tab.clone()),
-                prev_tab: Some(config.shortcuts.prev_tab.clone()),
-                quit: Some(config.shortcuts.quit.clone()),
-                font_size_increase: Some(config.shortcuts.font_size_increase.clone()),
-                font_size_decrease: Some(config.shortcuts.font_size_decrease.clone()),
-                font_size_reset: Some(config.shortcuts.font_size_reset.clone()),
-                duplicate_tab: Some(config.shortcuts.duplicate_tab.clone()),
-            }),
+            shortcuts: Some(
+                config
+                    .shortcuts
+                    .iter()
+                    .map(|(id, binding)| (id.key().to_string(), binding.to_string()))
+                    .collect(),
+            ),
             profiles: if config.profiles.is_empty() {
                 None
             } else {

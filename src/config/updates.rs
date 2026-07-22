@@ -1,6 +1,7 @@
 use super::AppConfig;
 use super::metrics::cell_metrics_for_selection;
 use super::sanitize::*;
+use super::shortcuts::ShortcutId;
 use super::types::{BellMode, CursorShape, RightClickAction, TabBarPosition};
 
 #[derive(Debug, Default, Clone)]
@@ -23,16 +24,7 @@ pub struct AppConfigUpdates {
     pub background_opacity: Option<f32>,
     pub blur_enabled: Option<bool>,
     pub macos_blur_radius: Option<i32>,
-    pub shortcut_new_tab: Option<String>,
-    pub shortcut_close_tab: Option<String>,
-    pub shortcut_open_settings: Option<String>,
-    pub shortcut_next_tab: Option<String>,
-    pub shortcut_prev_tab: Option<String>,
-    pub shortcut_quit: Option<String>,
-    pub shortcut_font_size_increase: Option<String>,
-    pub shortcut_font_size_decrease: Option<String>,
-    pub shortcut_font_size_reset: Option<String>,
-    pub shortcut_duplicate_tab: Option<String>,
+    pub shortcuts: Vec<(ShortcutId, String)>,
     pub terminal_scrollback: Option<usize>,
     pub terminal_bracketed_paste: Option<bool>,
     pub terminal_multiline_paste_confirm: Option<bool>,
@@ -138,38 +130,9 @@ impl AppConfig {
             self.theme.macos_blur_radius = radius.clamp(0, 100);
         }
 
-        if let Some(value) = updates.shortcut_new_tab {
-            self.shortcuts.new_tab = sanitize_shortcut(&value, &self.shortcuts.new_tab);
-        }
-        if let Some(value) = updates.shortcut_close_tab {
-            self.shortcuts.close_tab = sanitize_shortcut(&value, &self.shortcuts.close_tab);
-        }
-        if let Some(value) = updates.shortcut_open_settings {
-            self.shortcuts.open_settings = sanitize_shortcut(&value, &self.shortcuts.open_settings);
-        }
-        if let Some(value) = updates.shortcut_next_tab {
-            self.shortcuts.next_tab = sanitize_shortcut(&value, &self.shortcuts.next_tab);
-        }
-        if let Some(value) = updates.shortcut_prev_tab {
-            self.shortcuts.prev_tab = sanitize_shortcut(&value, &self.shortcuts.prev_tab);
-        }
-        if let Some(value) = updates.shortcut_quit {
-            self.shortcuts.quit = sanitize_shortcut(&value, &self.shortcuts.quit);
-        }
-        if let Some(value) = updates.shortcut_font_size_increase {
-            self.shortcuts.font_size_increase =
-                sanitize_shortcut(&value, &self.shortcuts.font_size_increase);
-        }
-        if let Some(value) = updates.shortcut_font_size_decrease {
-            self.shortcuts.font_size_decrease =
-                sanitize_shortcut(&value, &self.shortcuts.font_size_decrease);
-        }
-        if let Some(value) = updates.shortcut_font_size_reset {
-            self.shortcuts.font_size_reset =
-                sanitize_shortcut(&value, &self.shortcuts.font_size_reset);
-        }
-        if let Some(value) = updates.shortcut_duplicate_tab {
-            self.shortcuts.duplicate_tab = sanitize_shortcut(&value, &self.shortcuts.duplicate_tab);
+        for (id, binding) in updates.shortcuts {
+            let sanitized = sanitize_shortcut(&binding, self.shortcuts.get(id));
+            self.shortcuts.set(id, sanitized);
         }
     }
 }
@@ -189,8 +152,10 @@ mod tests {
             window_height: Some(f32::NAN),
             background_opacity: Some(1.5),
             macos_blur_radius: Some(200),
-            shortcut_new_tab: Some("Ctrl+".to_string()),
-            shortcut_close_tab: Some("Ctrl+W".to_string()),
+            shortcuts: vec![
+                (ShortcutId::NewTab, "Ctrl+".to_string()),
+                (ShortcutId::CloseTab, "Ctrl+W".to_string()),
+            ],
             ..Default::default()
         });
 
@@ -201,8 +166,11 @@ mod tests {
             original.theme.background_opacity
         );
         assert_eq!(config.theme.macos_blur_radius, 100); // clamped from 200
-        assert_eq!(config.shortcuts.new_tab, original.shortcuts.new_tab);
-        assert_eq!(config.shortcuts.close_tab, "Ctrl+W");
+        assert_eq!(
+            config.shortcuts.get(ShortcutId::NewTab),
+            original.shortcuts.get(ShortcutId::NewTab)
+        );
+        assert_eq!(config.shortcuts.get(ShortcutId::CloseTab), "Ctrl+W");
     }
 
     #[test]

@@ -15,41 +15,41 @@ impl App {
         match message {
             SftpMessage::ToggleDrawer => {
                 if self.active_tab != SETTINGS_TAB_INDEX
-                    && let Some(tab) = self.tabs.get_mut(self.active_tab)
-                    && tab.profile.ssh_profile().is_some()
+                    && let Some(pane) = self.focused_pane_mut()
+                    && pane.profile.ssh_profile().is_some()
                 {
-                    let was_open = tab.sftp.open;
-                    tab.sftp.anim.go_mut(!was_open, Instant::now());
+                    let was_open = pane.sftp.open;
+                    pane.sftp.anim.go_mut(!was_open, Instant::now());
                     if !was_open {
-                        tab.sftp.open = true;
+                        pane.sftp.open = true;
                     }
                     if !was_open
-                        && tab.sftp.command_tx.is_none()
-                        && !tab.sftp.opening
-                        && let crate::gui::tab::TerminalSession::Active(session) = &tab.session
+                        && pane.sftp.command_tx.is_none()
+                        && !pane.sftp.opening
+                        && let crate::gui::tab::TerminalSession::Active(session) = &pane.session
                         && let Some(ssh) = session.ssh_handle()
                     {
-                        tab.sftp.opening = true;
-                        tab.sftp.error = None;
-                        let tab_id = tab.id;
+                        pane.sftp.opening = true;
+                        pane.sftp.error = None;
+                        let tab_id = pane.id;
                         return open_sftp_stream(ssh.clone(), tab_id);
                     }
                 }
             }
             SftpMessage::OpenSucceeded { tab_id, command_tx } => {
-                if let Some(tab) = self.tabs.iter_mut().find(|t| t.id == tab_id) {
-                    tab.sftp.opening = false;
-                    tab.sftp.command_tx = Some(command_tx.clone());
-                    tab.sftp.loading = true;
-                    tab.sftp.error = None;
-                    let path = tab.sftp.current_path.clone();
+                if let Some(pane) = self.pane_mut_by_id(tab_id) {
+                    pane.sftp.opening = false;
+                    pane.sftp.command_tx = Some(command_tx.clone());
+                    pane.sftp.loading = true;
+                    pane.sftp.error = None;
+                    let path = pane.sftp.current_path.clone();
                     let _ = command_tx.unbounded_send(sftp::Command::List(path));
                 }
             }
             SftpMessage::OpenFailed { tab_id, error } => {
-                if let Some(tab) = self.tabs.iter_mut().find(|t| t.id == tab_id) {
-                    tab.sftp.opening = false;
-                    tab.sftp.error = Some(error);
+                if let Some(pane) = self.pane_mut_by_id(tab_id) {
+                    pane.sftp.opening = false;
+                    pane.sftp.error = Some(error);
                 }
             }
             SftpMessage::Event { tab_id, event } => {
@@ -58,8 +58,8 @@ impl App {
                 } else {
                     None
                 };
-                if let Some(tab) = self.tabs.iter_mut().find(|t| t.id == tab_id) {
-                    apply_sftp_event(&mut tab.sftp, event);
+                if let Some(pane) = self.pane_mut_by_id(tab_id) {
+                    apply_sftp_event(&mut pane.sftp, event);
                 }
                 if let Some(path) = finished_path {
                     return Task::perform(
@@ -76,37 +76,37 @@ impl App {
                 }
             }
             SftpMessage::DismissTransfer { tab_id, path } => {
-                if let Some(tab) = self.tabs.iter_mut().find(|t| t.id == tab_id) {
-                    tab.sftp
+                if let Some(pane) = self.pane_mut_by_id(tab_id) {
+                    pane.sftp
                         .transfers
                         .retain(|t| !(t.finished && t.path == path));
                 }
             }
             SftpMessage::Navigate { tab_id, path } => {
-                if let Some(tab) = self.tabs.iter_mut().find(|t| t.id == tab_id)
-                    && let Some(tx) = tab.sftp.command_tx.clone()
+                if let Some(pane) = self.pane_mut_by_id(tab_id)
+                    && let Some(tx) = pane.sftp.command_tx.clone()
                 {
-                    tab.sftp.loading = true;
-                    tab.sftp.error = None;
+                    pane.sftp.loading = true;
+                    pane.sftp.error = None;
                     let _ = tx.unbounded_send(sftp::Command::List(path));
                 }
             }
             SftpMessage::Refresh => {
                 if self.active_tab != SETTINGS_TAB_INDEX
-                    && let Some(tab) = self.tabs.get_mut(self.active_tab)
-                    && let Some(tx) = tab.sftp.command_tx.clone()
+                    && let Some(pane) = self.focused_pane_mut()
+                    && let Some(tx) = pane.sftp.command_tx.clone()
                 {
-                    tab.sftp.loading = true;
-                    tab.sftp.error = None;
-                    let _ = tx.unbounded_send(sftp::Command::List(tab.sftp.current_path.clone()));
+                    pane.sftp.loading = true;
+                    pane.sftp.error = None;
+                    let _ = tx.unbounded_send(sftp::Command::List(pane.sftp.current_path.clone()));
                 }
             }
             SftpMessage::RequestUpload => {
                 if self.active_tab != SETTINGS_TAB_INDEX
-                    && let Some(tab) = self.tabs.get(self.active_tab)
-                    && tab.profile.ssh_profile().is_some()
+                    && let Some(pane) = self.focused_pane()
+                    && pane.profile.ssh_profile().is_some()
                 {
-                    let tab_id = tab.id;
+                    let tab_id = pane.id;
                     return Task::perform(
                         async move {
                             rfd::AsyncFileDialog::new()
@@ -128,10 +128,10 @@ impl App {
                 if files.is_empty() {
                     return Task::none();
                 }
-                if let Some(tab) = self.tabs.iter_mut().find(|t| t.id == tab_id)
-                    && let Some(tx) = tab.sftp.command_tx.clone()
+                if let Some(pane) = self.pane_mut_by_id(tab_id)
+                    && let Some(tx) = pane.sftp.command_tx.clone()
                 {
-                    let base = tab.sftp.current_path.clone();
+                    let base = pane.sftp.current_path.clone();
                     for local in files {
                         let name = local
                             .file_name()
@@ -172,16 +172,16 @@ impl App {
                 remote,
                 local,
             } => {
-                if let Some(tab) = self.tabs.iter_mut().find(|t| t.id == tab_id)
-                    && let Some(tx) = tab.sftp.command_tx.clone()
+                if let Some(pane) = self.pane_mut_by_id(tab_id)
+                    && let Some(tx) = pane.sftp.command_tx.clone()
                 {
                     let _ = tx.unbounded_send(sftp::Command::Download { remote, local });
                 }
             }
             SftpMessage::CancelTransfer => {
                 if self.active_tab != SETTINGS_TAB_INDEX
-                    && let Some(tab) = self.tabs.get_mut(self.active_tab)
-                    && let Some(tx) = tab.sftp.command_tx.clone()
+                    && let Some(pane) = self.focused_pane_mut()
+                    && let Some(tx) = pane.sftp.command_tx.clone()
                 {
                     let _ = tx.unbounded_send(sftp::Command::Cancel);
                 }

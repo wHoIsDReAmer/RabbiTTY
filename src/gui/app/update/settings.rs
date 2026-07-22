@@ -85,17 +85,13 @@ impl App {
         };
 
         if affects_grid || affects_theme {
-            let (cols, rows) = self.grid_for_size(self.window_size);
-            let theme = affects_theme.then(|| TerminalTheme::from_config(&self.config));
-            for tab in &mut self.tabs {
-                if affects_grid {
-                    let current = tab.size();
-                    if current.columns != cols || current.lines != rows {
-                        tab.resize(cols, rows);
-                    }
-                }
-                if let Some(ref theme) = theme {
-                    tab.set_theme(theme.clone());
+            if affects_grid {
+                self.resize_panes();
+            }
+            if affects_theme {
+                let theme = TerminalTheme::from_config(&self.config);
+                for pane in self.panes_mut() {
+                    pane.set_theme(theme.clone());
                 }
             }
         }

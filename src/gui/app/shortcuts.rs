@@ -1,4 +1,4 @@
-use crate::config::ShortcutsConfig;
+use crate::config::{ShortcutId, ShortcutsConfig};
 use iced::keyboard::{Key, Modifiers, key::Named};
 use std::borrow::Cow;
 
@@ -74,45 +74,47 @@ pub(super) enum ShortcutAction {
     FontSizeDecrease,
     FontSizeReset,
     DuplicateTab,
+    SplitAuto,
+    SplitRight,
+    SplitDown,
+    ClosePane,
+    FocusPane(crate::gui::pane::Direction),
 }
 
 impl ShortcutAction {
+    fn from_id(id: ShortcutId) -> Self {
+        use crate::gui::pane::Direction;
+        match id {
+            ShortcutId::NewTab => Self::NewTab,
+            ShortcutId::CloseTab => Self::CloseTab,
+            ShortcutId::OpenSettings => Self::OpenSettings,
+            ShortcutId::NextTab => Self::NextTab,
+            ShortcutId::PrevTab => Self::PrevTab,
+            ShortcutId::Quit => Self::Quit,
+            ShortcutId::FontSizeIncrease => Self::FontSizeIncrease,
+            ShortcutId::FontSizeDecrease => Self::FontSizeDecrease,
+            ShortcutId::FontSizeReset => Self::FontSizeReset,
+            ShortcutId::DuplicateTab => Self::DuplicateTab,
+            ShortcutId::SplitAuto => Self::SplitAuto,
+            ShortcutId::SplitRight => Self::SplitRight,
+            ShortcutId::SplitDown => Self::SplitDown,
+            ShortcutId::ClosePane => Self::ClosePane,
+            ShortcutId::FocusLeft => Self::FocusPane(Direction::Left),
+            ShortcutId::FocusRight => Self::FocusPane(Direction::Right),
+            ShortcutId::FocusUp => Self::FocusPane(Direction::Up),
+            ShortcutId::FocusDown => Self::FocusPane(Direction::Down),
+        }
+    }
+
     pub(super) fn resolve(
         key: &Key,
         modifiers: Modifiers,
         shortcuts: &ShortcutsConfig,
     ) -> Option<Self> {
-        if shortcut_matches(&shortcuts.new_tab, key, modifiers) {
-            return Some(Self::NewTab);
-        }
-        if shortcut_matches(&shortcuts.close_tab, key, modifiers) {
-            return Some(Self::CloseTab);
-        }
-        if shortcut_matches(&shortcuts.open_settings, key, modifiers) {
-            return Some(Self::OpenSettings);
-        }
-        if shortcut_matches(&shortcuts.next_tab, key, modifiers) {
-            return Some(Self::NextTab);
-        }
-        if shortcut_matches(&shortcuts.prev_tab, key, modifiers) {
-            return Some(Self::PrevTab);
-        }
-        if shortcut_matches(&shortcuts.quit, key, modifiers) {
-            return Some(Self::Quit);
-        }
-        if shortcut_matches(&shortcuts.font_size_increase, key, modifiers) {
-            return Some(Self::FontSizeIncrease);
-        }
-        if shortcut_matches(&shortcuts.font_size_decrease, key, modifiers) {
-            return Some(Self::FontSizeDecrease);
-        }
-        if shortcut_matches(&shortcuts.font_size_reset, key, modifiers) {
-            return Some(Self::FontSizeReset);
-        }
-        if shortcut_matches(&shortcuts.duplicate_tab, key, modifiers) {
-            return Some(Self::DuplicateTab);
-        }
-        None
+        shortcuts
+            .iter()
+            .find(|(_, binding)| shortcut_matches(binding, key, modifiers))
+            .map(|(id, _)| Self::from_id(id))
     }
 }
 
@@ -291,5 +293,60 @@ mod tests {
             shortcut_matches("Ctrl+Unknown", &Key::Character("x".into()), Modifiers::CTRL);
 
         assert!(!matches);
+    }
+
+    #[test]
+    fn split_shortcuts_resolve_from_defaults() {
+        let shortcuts = crate::config::AppConfig::default().shortcuts;
+        let modifiers = if cfg!(target_os = "macos") {
+            Modifiers::LOGO | Modifiers::SHIFT
+        } else {
+            Modifiers::CTRL | Modifiers::SHIFT
+        };
+        let key = Key::Character("E".into());
+
+        assert!(matches!(
+            ShortcutAction::resolve(&key, modifiers, &shortcuts),
+            Some(ShortcutAction::SplitAuto)
+        ));
+    }
+
+    #[test]
+    fn focus_shortcuts_resolve_from_defaults() {
+        use crate::gui::pane::Direction;
+        let shortcuts = crate::config::AppConfig::default().shortcuts;
+        let modifiers = if cfg!(target_os = "macos") {
+            Modifiers::LOGO | Modifiers::ALT
+        } else {
+            Modifiers::CTRL | Modifiers::ALT
+        };
+
+        for (named, expected) in [
+            (Named::ArrowLeft, Direction::Left),
+            (Named::ArrowRight, Direction::Right),
+            (Named::ArrowUp, Direction::Up),
+            (Named::ArrowDown, Direction::Down),
+        ] {
+            let action = ShortcutAction::resolve(&Key::Named(named), modifiers, &shortcuts);
+            assert!(
+                matches!(action, Some(ShortcutAction::FocusPane(d)) if d == expected),
+                "{named:?} resolved to {action:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn auto_split_shortcut_resolves_from_defaults() {
+        let shortcuts = crate::config::AppConfig::default().shortcuts;
+        let modifiers = if cfg!(target_os = "macos") {
+            Modifiers::LOGO | Modifiers::SHIFT
+        } else {
+            Modifiers::CTRL | Modifiers::SHIFT
+        };
+        let action = ShortcutAction::resolve(&Key::Character("E".into()), modifiers, &shortcuts);
+        assert!(
+            matches!(action, Some(ShortcutAction::SplitAuto)),
+            "resolved to {action:?}"
+        );
     }
 }

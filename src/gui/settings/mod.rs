@@ -45,12 +45,7 @@ pub enum SettingsField {
     ThemeBackgroundOpacity,
     #[allow(dead_code)]
     ThemeMacosBlurRadius,
-    ShortcutNewTab,
-    ShortcutCloseTab,
-    ShortcutOpenSettings,
-    ShortcutNextTab,
-    ShortcutPrevTab,
-    ShortcutQuit,
+    Shortcut(crate::config::ShortcutId),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -366,12 +361,7 @@ pub struct SettingsDraft {
     pub animations_enabled: bool,
     pub tab_bar_position: TabBarPosition,
     pub macos_blur_radius: String,
-    pub shortcut_new_tab: String,
-    pub shortcut_close_tab: String,
-    pub shortcut_open_settings: String,
-    pub shortcut_next_tab: String,
-    pub shortcut_prev_tab: String,
-    pub shortcut_quit: String,
+    pub shortcuts: std::collections::BTreeMap<crate::config::ShortcutId, String>,
     pub profiles: Vec<ProfileDraft>,
     pub profiles_error: Option<String>,
     pub profile_modal_mode: Option<ProfileModalMode>,
@@ -411,12 +401,10 @@ impl SettingsDraft {
             animations_enabled: config.ui.animations_enabled,
             tab_bar_position: config.ui.tab_bar_position,
             macos_blur_radius: format!("{}", config.theme.macos_blur_radius),
-            shortcut_new_tab: config.shortcuts.new_tab.clone(),
-            shortcut_close_tab: config.shortcuts.close_tab.clone(),
-            shortcut_open_settings: config.shortcuts.open_settings.clone(),
-            shortcut_next_tab: config.shortcuts.next_tab.clone(),
-            shortcut_prev_tab: config.shortcuts.prev_tab.clone(),
-            shortcut_quit: config.shortcuts.quit.clone(),
+            shortcuts: crate::config::ShortcutId::ALL
+                .into_iter()
+                .map(|id| (id, config.shortcuts.get(id).to_string()))
+                .collect(),
             profiles: config
                 .profiles
                 .iter()
@@ -600,13 +588,10 @@ impl SettingsDraft {
             SettingsField::ThemeBackground => self.background = value,
             SettingsField::ThemeCursor => self.cursor = value,
             SettingsField::ThemeBackgroundOpacity => self.background_opacity = value,
+            SettingsField::Shortcut(id) => {
+                self.shortcuts.insert(id, value);
+            }
             SettingsField::ThemeMacosBlurRadius => self.macos_blur_radius = value,
-            SettingsField::ShortcutNewTab => self.shortcut_new_tab = value,
-            SettingsField::ShortcutCloseTab => self.shortcut_close_tab = value,
-            SettingsField::ShortcutOpenSettings => self.shortcut_open_settings = value,
-            SettingsField::ShortcutNextTab => self.shortcut_next_tab = value,
-            SettingsField::ShortcutPrevTab => self.shortcut_prev_tab = value,
-            SettingsField::ShortcutQuit => self.shortcut_quit = value,
         }
     }
 
@@ -642,24 +627,12 @@ impl SettingsDraft {
             ..Default::default()
         };
 
-        if !self.shortcut_new_tab.trim().is_empty() {
-            updates.shortcut_new_tab = Some(self.shortcut_new_tab.clone());
-        }
-        if !self.shortcut_close_tab.trim().is_empty() {
-            updates.shortcut_close_tab = Some(self.shortcut_close_tab.clone());
-        }
-        if !self.shortcut_open_settings.trim().is_empty() {
-            updates.shortcut_open_settings = Some(self.shortcut_open_settings.clone());
-        }
-        if !self.shortcut_next_tab.trim().is_empty() {
-            updates.shortcut_next_tab = Some(self.shortcut_next_tab.clone());
-        }
-        if !self.shortcut_prev_tab.trim().is_empty() {
-            updates.shortcut_prev_tab = Some(self.shortcut_prev_tab.clone());
-        }
-        if !self.shortcut_quit.trim().is_empty() {
-            updates.shortcut_quit = Some(self.shortcut_quit.clone());
-        }
+        updates.shortcuts = self
+            .shortcuts
+            .iter()
+            .filter(|(_, binding)| !binding.trim().is_empty())
+            .map(|(id, binding)| (*id, binding.clone()))
+            .collect();
         updates
     }
 }

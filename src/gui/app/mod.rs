@@ -41,7 +41,7 @@ pub enum Message {
     SshPasswordPromptCancel,
     ShowTabContextMenu(usize),
     CloseTabContextMenu,
-    TerminalRightClick,
+    TerminalRightClick(u64),
     CloseTerminalContextMenu,
     TerminalContextPaste,
     TerminalContextCopy,
@@ -58,8 +58,12 @@ pub enum Message {
 
     TabBarScroll(f32),
     TabBarScrolled(f32),
-    SelectionChanged(Option<crate::terminal::Selection>),
+    SelectionChanged {
+        pane: u64,
+        selection: Option<crate::terminal::Selection>,
+    },
     TerminalMousePress {
+        pane: u64,
         col: usize,
         row: usize,
     },
@@ -83,10 +87,14 @@ pub enum Message {
     ImeStateChanged(bool),
     ImeCommit(String),
     ImePreedit(String, Option<std::ops::Range<usize>>),
-    TerminalScroll(f32),
+    PaneScrollTo {
+        pane: u64,
+        rel: f32,
+    },
     TerminalWheelScroll(f32),
 
     WindowResized(Size),
+    TerminalAreaResized(Size),
     ResizeDebounce,
     AnimationTick,
     CursorBlink,
@@ -189,6 +197,7 @@ pub struct App {
     pub(super) show_shell_picker: bool,
     pub(super) shell_picker_selected: usize,
     pub(super) window_size: Size,
+    pub(super) terminal_area: Size,
     pub(super) settings_open: bool,
     pub(super) settings_category: SettingsCategory,
     pub(super) settings_draft: SettingsDraft,
@@ -201,7 +210,6 @@ pub struct App {
     pub(super) initial_shell_opened: bool,
     pub(super) next_tab_id: u64,
     pub(super) tab_bar_scroll_x: f32,
-    pub(super) ignore_scrollable_sync: u8,
     pub(super) scroll_follow_bottom: bool,
     pub(super) dragging_tab: Option<usize>,
     pub(super) drag_target: Option<usize>,
@@ -287,6 +295,7 @@ impl App {
             active_tab: 0,
             show_shell_picker: false,
             shell_picker_selected: 0,
+            terminal_area: Size::new(0.0, 0.0),
             window_size: Size::new(config.ui.window_width, config.ui.window_height),
             settings_open: false,
             settings_category: SettingsCategory::Appearance,
@@ -300,7 +309,6 @@ impl App {
             initial_shell_opened: false,
             next_tab_id: 1,
             tab_bar_scroll_x: 0.0,
-            ignore_scrollable_sync: 0,
             scroll_follow_bottom: true,
             dragging_tab: None,
             drag_target: None,
@@ -340,16 +348,40 @@ impl App {
         }
     }
 
-    pub(super) fn grid_for_size(&self, size: Size) -> (usize, usize) {
+    pub(super) fn grid_for_rect(&self, rect: iced::Rectangle) -> (usize, usize) {
         let pad_x = self.config.terminal.padding_x * 2.0;
         let pad_y = self.config.terminal.padding_y * 2.0;
-        let terminal_height = (size.height - 80.0 - pad_y).max(100.0);
-        let terminal_width = (size.width - 20.0 - pad_x).max(100.0);
         let cell_width = self.config.terminal.cell_width.max(1.0);
         let cell_height = self.config.terminal.cell_height.max(1.0);
-        let cols = (terminal_width / cell_width) as usize;
-        let rows = (terminal_height / cell_height) as usize;
+        let cols = ((rect.width - pad_x).max(1.0) / cell_width) as usize;
+        let rows = ((rect.height - pad_y).max(1.0) / cell_height) as usize;
         (cols.max(10), rows.max(5))
+    }
+
+    pub(super) fn terminal_area_rect(&self) -> iced::Rectangle {
+        let (width, height) = if self.terminal_area.width > 1.0 {
+            (self.terminal_area.width, self.terminal_area.height)
+        } else {
+            (
+                (self.window_size.width - 20.0).max(100.0),
+                (self.window_size.height - 80.0).max(100.0),
+            )
+        };
+        iced::Rectangle {
+            x: 0.0,
+            y: 0.0,
+            width,
+            height,
+        }
+    }
+
+    pub(super) fn grid_for_size(&self, size: Size) -> (usize, usize) {
+        self.grid_for_rect(iced::Rectangle {
+            x: 0.0,
+            y: 0.0,
+            width: (size.width - 20.0).max(100.0),
+            height: (size.height - 80.0).max(100.0),
+        })
     }
 
     pub fn window_style(&self) -> iced::theme::Style {
@@ -598,6 +630,150 @@ mod tests {
         assert_eq!(
             app.shell_picker_entries()[app.shell_picker_selected].label,
             expected
+        );
+    }
+
+    fn app_with_pty() -> App {
+        let mut app = App::new(AppConfig::default());
+        let (tx, _rx) = mpsc::unbounded();
+        app.pty_sender = Some(tx);
+        app
+    }
+
+    #[test]
+    fn a_split_shortcut_actually_creates_a_pane() {
+        let mut app = app_with_pty();
+        let _ = app.update(Message::CreateTab(Profile::default_shell()));
+        assert_eq!(app.tabs.len(), 1, "tab was not created");
+        assert_eq!(app.tabs[0].panes.len(), 1);
+
+        let modifiers = if cfg!(target_os = "macos") {
+            Modifiers::LOGO | Modifiers::SHIFT
+        } else {
+            Modifiers::CTRL | Modifiers::SHIFT
+        };
+        let _ = app.update(Message::KeyPressed {
+            key: Key::Character("E".into()),
+            modifiers,
+            text: None,
+        });
+
+        assert_eq!(
+            app.tabs[0].panes.len(),
+            2,
+            "split shortcut did not add a pane"
+        );
+        assert_eq!(app.tabs[0].layout.leaves().len(), 2);
+    }
+
+    #[test]
+    fn clicking_another_pane_moves_focus() {
+        let mut app = app_with_pty();
+        let _ = app.update(Message::CreateTab(Profile::default_shell()));
+        let _ = app.split_focused(crate::gui::pane::Axis::Vertical);
+
+        let ids = app.tabs[0].layout.leaves();
+        assert_eq!(ids.len(), 2, "split did not happen");
+        let (first, second) = (ids[0], ids[1]);
+        assert_eq!(app.tabs[0].focused, second);
+
+        let _ = app.update(Message::SelectionChanged {
+            pane: first,
+            selection: None,
+        });
+        assert_eq!(app.tabs[0].focused, first, "click did not move focus");
+
+        let _ = app.update(Message::TerminalRightClick(second));
+        assert_eq!(
+            app.tabs[0].focused, second,
+            "right click did not move focus"
+        );
+    }
+
+    #[test]
+    fn focus_shortcut_moves_between_panes() {
+        let mut app = app_with_pty();
+        let _ = app.update(Message::CreateTab(Profile::default_shell()));
+        app.terminal_area = Size::new(1000.0, 600.0);
+        let _ = app.split_focused(crate::gui::pane::Axis::Vertical);
+
+        let ids = app.tabs[0].layout.leaves();
+        let (left, right) = (ids[0], ids[1]);
+        assert_eq!(app.tabs[0].focused, right);
+
+        let modifiers = if cfg!(target_os = "macos") {
+            Modifiers::LOGO | Modifiers::ALT
+        } else {
+            Modifiers::CTRL | Modifiers::ALT
+        };
+        let _ = app.update(Message::KeyPressed {
+            key: Key::Named(iced::keyboard::key::Named::ArrowLeft),
+            modifiers,
+            text: None,
+        });
+        assert_eq!(
+            app.tabs[0].focused, left,
+            "focus shortcut did not move left"
+        );
+    }
+
+    #[test]
+    fn repeated_auto_splits_keep_panes_usable() {
+        let mut app = app_with_pty();
+        let _ = app.update(Message::CreateTab(Profile::default_shell()));
+        app.terminal_area = Size::new(1200.0, 700.0);
+
+        let modifiers = if cfg!(target_os = "macos") {
+            Modifiers::LOGO | Modifiers::SHIFT
+        } else {
+            Modifiers::CTRL | Modifiers::SHIFT
+        };
+        for _ in 0..3 {
+            let _ = app.update(Message::KeyPressed {
+                key: Key::Character("E".into()),
+                modifiers,
+                text: None,
+            });
+        }
+
+        let regions = app.tabs[0].layout.regions(app.terminal_area_rect());
+        assert_eq!(regions.len(), 4);
+        for (_, rect) in &regions {
+            assert!(
+                rect.width > 250.0 && rect.height > 150.0,
+                "{rect:?} collapsed; splits are not alternating"
+            );
+        }
+    }
+
+    #[test]
+    fn each_pane_scrolls_on_its_own() {
+        let mut app = app_with_pty();
+        let _ = app.update(Message::CreateTab(Profile::default_shell()));
+        app.terminal_area = Size::new(1000.0, 600.0);
+        let _ = app.split_focused(crate::gui::pane::Axis::Vertical);
+
+        let ids = app.tabs[0].layout.leaves();
+        let (left, right) = (ids[0], ids[1]);
+
+        for _ in 0..200 {
+            app.tabs[0].pane_mut(left).unwrap().feed_bytes(b"line\r\n");
+        }
+        assert!(app.tabs[0].pane_mut(left).unwrap().scroll_position().1 > 0);
+
+        let _ = app.update(Message::PaneScrollTo {
+            pane: left,
+            rel: 0.0,
+        });
+
+        assert!(
+            app.tabs[0].pane_mut(left).unwrap().scroll_position().0 > 0,
+            "scrollbar did not scroll its own pane"
+        );
+        assert_eq!(
+            app.tabs[0].pane_mut(right).unwrap().scroll_position().0,
+            0,
+            "scrolling one pane moved another"
         );
     }
 }

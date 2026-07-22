@@ -1,4 +1,5 @@
 use crate::config::{AppConfig, SshProfile};
+use crate::gui::pane::{Axis, Direction, PaneNode, neighbour};
 use crate::gui::sftp::SftpDrawerState;
 use crate::session::{LaunchSpec, OutputEvent, Session, SessionError};
 use crate::terminal::{CellVisual, Selection, TerminalEngine, TerminalSize, TerminalTheme};
@@ -11,7 +12,7 @@ use std::io::Write;
 use std::path::Path;
 use std::sync::{Arc, Mutex};
 
-pub struct TerminalTab {
+pub struct Pane {
     pub id: u64,
     pub title: String,
     pub profile: Profile,
@@ -21,13 +22,20 @@ pub struct TerminalTab {
     engine: TerminalEngine,
 }
 
+pub struct TerminalTab {
+    pub id: u64,
+    pub layout: PaneNode,
+    pub focused: u64,
+    pub panes: Vec<Pane>,
+}
+
 pub enum TerminalSession {
     Active(Session),
     #[allow(dead_code)]
     Failed(String),
 }
 
-impl TerminalTab {
+impl Pane {
     pub fn from_profile(
         profile: Profile,
         columns: usize,
@@ -567,6 +575,67 @@ impl Display for SessionError {
         match self {
             SessionError::Spawn(err) => write!(f, "{err}"),
             SessionError::Io(err) => write!(f, "{err}"),
+        }
+    }
+}
+
+impl TerminalTab {
+    pub fn new(id: u64, pane: Pane) -> Self {
+        let focused = pane.id;
+        Self {
+            id,
+            layout: PaneNode::Leaf(focused),
+            focused,
+            panes: vec![pane],
+        }
+    }
+
+    pub fn focused(&self) -> &Pane {
+        self.panes
+            .iter()
+            .find(|p| p.id == self.focused)
+            .unwrap_or(&self.panes[0])
+    }
+
+    pub fn focused_mut(&mut self) -> &mut Pane {
+        let id = self.focused;
+        if let Some(index) = self.panes.iter().position(|p| p.id == id) {
+            &mut self.panes[index]
+        } else {
+            &mut self.panes[0]
+        }
+    }
+
+    pub fn pane_mut(&mut self, id: u64) -> Option<&mut Pane> {
+        self.panes.iter_mut().find(|p| p.id == id)
+    }
+
+    pub fn title(&self) -> &str {
+        &self.focused().title
+    }
+
+    pub fn split(&mut self, axis: Axis, pane: Pane) {
+        let new_id = pane.id;
+        if self.layout.split(self.focused, axis, new_id) {
+            self.panes.push(pane);
+            self.focused = new_id;
+        }
+    }
+
+    pub fn close_focused(&mut self) -> bool {
+        let target = self.focused;
+        if !self.layout.remove(target) {
+            return false;
+        }
+        self.panes.retain(|p| p.id != target);
+        self.focused = self.layout.leaves().first().copied().unwrap_or(target);
+        true
+    }
+
+    pub fn focus_direction(&mut self, direction: Direction, area: iced::Rectangle) {
+        let regions = self.layout.regions(area);
+        if let Some(next) = neighbour(&regions, self.focused, direction) {
+            self.focused = next;
         }
     }
 }

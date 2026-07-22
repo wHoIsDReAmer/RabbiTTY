@@ -295,7 +295,12 @@ impl TextPipelineData {
     }
 
     #[allow(clippy::too_many_arguments)]
-    pub(super) fn prepare_instances(
+    pub(super) fn begin(&mut self) {
+        self.glyph_instances.clear();
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub(super) fn push_pane(
         &mut self,
         device: &wgpu::Device,
         queue: &wgpu::Queue,
@@ -305,6 +310,7 @@ impl TextPipelineData {
         display_offset: usize,
         cursor: Option<[u32; 2]>,
         cursor_color: [f32; 4],
+        origin: [f32; 2],
     ) {
         // Color for a glyph sitting under an opaque block cursor: contrast
         // against the cursor color (mirrors the legacy engine-side logic).
@@ -335,7 +341,6 @@ impl TextPipelineData {
 
         let top_margin = (cell_height - self.line_height).max(0.0) * 0.5;
 
-        self.glyph_instances.clear();
         let needed = cells.len().saturating_sub(self.glyph_instances.capacity());
         if needed > 0 {
             self.glyph_instances.reserve(needed);
@@ -359,7 +364,10 @@ impl TextPipelineData {
             let wide_offset_x = (cell_width * span - self.cell_advance * span).max(0.0) * 0.5;
             let origin_x = cell_x + wide_offset_x;
             let origin_y = cell_y + top_margin - self.line_min_y;
-            let pos = [origin_x + info.bearing[0], origin_y + info.bearing[1]];
+            let pos = [
+                origin[0] + origin_x + info.bearing[0],
+                origin[1] + origin_y + info.bearing[1],
+            ];
 
             let bg_color =
                 if selection.is_some_and(|s| s.contains_at(cell.row, cell.col, display_offset)) {
@@ -381,7 +389,9 @@ impl TextPipelineData {
                 bg_color,
             });
         }
+    }
 
+    pub(super) fn upload(&mut self, device: &wgpu::Device, queue: &wgpu::Queue) {
         self.instance_len = self.glyph_instances.len();
 
         if self.instance_len > self.instance_capacity {

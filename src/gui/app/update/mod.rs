@@ -13,19 +13,11 @@ use std::sync::LazyLock;
 
 pub(in crate::gui) static TAB_BAR_SCROLLABLE_ID: LazyLock<widget::Id> =
     LazyLock::new(widget::Id::unique);
-pub(in crate::gui) static TERMINAL_SCROLLABLE_ID: LazyLock<widget::Id> =
-    LazyLock::new(widget::Id::unique);
-
-const IGNORE_SCROLL_SYNC_COUNT: u8 = 2;
 
 impl App {
-    fn active_session_mut(&mut self) -> Option<&mut crate::gui::tab::TerminalTab> {
-        if self.active_tab == SETTINGS_TAB_INDEX {
-            return None;
-        }
-        self.tabs
-            .get_mut(self.active_tab)
-            .filter(|tab| matches!(tab.session, crate::gui::tab::TerminalSession::Active(_)))
+    fn active_session_mut(&mut self) -> Option<&mut crate::gui::tab::Pane> {
+        self.focused_pane_mut()
+            .filter(|pane| matches!(pane.session, crate::gui::tab::TerminalSession::Active(_)))
     }
 
     pub(super) fn dismiss_shell_picker(&mut self) {
@@ -110,7 +102,7 @@ impl App {
                 let index = self.tab_context_menu.unwrap_or(self.active_tab);
                 self.tab_context_menu = None;
                 if let Some(tab) = self.tabs.get(index) {
-                    let profile = tab.profile.clone();
+                    let profile = tab.focused().profile.clone();
                     return self.launch_profile(profile);
                 }
             }
@@ -145,7 +137,8 @@ impl App {
             Message::CloseTabContextMenu => {
                 self.tab_context_menu = None;
             }
-            Message::TerminalRightClick => {
+            Message::TerminalRightClick(pane) => {
+                self.focus_pane(pane);
                 use crate::config::RightClickAction;
                 match self.config.terminal.right_click_action {
                     RightClickAction::Paste => {
@@ -171,10 +164,10 @@ impl App {
             }
             Message::TerminalContextCopy => {
                 self.terminal_context_menu = false;
-                if let Some(tab) = self.tabs.get_mut(self.active_tab)
-                    && let Some(text) = tab.selected_text()
+                if let Some(pane) = self.focused_pane_mut()
+                    && let Some(text) = pane.selected_text()
                 {
-                    tab.clear_selection();
+                    pane.clear_selection();
                     return iced::clipboard::write(text);
                 }
             }
@@ -196,15 +189,13 @@ impl App {
             }
             Message::PtyOutput(event) => {
                 self.handle_pty_event(event);
-                self.ignore_scrollable_sync = IGNORE_SCROLL_SYNC_COUNT;
-                return self.sync_terminal_scrollable();
+                return Task::none();
             }
             Message::PtyOutputBatch(events) => {
                 for event in events {
                     self.handle_pty_event(event);
                 }
-                self.ignore_scrollable_sync = IGNORE_SCROLL_SYNC_COUNT;
-                return self.sync_terminal_scrollable();
+                return Task::none();
             }
             Message::KeyPressed {
                 key,
@@ -219,12 +210,15 @@ impl App {
             Message::TabBarScrolled(x) => {
                 self.tab_bar_scroll_x = x;
             }
-            Message::SelectionChanged(sel) => {
+            Message::SelectionChanged { pane, selection } => {
                 self.selection_autoscroll = None;
                 if self.active_tab != SETTINGS_TAB_INDEX
                     && let Some(tab) = self.tabs.get_mut(self.active_tab)
                 {
-                    tab.selection = sel;
+                    tab.focused = pane;
+                    if let Some(slot) = tab.pane_mut(pane) {
+                        slot.selection = selection;
+                    }
                 }
             }
             Message::TerminalSelectionAutoscroll { up, col } => {
@@ -237,20 +231,21 @@ impl App {
             Message::SelectionAutoscrollTick => {
                 return self.advance_selection_autoscroll();
             }
-            Message::TerminalMousePress { col, row } => {
-                if let Some(tab) = self.tabs.get(self.active_tab) {
-                    tab.send_mouse_event(0, col, row, true);
+            Message::TerminalMousePress { pane, col, row } => {
+                self.focus_pane(pane);
+                if let Some(pane) = self.focused_pane() {
+                    pane.send_mouse_event(0, col, row, true);
                 }
             }
             Message::TerminalMouseRelease { col, row } => {
-                if let Some(tab) = self.tabs.get(self.active_tab) {
-                    tab.send_mouse_event(0, col, row, false);
+                if let Some(pane) = self.focused_pane() {
+                    pane.send_mouse_event(0, col, row, false);
                 }
             }
             Message::TerminalMouseDrag { col, row } => {
-                if let Some(tab) = self.tabs.get(self.active_tab) {
+                if let Some(pane) = self.focused_pane() {
                     // Button 0 + 32 = motion flag for SGR drag reporting
-                    tab.send_mouse_event(32, col, row, true);
+                    pane.send_mouse_event(32, col, row, true);
                 }
             }
             Message::PasteClipboard(text) => {
@@ -279,17 +274,16 @@ impl App {
             }
             Message::ImeCommit(text) => {
                 if !text.is_empty()
-                    && let Some(tab) = self.active_session_mut()
-                    && let crate::gui::tab::TerminalSession::Active(session) = &tab.session
+                    && let Some(pane) = self.active_session_mut()
+                    && let crate::gui::tab::TerminalSession::Active(session) = &pane.session
                 {
                     let _ = session.send_bytes(text.as_bytes());
-                    tab.clear_selection();
-                    tab.scroll_to_bottom();
+                    pane.clear_selection();
+                    pane.scroll_to_bottom();
                 }
                 self.ime_preedit = None;
                 self.scroll_follow_bottom = true;
-                self.ignore_scrollable_sync = IGNORE_SCROLL_SYNC_COUNT;
-                return self.sync_terminal_scrollable_forced();
+                return Task::none();
             }
             Message::ImePreedit(text, cursor) => {
                 if text.is_empty() {
@@ -298,60 +292,55 @@ impl App {
                     self.ime_preedit = Some((text, cursor));
                 }
             }
-            Message::TerminalScroll(rel_y) => {
-                if self.ignore_scrollable_sync > 0 {
-                    self.ignore_scrollable_sync -= 1;
-                } else if self.active_tab != SETTINGS_TAB_INDEX
-                    && let Some(tab) = self.tabs.get_mut(self.active_tab)
+            Message::PaneScrollTo { pane, rel } => {
+                if let Some(tab) = self.tabs.get_mut(self.active_tab)
+                    && let Some(pane) = tab.pane_mut(pane)
                 {
-                    // With anchor_bottom: rel_y=0 is bottom, rel_y=1 is top.
-                    // scroll_to_relative expects rel=1.0 as bottom, rel=0.0 as top.
-                    tab.scroll_to_relative(1.0 - rel_y);
-                    let (offset, _) = tab.scroll_position();
-                    self.scroll_follow_bottom = offset == 0;
+                    pane.scroll_to_relative(rel);
                 }
             }
             Message::TerminalWheelScroll(raw_delta) => {
                 let raw_delta = raw_delta * self.config.terminal.scroll_multiplier;
+                let mut accumulator = self.scroll_accumulator;
+                let mut follow_bottom = self.scroll_follow_bottom;
+                let mut sync = false;
+
                 if self.active_tab != SETTINGS_TAB_INDEX
-                    && let Some(tab) = self.tabs.get_mut(self.active_tab)
+                    && let Some(pane) = self.focused_pane_mut()
                 {
-                    if tab.mouse_mode() {
-                        self.scroll_accumulator += raw_delta;
-                        let lines = self.scroll_accumulator as i32;
+                    if pane.mouse_mode() {
+                        accumulator += raw_delta;
+                        let lines = accumulator as i32;
                         if lines != 0 {
-                            self.scroll_accumulator -= lines as f32;
+                            accumulator -= lines as f32;
                             let button: u8 = if lines > 0 { 64 } else { 65 };
                             for _ in 0..lines.unsigned_abs() {
-                                tab.send_mouse_event(button, 0, 0, true);
+                                pane.send_mouse_event(button, 0, 0, true);
                             }
                         }
-                    } else if tab.alt_screen() {
-                        // Alt screen without mouse mode: convert scroll to arrow keys
-                        self.scroll_accumulator += raw_delta;
-                        let lines = self.scroll_accumulator as i32;
+                    } else if pane.alt_screen() {
+                        accumulator += raw_delta;
+                        let lines = accumulator as i32;
                         if lines != 0 {
-                            self.scroll_accumulator -= lines as f32;
-                            tab.send_scroll_as_arrows(lines);
+                            accumulator -= lines as f32;
+                            pane.send_scroll_as_arrows(lines);
                         }
                     } else {
-                        self.scroll_accumulator = 0.0;
+                        accumulator = 0.0;
                         let delta = raw_delta.round() as i32;
                         if delta != 0 {
-                            tab.scroll(delta);
+                            pane.scroll(delta);
+                            let (offset, _) = pane.scroll_position();
+                            follow_bottom = offset == 0;
+                            sync = true;
                         }
-                        // Update follow-bottom based on resulting position
-                        let (offset, _) = tab.scroll_position();
-                        self.scroll_follow_bottom = offset == 0;
                     }
                 }
-                if self
-                    .tabs
-                    .get(self.active_tab)
-                    .is_some_and(|t| !t.mouse_mode() && !t.alt_screen())
-                {
-                    self.ignore_scrollable_sync = IGNORE_SCROLL_SYNC_COUNT;
-                    return self.sync_terminal_scrollable_forced();
+
+                self.scroll_accumulator = accumulator;
+                self.scroll_follow_bottom = follow_bottom;
+                if sync {
+                    return Task::none();
                 }
             }
             Message::WindowResized(size) => {
@@ -363,9 +352,9 @@ impl App {
                     self.show_shell_picker = false;
                     self.shell_picker_selected = 0;
                 }
-                for tab in &mut self.tabs {
-                    if !tab.sftp.anim.is_animating(now) && !tab.sftp.anim.value() {
-                        tab.sftp.open = false;
+                for pane in self.panes_mut() {
+                    if !pane.sftp.anim.is_animating(now) && !pane.sftp.anim.value() {
+                        pane.sftp.open = false;
                     }
                 }
                 if let Some(cat) = self.settings_category_transition.tick(now) {
@@ -379,6 +368,14 @@ impl App {
             }
             Message::CursorBlink => {
                 self.cursor_blink_on = !self.cursor_blink_on;
+            }
+            Message::TerminalAreaResized(size) => {
+                if (self.terminal_area.width - size.width).abs() > 0.5
+                    || (self.terminal_area.height - size.height).abs() > 0.5
+                {
+                    self.terminal_area = size;
+                    self.resize_panes();
+                }
             }
             Message::ResizeDebounce => {
                 if self.resize_debounce_seq != self.resize_debounce_spawned_seq {
@@ -485,10 +482,10 @@ impl App {
 
         // Copy: Cmd+C (macOS) / Ctrl+Shift+C (other)
         if is_copy_shortcut(&key, modifiers)
-            && let Some(tab) = self.tabs.get_mut(self.active_tab)
-            && let Some(text) = tab.selected_text()
+            && let Some(pane) = self.focused_pane_mut()
+            && let Some(text) = pane.selected_text()
         {
-            tab.clear_selection();
+            pane.clear_selection();
             return iced::clipboard::write(text);
         }
         // No selection → fall through to send Ctrl+C to terminal
@@ -519,14 +516,13 @@ impl App {
         }
 
         // Clear selection on actual key input
-        if let Some(tab) = self.tabs.get_mut(self.active_tab) {
-            tab.clear_selection();
-            tab.handle_key(&key, modifiers, text.as_deref());
-            tab.scroll_to_bottom();
+        if let Some(pane) = self.focused_pane_mut() {
+            pane.clear_selection();
+            pane.handle_key(&key, modifiers, text.as_deref());
+            pane.scroll_to_bottom();
         }
         self.scroll_follow_bottom = true;
-        self.ignore_scrollable_sync = IGNORE_SCROLL_SYNC_COUNT;
-        self.sync_terminal_scrollable_forced()
+        Task::none()
     }
 
     fn advance_selection_autoscroll(&mut self) -> Task<Message> {
@@ -540,17 +536,17 @@ impl App {
         let col = self.selection_autoscroll_col;
         let step = (self.config.terminal.scroll_multiplier.round() as i32).max(1);
         let offset = {
-            let Some(tab) = self.tabs.get_mut(self.active_tab) else {
+            let Some(pane) = self.focused_pane_mut() else {
                 self.selection_autoscroll = None;
                 return Task::none();
             };
-            let Some(mut sel) = tab.selection else {
+            let Some(mut sel) = pane.selection else {
                 self.selection_autoscroll = None;
                 return Task::none();
             };
-            let lines = tab.size().lines;
-            tab.scroll(if up { step } else { -step });
-            let (offset, _) = tab.scroll_position();
+            let lines = pane.size().lines;
+            pane.scroll(if up { step } else { -step });
+            let (offset, _) = pane.scroll_position();
             let edge_row = if up {
                 0i64
             } else {
@@ -561,18 +557,17 @@ impl App {
                 row: edge_row - delta,
                 col,
             };
-            tab.selection = Some(sel);
+            pane.selection = Some(sel);
             offset
         };
         self.scroll_follow_bottom = offset == 0;
-        self.ignore_scrollable_sync = IGNORE_SCROLL_SYNC_COUNT;
-        self.sync_terminal_scrollable_forced()
+        Task::none()
     }
 
     fn perform_paste(&mut self, text: String) -> Task<Message> {
         let config_bracketed_paste = self.config.terminal.bracketed_paste;
-        if let Some(tab) = self.active_session_mut()
-            && let crate::gui::tab::TerminalSession::Active(session) = &tab.session
+        if let Some(pane) = self.active_session_mut()
+            && let crate::gui::tab::TerminalSession::Active(session) = &pane.session
         {
             // pasted contents cannot break out of bracketed-paste framing.
             let sanitized = text
@@ -580,17 +575,16 @@ impl App {
                 .replace('\n', "\r")
                 .replace("\x1b[200~", "")
                 .replace("\x1b[201~", "");
-            let payload = if config_bracketed_paste && tab.bracketed_paste() {
+            let payload = if config_bracketed_paste && pane.bracketed_paste() {
                 format!("\x1b[200~{sanitized}\x1b[201~").into_bytes()
             } else {
                 sanitized.into_bytes()
             };
             let _ = session.send_bytes(&payload);
-            tab.scroll_to_bottom();
+            pane.scroll_to_bottom();
         }
         self.scroll_follow_bottom = true;
-        self.ignore_scrollable_sync = IGNORE_SCROLL_SYNC_COUNT;
-        self.sync_terminal_scrollable_forced()
+        Task::none()
     }
 
     fn handle_apply_window_style(&mut self) -> Task<Message> {

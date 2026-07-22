@@ -1,6 +1,7 @@
 use super::super::shortcuts::ShortcutAction;
 use super::super::{App, Message, SETTINGS_TAB_INDEX};
 use crate::config::SshProfile;
+use crate::gui::pane::Axis;
 use crate::gui::settings::SettingsDraft;
 use crate::gui::tab::{Profile, ProfileKind};
 use crate::terminal::TerminalTheme;
@@ -41,6 +42,133 @@ fn local_subtitle(profile: &Profile) -> String {
         } => path.clone(),
         ProfileKind::Local { program: None, .. } => crate::t!("shell_picker.default").to_string(),
         ProfileKind::Ssh(ssh) => format!("{}:{}", ssh.host, ssh.port),
+    }
+}
+
+impl App {
+    fn terminal_area(&self) -> iced::Rectangle {
+        iced::Rectangle {
+            x: 0.0,
+            y: 0.0,
+            width: (self.window_size.width - 20.0).max(1.0),
+            height: (self.window_size.height - 80.0).max(1.0),
+        }
+    }
+
+    pub(in crate::gui) fn focused_pane_rect(&self) -> Option<iced::Rectangle> {
+        let tab = self.tabs.get(self.active_tab)?;
+        tab.layout
+            .regions(self.terminal_area_rect())
+            .into_iter()
+            .find(|(id, _)| *id == tab.focused)
+            .map(|(_, rect)| rect)
+    }
+
+    pub(in crate::gui) fn focus_pane(&mut self, id: u64) {
+        if let Some(tab) = self.tabs.get_mut(self.active_tab)
+            && tab.pane_mut(id).is_some()
+        {
+            tab.focused = id;
+        }
+    }
+
+    pub(in crate::gui) fn resize_panes(&mut self) {
+        let area = self.terminal_area_rect();
+        let grids: Vec<Vec<(u64, (usize, usize))>> = self
+            .tabs
+            .iter()
+            .map(|tab| {
+                tab.layout
+                    .regions(area)
+                    .into_iter()
+                    .map(|(id, rect)| (id, self.grid_for_rect(rect)))
+                    .collect()
+            })
+            .collect();
+
+        for (tab, grids) in self.tabs.iter_mut().zip(grids) {
+            for (id, (cols, rows)) in grids {
+                if let Some(pane) = tab.pane_mut(id) {
+                    let current = pane.size();
+                    if current.columns != cols || current.lines != rows {
+                        pane.resize(cols, rows);
+                    }
+                }
+            }
+        }
+    }
+
+    pub(in crate::gui) fn split_focused(&mut self, axis: Axis) -> Task<Message> {
+        if self.active_tab == SETTINGS_TAB_INDEX {
+            return Task::none();
+        }
+        let Some(profile) = self.focused_pane().map(|pane| pane.profile.clone()) else {
+            return Task::none();
+        };
+        let Some(sender) = self.pty_sender.clone() else {
+            return Task::none();
+        };
+
+        let (cols, rows) = self.grid_for_size(self.window_size);
+        let theme = TerminalTheme::from_config(&self.config);
+        let pane_id = self.next_tab_id;
+        self.next_tab_id = self.next_tab_id.wrapping_add(1);
+
+        let pane = crate::gui::tab::Pane::from_profile(
+            profile,
+            cols,
+            rows,
+            theme,
+            pane_id,
+            sender,
+            &self.config,
+        );
+        if let Some(tab) = self.tabs.get_mut(self.active_tab) {
+            tab.split(axis, pane);
+        }
+        self.resize_panes();
+        Task::none()
+    }
+
+    pub(in crate::gui) fn close_focused_pane(&mut self) {
+        if self.active_tab == SETTINGS_TAB_INDEX {
+            return;
+        }
+        let closed_tab = match self.tabs.get_mut(self.active_tab) {
+            Some(tab) => !tab.close_focused(),
+            None => return,
+        };
+        if closed_tab {
+            self.handle_close_tab(self.active_tab);
+        } else {
+            self.resize_panes();
+        }
+    }
+}
+
+impl App {
+    pub(in crate::gui) fn focused_pane(&self) -> Option<&crate::gui::tab::Pane> {
+        if self.active_tab == SETTINGS_TAB_INDEX {
+            return None;
+        }
+        self.tabs.get(self.active_tab).map(|tab| tab.focused())
+    }
+
+    pub(in crate::gui) fn focused_pane_mut(&mut self) -> Option<&mut crate::gui::tab::Pane> {
+        if self.active_tab == SETTINGS_TAB_INDEX {
+            return None;
+        }
+        self.tabs
+            .get_mut(self.active_tab)
+            .map(|tab| tab.focused_mut())
+    }
+
+    pub(in crate::gui) fn pane_mut_by_id(&mut self, id: u64) -> Option<&mut crate::gui::tab::Pane> {
+        self.tabs.iter_mut().find_map(|tab| tab.pane_mut(id))
+    }
+
+    pub(in crate::gui) fn panes_mut(&mut self) -> impl Iterator<Item = &mut crate::gui::tab::Pane> {
+        self.tabs.iter_mut().flat_map(|tab| tab.panes.iter_mut())
     }
 }
 
@@ -88,7 +216,7 @@ impl App {
         self.next_tab_id = self.next_tab_id.wrapping_add(1);
         let display_name = profile.display_name();
         self.session_history.record(profile.clone(), display_name);
-        let new_tab = crate::gui::tab::TerminalTab::from_profile(
+        let pane = crate::gui::tab::Pane::from_profile(
             profile,
             cols,
             rows,
@@ -97,7 +225,8 @@ impl App {
             sender,
             &self.config,
         );
-        self.tabs.push(new_tab);
+        self.tabs
+            .push(crate::gui::tab::TerminalTab::new(tab_id, pane));
         self.active_tab = self.tabs.len() - 1;
         self.dismiss_shell_picker();
         Task::none()
@@ -277,6 +406,26 @@ impl App {
         let action = ShortcutAction::resolve(key, modifiers, &self.config.shortcuts)?;
 
         match action {
+            ShortcutAction::SplitAuto => {
+                let axis = self
+                    .focused_pane_rect()
+                    .map(Axis::for_rect)
+                    .unwrap_or(Axis::Vertical);
+                Some(self.split_focused(axis))
+            }
+            ShortcutAction::SplitRight => Some(self.split_focused(Axis::Vertical)),
+            ShortcutAction::SplitDown => Some(self.split_focused(Axis::Horizontal)),
+            ShortcutAction::ClosePane => {
+                self.close_focused_pane();
+                Some(Task::none())
+            }
+            ShortcutAction::FocusPane(direction) => {
+                let area = self.terminal_area();
+                if let Some(tab) = self.tabs.get_mut(self.active_tab) {
+                    tab.focus_direction(direction, area);
+                }
+                Some(Task::none())
+            }
             ShortcutAction::NewTab => Some(self.update(Message::OpenShellPicker)),
             ShortcutAction::CloseTab => {
                 self.close_active_target();

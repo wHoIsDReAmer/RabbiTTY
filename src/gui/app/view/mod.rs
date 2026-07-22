@@ -14,7 +14,7 @@ use crate::gui::components::ime_wrapper::ImeEnabled;
 use crate::gui::components::{panel, secondary as button_secondary, tab_bar};
 use crate::gui::render::TerminalProgram;
 use crate::gui::theme::{RADIUS_SMALL, SPACING_LARGE, SPACING_NORMAL, SPACING_SMALL};
-use iced::widget::{button, column, container, image, row, scrollable, stack, text};
+use iced::widget::{button, column, container, image, stack, text};
 use iced::{Alignment, Background, Border, Color, Element, Length};
 use std::sync::LazyLock;
 
@@ -32,7 +32,7 @@ impl App {
             .tabs
             .iter()
             .enumerate()
-            .map(|(i, tab)| (tab.title.as_str(), i, i == self.active_tab));
+            .map(|(i, tab)| (tab.title(), i, i == self.active_tab));
         let settings_iter = self
             .settings_open
             .then_some((
@@ -47,11 +47,11 @@ impl App {
         let bar_alpha = 0.22;
         let tab_alpha = (ui_alpha * 0.6).clamp(0.0, 1.0);
         let sftp_toggle = if self.active_tab != SETTINGS_TAB_INDEX {
-            self.tabs.get(self.active_tab).and_then(|tab| {
-                tab.profile
+            self.focused_pane().and_then(|pane| {
+                pane.profile
                     .ssh_profile()
                     .is_some()
-                    .then_some((Message::Sftp(SftpMessage::ToggleDrawer), tab.sftp.open))
+                    .then_some((Message::Sftp(SftpMessage::ToggleDrawer), pane.sftp.open))
             })
         } else {
             None
@@ -166,24 +166,60 @@ impl App {
         base_layout.into()
     }
 
-    fn view_terminal<'a>(
-        &'a self,
-        active_tab: &'a crate::gui::tab::TerminalTab,
-    ) -> Element<'a, Message> {
+    fn view_terminal<'a>(&'a self, tab: &'a crate::gui::tab::TerminalTab) -> Element<'a, Message> {
+        let active_tab = tab.focused();
         let dims = active_tab.size();
-        let cells = active_tab.render_cells();
-        let grid_size = dims;
 
         // identical to other panes (e.g. Settings) and avoids double blending.
         let clear_color = [0.0, 0.0, 0.0, 0.0];
-        let (display_offset, scroll_history) = active_tab.scroll_position();
-        let cursor = active_tab
-            .cursor_cell()
-            .map(|(col, row)| [col as u32, row as u32]);
         let cursor_visible = !self.config.terminal.cursor_blink || self.cursor_blink_on;
         let terminal_widget = TerminalProgram {
-            cells,
-            grid_size,
+            panes: tab
+                .panes
+                .iter()
+                .map(|pane| {
+                    let (pane_offset, pane_history) = pane.scroll_position();
+                    crate::gui::render::PaneView {
+                        id: pane.id,
+                        scroll_history: pane_history,
+                        cells: pane.render_cells(),
+                        grid_size: pane.size(),
+                        selection: pane.selection,
+                        display_offset: pane_offset,
+                        cursor: pane
+                            .cursor_cell()
+                            .map(|(col, row)| [col as u32, row as u32])
+                            .filter(|_| pane.id == tab.focused),
+                        cursor_visible,
+                        cursor_color: pane.cursor_color(),
+                        mouse_mode: pane.mouse_mode(),
+                    }
+                })
+                .collect(),
+            cell_size: [
+                self.config.terminal.cell_width.max(1.0),
+                self.config.terminal.cell_height.max(1.0),
+            ],
+            scrollbar_color: [
+                self.palette.text_secondary.r,
+                self.palette.text_secondary.g,
+                self.palette.text_secondary.b,
+                0.45,
+            ],
+            focused: tab.focused,
+            focus_color: [
+                self.palette.accent.r,
+                self.palette.accent.g,
+                self.palette.accent.b,
+                0.32,
+            ],
+            divider_color: [
+                self.palette.text.r,
+                self.palette.text.g,
+                self.palette.text.b,
+                0.07,
+            ],
+            layout: tab.layout.clone(),
             terminal_font_selection: self.config.terminal.font_selection.clone(),
             terminal_font_size: self.config.terminal.font_size,
             padding: [
@@ -191,47 +227,14 @@ impl App {
                 self.config.terminal.padding_y,
             ],
             clear_color,
-            selection: active_tab.selection,
-            mouse_mode: active_tab.mouse_mode(),
-            display_offset,
-            cursor,
             cursor_shape: self.config.terminal.cursor_shape,
-            cursor_visible,
-            cursor_color: active_tab.cursor_color(),
             background_opacity: self.config.theme.background_opacity,
         }
         .widget()
         .width(Length::Fill)
         .height(Length::Fill);
 
-        let terminal_view: Element<Message> = if scroll_history > 0 {
-            let cell_height = self.config.terminal.cell_height.max(1.0);
-            let content_height = (scroll_history + dims.lines) as f32 * cell_height;
-            let scroll_content = container("")
-                .width(Length::Fill)
-                .height(Length::Fixed(content_height));
-
-            let scrollbar = scrollable(scroll_content)
-                .id(crate::gui::app::update::TERMINAL_SCROLLABLE_ID.clone())
-                .direction(scrollable::Direction::Vertical(
-                    scrollable::Scrollbar::new().width(8).scroller_width(8),
-                ))
-                .anchor_bottom()
-                .on_scroll(|viewport: scrollable::Viewport| {
-                    let rel = viewport.relative_offset();
-                    Message::TerminalScroll(rel.y)
-                })
-                .style(crate::gui::theme::scrollbar_style(self.palette))
-                .width(Length::Fixed(8.0))
-                .height(Length::Fill);
-
-            row![terminal_widget, scrollbar]
-                .height(Length::Fill)
-                .width(Length::Fill)
-                .into()
-        } else {
-            terminal_widget.into()
-        };
+        let terminal_view: Element<Message> = terminal_widget.into();
 
         let now = iced::time::Instant::now();
         let drawer_progress: f32 = active_tab
@@ -471,9 +474,8 @@ impl App {
         base_layout: impl Into<Element<'a, Message>>,
     ) -> Element<'a, Message> {
         let has_selection = self
-            .tabs
-            .get(self.active_tab)
-            .and_then(|tab| tab.selected_text())
+            .focused_pane()
+            .and_then(|pane| pane.selected_text())
             .is_some();
 
         let mut items = Vec::new();
