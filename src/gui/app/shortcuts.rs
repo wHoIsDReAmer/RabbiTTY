@@ -74,10 +74,15 @@ pub(super) enum ShortcutAction {
     FontSizeDecrease,
     FontSizeReset,
     DuplicateTab,
+    SplitRight,
+    SplitDown,
+    ClosePane,
+    FocusPane(crate::gui::pane::Direction),
 }
 
 impl ShortcutAction {
     fn from_id(id: ShortcutId) -> Self {
+        use crate::gui::pane::Direction;
         match id {
             ShortcutId::NewTab => Self::NewTab,
             ShortcutId::CloseTab => Self::CloseTab,
@@ -89,6 +94,13 @@ impl ShortcutAction {
             ShortcutId::FontSizeDecrease => Self::FontSizeDecrease,
             ShortcutId::FontSizeReset => Self::FontSizeReset,
             ShortcutId::DuplicateTab => Self::DuplicateTab,
+            ShortcutId::SplitRight => Self::SplitRight,
+            ShortcutId::SplitDown => Self::SplitDown,
+            ShortcutId::ClosePane => Self::ClosePane,
+            ShortcutId::FocusLeft => Self::FocusPane(Direction::Left),
+            ShortcutId::FocusRight => Self::FocusPane(Direction::Right),
+            ShortcutId::FocusUp => Self::FocusPane(Direction::Up),
+            ShortcutId::FocusDown => Self::FocusPane(Direction::Down),
         }
     }
 
@@ -279,5 +291,45 @@ mod tests {
             shortcut_matches("Ctrl+Unknown", &Key::Character("x".into()), Modifiers::CTRL);
 
         assert!(!matches);
+    }
+
+    #[test]
+    fn split_shortcuts_resolve_from_defaults() {
+        let shortcuts = crate::config::AppConfig::default().shortcuts;
+        let modifiers = if cfg!(target_os = "macos") {
+            Modifiers::LOGO | Modifiers::SHIFT
+        } else {
+            Modifiers::CTRL | Modifiers::SHIFT
+        };
+        let key = Key::Character("E".into());
+
+        assert!(matches!(
+            ShortcutAction::resolve(&key, modifiers, &shortcuts),
+            Some(ShortcutAction::SplitRight)
+        ));
+    }
+
+    #[test]
+    fn focus_shortcuts_resolve_from_defaults() {
+        use crate::gui::pane::Direction;
+        let shortcuts = crate::config::AppConfig::default().shortcuts;
+        let modifiers = if cfg!(target_os = "macos") {
+            Modifiers::LOGO | Modifiers::ALT
+        } else {
+            Modifiers::CTRL | Modifiers::ALT
+        };
+
+        for (named, expected) in [
+            (Named::ArrowLeft, Direction::Left),
+            (Named::ArrowRight, Direction::Right),
+            (Named::ArrowUp, Direction::Up),
+            (Named::ArrowDown, Direction::Down),
+        ] {
+            let action = ShortcutAction::resolve(&Key::Named(named), modifiers, &shortcuts);
+            assert!(
+                matches!(action, Some(ShortcutAction::FocusPane(d)) if d == expected),
+                "{named:?} resolved to {action:?}"
+            );
+        }
     }
 }

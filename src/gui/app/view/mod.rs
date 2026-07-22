@@ -32,7 +32,7 @@ impl App {
             .tabs
             .iter()
             .enumerate()
-            .map(|(i, tab)| (tab.title.as_str(), i, i == self.active_tab));
+            .map(|(i, tab)| (tab.title(), i, i == self.active_tab));
         let settings_iter = self
             .settings_open
             .then_some((
@@ -47,11 +47,11 @@ impl App {
         let bar_alpha = 0.22;
         let tab_alpha = (ui_alpha * 0.6).clamp(0.0, 1.0);
         let sftp_toggle = if self.active_tab != SETTINGS_TAB_INDEX {
-            self.tabs.get(self.active_tab).and_then(|tab| {
-                tab.profile
+            self.focused_pane().and_then(|pane| {
+                pane.profile
                     .ssh_profile()
                     .is_some()
-                    .then_some((Message::Sftp(SftpMessage::ToggleDrawer), tab.sftp.open))
+                    .then_some((Message::Sftp(SftpMessage::ToggleDrawer), pane.sftp.open))
             })
         } else {
             None
@@ -166,24 +166,54 @@ impl App {
         base_layout.into()
     }
 
-    fn view_terminal<'a>(
-        &'a self,
-        active_tab: &'a crate::gui::tab::TerminalTab,
-    ) -> Element<'a, Message> {
+    fn view_terminal<'a>(&'a self, tab: &'a crate::gui::tab::TerminalTab) -> Element<'a, Message> {
+        let active_tab = tab.focused();
         let dims = active_tab.size();
-        let cells = active_tab.render_cells();
-        let grid_size = dims;
 
         // identical to other panes (e.g. Settings) and avoids double blending.
         let clear_color = [0.0, 0.0, 0.0, 0.0];
-        let (display_offset, scroll_history) = active_tab.scroll_position();
-        let cursor = active_tab
-            .cursor_cell()
-            .map(|(col, row)| [col as u32, row as u32]);
+        let (_, scroll_history) = active_tab.scroll_position();
         let cursor_visible = !self.config.terminal.cursor_blink || self.cursor_blink_on;
         let terminal_widget = TerminalProgram {
-            cells,
-            grid_size,
+            panes: tab
+                .panes
+                .iter()
+                .map(|pane| {
+                    let (pane_offset, _) = pane.scroll_position();
+                    crate::gui::render::PaneView {
+                        id: pane.id,
+                        cells: pane.render_cells(),
+                        grid_size: pane.size(),
+                        selection: pane.selection,
+                        display_offset: pane_offset,
+                        cursor: pane
+                            .cursor_cell()
+                            .map(|(col, row)| [col as u32, row as u32])
+                            .filter(|_| pane.id == tab.focused),
+                        cursor_visible,
+                        cursor_color: pane.cursor_color(),
+                        mouse_mode: pane.mouse_mode(),
+                    }
+                })
+                .collect(),
+            cell_size: [
+                self.config.terminal.cell_width.max(1.0),
+                self.config.terminal.cell_height.max(1.0),
+            ],
+            focused: tab.focused,
+            focus_color: [
+                self.palette.accent.r,
+                self.palette.accent.g,
+                self.palette.accent.b,
+                0.32,
+            ],
+            divider_color: [
+                self.palette.text.r,
+                self.palette.text.g,
+                self.palette.text.b,
+                0.07,
+            ],
+            layout: tab.layout.clone(),
             terminal_font_selection: self.config.terminal.font_selection.clone(),
             terminal_font_size: self.config.terminal.font_size,
             padding: [
@@ -191,13 +221,7 @@ impl App {
                 self.config.terminal.padding_y,
             ],
             clear_color,
-            selection: active_tab.selection,
-            mouse_mode: active_tab.mouse_mode(),
-            display_offset,
-            cursor,
             cursor_shape: self.config.terminal.cursor_shape,
-            cursor_visible,
-            cursor_color: active_tab.cursor_color(),
             background_opacity: self.config.theme.background_opacity,
         }
         .widget()
@@ -471,9 +495,8 @@ impl App {
         base_layout: impl Into<Element<'a, Message>>,
     ) -> Element<'a, Message> {
         let has_selection = self
-            .tabs
-            .get(self.active_tab)
-            .and_then(|tab| tab.selected_text())
+            .focused_pane()
+            .and_then(|pane| pane.selected_text())
             .is_some();
 
         let mut items = Vec::new();

@@ -13,6 +13,7 @@ struct VertexIn {
     @location(2) rect_offset : vec2<f32>,
     @location(3) rect_size   : vec2<f32>,
     @location(4) color       : vec4<f32>,
+    @location(5) origin      : vec2<f32>,
 };
 
 struct VertexOut {
@@ -24,7 +25,7 @@ struct VertexOut {
 fn vs_main(input : VertexIn) -> VertexOut {
     let cell = vec2<f32>(input.cell_pos);
     let pixel = (cell + input.rect_offset + input.quad_pos * input.rect_size)
-        * uniforms.cell_size + uniforms.offset;
+        * uniforms.cell_size + input.origin;
 
     // Convert to NDC (origin top-left)
     let ndc = vec2<f32>(

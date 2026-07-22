@@ -1,3 +1,4 @@
+use crate::gui::pane::PaneNode;
 use crate::terminal::{CellVisual, GridPos, Selection, SelectionPoint, TerminalSize};
 use iced::advanced::mouse::{Click, click};
 use iced::mouse;
@@ -18,44 +19,61 @@ const SELECTION_BG: [f32; 4] = [0.25, 0.38, 0.60, 1.0];
 
 /// Iced shader wrapper for terminal rendering.
 #[derive(Debug, Clone)]
-pub struct TerminalProgram {
+pub struct PaneView {
+    pub id: u64,
     pub cells: Arc<Vec<CellVisual>>,
     pub grid_size: TerminalSize,
+    pub selection: Option<Selection>,
+    pub display_offset: usize,
+    pub cursor: Option<[u32; 2]>,
+    pub cursor_visible: bool,
+    pub cursor_color: [f32; 4],
+    pub mouse_mode: bool,
+}
+
+pub struct TerminalProgram {
+    pub panes: Vec<PaneView>,
+    pub focused: u64,
+    pub focus_color: [f32; 4],
+    pub divider_color: [f32; 4],
+    pub cell_size: [f32; 2],
+    pub layout: PaneNode,
     pub terminal_font_selection: Option<String>,
     pub terminal_font_size: f32,
     pub padding: [f32; 2],
     pub clear_color: [f32; 4],
-    pub selection: Option<Selection>,
-    pub mouse_mode: bool,
-    pub display_offset: usize,
-    pub cursor: Option<[u32; 2]>,
     pub cursor_shape: crate::config::CursorShape,
-    pub cursor_visible: bool,
-    pub cursor_color: [f32; 4],
     pub background_opacity: f32,
 }
 
-impl TerminalProgram {
-    pub fn widget(self) -> Shader<crate::gui::app::Message, Self> {
-        Shader::new(self).width(Length::Fill).height(Length::Fill)
-    }
-
-    fn pixel_to_grid(&self, pos: Point, bounds: Rectangle) -> GridPos {
-        let inner_w = (bounds.width - self.padding[0] * 2.0).max(1.0);
-        let inner_h = (bounds.height - self.padding[1] * 2.0).max(1.0);
-        let cell_w = inner_w / self.grid_size.columns.max(1) as f32;
-        let cell_h = inner_h / self.grid_size.lines.max(1) as f32;
-        let x = (pos.x - self.padding[0]).max(0.0);
-        let y = (pos.y - self.padding[1]).max(0.0);
-        let col = (x / cell_w) as usize;
-        let row = (y / cell_h) as usize;
-        GridPos {
-            row: row.min(self.grid_size.lines.saturating_sub(1)),
-            col: col.min(self.grid_size.columns.saturating_sub(1)),
+impl PaneView {
+    fn inner(rect: Rectangle, padding: [f32; 2]) -> Rectangle {
+        Rectangle {
+            x: rect.x + padding[0],
+            y: rect.y + padding[1],
+            width: (rect.width - padding[0] * 2.0).max(1.0),
+            height: (rect.height - padding[1] * 2.0).max(1.0),
         }
     }
 
-    /// Character at a viewport cell, or a space when out of range.
+    fn pixel_to_grid(
+        &self,
+        pos: Point,
+        rect: Rectangle,
+        padding: [f32; 2],
+        cell: [f32; 2],
+    ) -> GridPos {
+        let inner = Self::inner(rect, padding);
+        let cell_w = cell[0].max(1.0);
+        let cell_h = cell[1].max(1.0);
+        let x = (pos.x - inner.x).max(0.0);
+        let y = (pos.y - inner.y).max(0.0);
+        GridPos {
+            row: ((y / cell_h) as usize).min(self.grid_size.lines.saturating_sub(1)),
+            col: ((x / cell_w) as usize).min(self.grid_size.columns.saturating_sub(1)),
+        }
+    }
+
     fn row_chars(&self, row: usize) -> Vec<char> {
         let cols = self.grid_size.columns;
         if cols == 0 || row >= self.grid_size.lines {
@@ -76,7 +94,6 @@ impl TerminalProgram {
     }
 
     fn link_span_at(&self, grid: GridPos) -> Option<(usize, usize)> {
-        let row = self.row_chars(grid.row);
         if let Some(cell) = self
             .cells
             .get(grid.row * self.grid_size.columns.max(1) + grid.col)
@@ -85,7 +102,8 @@ impl TerminalProgram {
         {
             return Some(self.hyperlink_run(grid, uri));
         }
-        crate::terminal::url::url_at(&row, grid.col).map(|span| (span.start, span.end))
+        crate::terminal::url::url_at(&self.row_chars(grid.row), grid.col)
+            .map(|span| (span.start, span.end))
     }
 
     fn hyperlink_run(&self, grid: GridPos, uri: &str) -> (usize, usize) {
@@ -118,8 +136,6 @@ impl TerminalProgram {
             .unwrap_or(' ')
     }
 
-    /// Word boundaries around the clicked cell (double-click). Returns `None`
-    /// when the cell is whitespace or a delimiter.
     fn word_selection(&self, grid: GridPos) -> Option<Selection> {
         let cols = self.grid_size.columns;
         if cols == 0 || !is_word_char(self.cell_char(grid.row, grid.col)) {
@@ -146,7 +162,6 @@ impl TerminalProgram {
         })
     }
 
-    /// Whole-line selection up to the last non-blank cell (triple-click).
     fn line_selection(&self, grid: GridPos) -> Selection {
         let cols = self.grid_size.columns;
         let mut end = 0usize;
@@ -169,13 +184,41 @@ impl TerminalProgram {
     }
 }
 
-#[derive(Default)]
+impl TerminalProgram {
+    pub fn widget(self) -> Shader<crate::gui::app::Message, Self> {
+        Shader::new(self).width(Length::Fill).height(Length::Fill)
+    }
+
+    fn regions(&self, bounds: Rectangle) -> Vec<(u64, Rectangle)> {
+        self.layout.regions(Rectangle {
+            x: 0.0,
+            y: 0.0,
+            width: bounds.width,
+            height: bounds.height,
+        })
+    }
+
+    fn pane(&self, id: u64) -> Option<&PaneView> {
+        self.panes.iter().find(|p| p.id == id)
+    }
+
+    fn pane_under(&self, pos: Point, bounds: Rectangle) -> Option<(&PaneView, Rectangle)> {
+        let regions = self.regions(bounds);
+        let id = crate::gui::pane::pane_at(&regions, pos)?;
+        let rect = regions.iter().find(|(rid, _)| *rid == id)?.1;
+        self.pane(id).map(|pane| (pane, rect))
+    }
+}
+
+#[derive(Debug, Default)]
 pub struct TerminalShaderState {
     dragging: bool,
     drag_start: Option<GridPos>,
     drag_anchor_offset: usize,
     /// Last left-button click, used to detect double/triple clicks.
     last_click: Option<Click>,
+    drag_pane: Option<u64>,
+    last_bounds: Rectangle,
     modifiers: iced::keyboard::Modifiers,
 }
 
@@ -226,61 +269,91 @@ impl ShaderProgram<Message> for TerminalProgram {
         bounds: Rectangle,
         cursor: mouse::Cursor,
     ) -> Option<Action<Message>> {
+        let padding = self.padding;
+
+        if bounds.width != state.last_bounds.width || bounds.height != state.last_bounds.height {
+            state.last_bounds = bounds;
+            return Some(Action::publish(Message::TerminalAreaResized(
+                iced::Size::new(bounds.width, bounds.height),
+            )));
+        }
+
         match event {
             Event::Keyboard(iced::keyboard::Event::ModifiersChanged(modifiers)) => {
                 state.modifiers = *modifiers;
             }
             Event::Mouse(mouse::Event::ButtonPressed(mouse::Button::Left)) => {
-                if let Some(pos) = cursor.position_in(bounds) {
-                    let grid_pos = self.pixel_to_grid(pos, bounds);
-                    if link_modifier(state.modifiers)
-                        && let Some(url) = self.link_at(grid_pos)
-                    {
-                        return Some(Action::publish(Message::OpenUrl(url)).and_capture());
-                    }
-                    if self.mouse_mode {
-                        state.dragging = true;
+                let pos = cursor.position_in(bounds)?;
+                let (pane, rect) = self.pane_under(pos, bounds)?;
+                let grid_pos = pane.pixel_to_grid(pos, rect, padding, self.cell_size);
+
+                if link_modifier(state.modifiers)
+                    && let Some(url) = pane.link_at(grid_pos)
+                {
+                    return Some(Action::publish(Message::OpenUrl(url)).and_capture());
+                }
+                if pane.mouse_mode {
+                    state.dragging = true;
+                    state.drag_pane = Some(pane.id);
+                    return Some(
+                        Action::publish(Message::TerminalMousePress {
+                            pane: pane.id,
+                            col: grid_pos.col,
+                            row: grid_pos.row,
+                        })
+                        .and_capture(),
+                    );
+                }
+
+                let click = Click::new(pos, mouse::Button::Left, state.last_click);
+                state.last_click = Some(click);
+                match click.kind() {
+                    click::Kind::Double => {
+                        state.dragging = false;
+                        state.drag_start = None;
+                        let sel = pane.word_selection(grid_pos);
                         return Some(
-                            Action::publish(Message::TerminalMousePress {
-                                col: grid_pos.col,
-                                row: grid_pos.row,
+                            Action::publish(Message::SelectionChanged {
+                                pane: pane.id,
+                                selection: sel,
                             })
                             .and_capture(),
                         );
                     }
-                    let click = Click::new(pos, mouse::Button::Left, state.last_click);
-                    state.last_click = Some(click);
-                    match click.kind() {
-                        click::Kind::Double => {
-                            state.dragging = false;
-                            state.drag_start = None;
-                            let sel = self.word_selection(grid_pos);
-                            return Some(
-                                Action::publish(Message::SelectionChanged(sel)).and_capture(),
-                            );
-                        }
-                        click::Kind::Triple => {
-                            state.dragging = false;
-                            state.drag_start = None;
-                            let sel = self.line_selection(grid_pos);
-                            return Some(
-                                Action::publish(Message::SelectionChanged(Some(sel))).and_capture(),
-                            );
-                        }
-                        click::Kind::Single => {
-                            state.dragging = true;
-                            state.drag_start = Some(grid_pos);
-                            state.drag_anchor_offset = self.display_offset;
-                            return Some(
-                                Action::publish(Message::SelectionChanged(None)).and_capture(),
-                            );
-                        }
+                    click::Kind::Triple => {
+                        state.dragging = false;
+                        state.drag_start = None;
+                        let sel = pane.line_selection(grid_pos);
+                        return Some(
+                            Action::publish(Message::SelectionChanged {
+                                pane: pane.id,
+                                selection: Some(sel),
+                            })
+                            .and_capture(),
+                        );
+                    }
+                    click::Kind::Single => {
+                        state.dragging = true;
+                        state.drag_pane = Some(pane.id);
+                        state.drag_start = Some(grid_pos);
+                        state.drag_anchor_offset = pane.display_offset;
+                        return Some(
+                            Action::publish(Message::SelectionChanged {
+                                pane: pane.id,
+                                selection: None,
+                            })
+                            .and_capture(),
+                        );
                     }
                 }
             }
             Event::Mouse(mouse::Event::ButtonPressed(mouse::Button::Right)) => {
-                if cursor.is_over(bounds) {
-                    return Some(Action::publish(Message::TerminalRightClick).and_capture());
+                if let Some(pos) = cursor.position_in(bounds)
+                    && let Some((pane, _)) = self.pane_under(pos, bounds)
+                {
+                    return Some(
+                        Action::publish(Message::TerminalRightClick(pane.id)).and_capture(),
+                    );
                 }
             }
             Event::Mouse(mouse::Event::CursorMoved { .. }) => {
@@ -295,61 +368,76 @@ impl ShaderProgram<Message> for TerminalProgram {
                             .unwrap_or(Point::ORIGIN)
                     })
                 });
-                if let Some(pos) = pos_dragging {
-                    if self.mouse_mode {
-                        let grid_pos = self.pixel_to_grid(pos, bounds);
+                let pos = pos_dragging?;
+                let regions = self.regions(bounds);
+                let (pane, rect) = state
+                    .drag_pane
+                    .and_then(|id| {
+                        regions
+                            .iter()
+                            .find(|(rid, _)| *rid == id)
+                            .and_then(|(_, rect)| self.pane(id).map(|pane| (pane, *rect)))
+                    })
+                    .or_else(|| self.pane_under(pos, bounds))?;
+                let grid_pos = pane.pixel_to_grid(pos, rect, padding, self.cell_size);
+
+                if pane.mouse_mode {
+                    return Some(
+                        Action::publish(Message::TerminalMouseDrag {
+                            col: grid_pos.col,
+                            row: grid_pos.row,
+                        })
+                        .and_capture(),
+                    );
+                }
+                if let Some(drag_start) = state.drag_start {
+                    let raw_y = cursor.position().map(|p| p.y);
+                    let out_up = raw_y.is_some_and(|y| y < bounds.y + rect.y);
+                    let out_down = raw_y.is_some_and(|y| y > bounds.y + rect.y + rect.height);
+                    if out_up || out_down {
                         return Some(
-                            Action::publish(Message::TerminalMouseDrag {
+                            Action::publish(Message::TerminalSelectionAutoscroll {
+                                up: out_up,
                                 col: grid_pos.col,
-                                row: grid_pos.row,
                             })
                             .and_capture(),
                         );
                     }
-                    if let Some(drag_start) = state.drag_start {
-                        let viewport_end = self.pixel_to_grid(pos, bounds);
-                        let raw_y = cursor.position().map(|p| p.y);
-                        let out_up = raw_y.is_some_and(|y| y < bounds.y);
-                        let out_down = raw_y.is_some_and(|y| y > bounds.y + bounds.height);
-                        if out_up || out_down {
-                            return Some(
-                                Action::publish(Message::TerminalSelectionAutoscroll {
-                                    up: out_up,
-                                    col: viewport_end.col,
-                                })
-                                .and_capture(),
-                            );
-                        }
-                        // Translate the current viewport row back into the anchor frame
-                        // so the selection follows content when the user scrolls.
-                        let delta = self.display_offset as i64 - state.drag_anchor_offset as i64;
-                        let start = SelectionPoint {
-                            row: drag_start.row as i64,
-                            col: drag_start.col,
+                    // Translate the current viewport row back into the anchor frame
+                    // so the selection follows content when the user scrolls.
+                    let delta = pane.display_offset as i64 - state.drag_anchor_offset as i64;
+                    let start = SelectionPoint {
+                        row: drag_start.row as i64,
+                        col: drag_start.col,
+                    };
+                    let end = SelectionPoint {
+                        row: grid_pos.row as i64 - delta,
+                        col: grid_pos.col,
+                    };
+                    if start != end {
+                        let sel = Selection {
+                            start,
+                            end,
+                            anchor_offset: state.drag_anchor_offset,
                         };
-                        let end = SelectionPoint {
-                            row: viewport_end.row as i64 - delta,
-                            col: viewport_end.col,
-                        };
-                        if start != end {
-                            let sel = Selection {
-                                start,
-                                end,
-                                anchor_offset: state.drag_anchor_offset,
-                            };
-                            return Some(
-                                Action::publish(Message::SelectionChanged(Some(sel))).and_capture(),
-                            );
-                        }
+                        return Some(
+                            Action::publish(Message::SelectionChanged {
+                                pane: pane.id,
+                                selection: Some(sel),
+                            })
+                            .and_capture(),
+                        );
                     }
                 }
             }
             Event::Mouse(mouse::Event::ButtonReleased(mouse::Button::Left)) => {
-                if self.mouse_mode
-                    && let Some(pos) = cursor.position_in(bounds)
+                if let Some(pos) = cursor.position_in(bounds)
+                    && let Some((pane, rect)) = self.pane_under(pos, bounds)
+                    && pane.mouse_mode
                 {
-                    let grid_pos = self.pixel_to_grid(pos, bounds);
+                    let grid_pos = pane.pixel_to_grid(pos, rect, padding, self.cell_size);
                     state.dragging = false;
+                    state.drag_pane = None;
                     return Some(
                         Action::publish(Message::TerminalMouseRelease {
                             col: grid_pos.col,
@@ -360,6 +448,7 @@ impl ShaderProgram<Message> for TerminalProgram {
                 }
                 if state.dragging {
                     state.dragging = false;
+                    state.drag_pane = None;
                     return Some(
                         Action::publish(Message::TerminalSelectionAutoscrollStop).and_capture(),
                     );
@@ -376,37 +465,54 @@ impl ShaderProgram<Message> for TerminalProgram {
         cursor: mouse::Cursor,
         bounds: Rectangle,
     ) -> Self::Primitive {
-        let link_row = link_modifier(state.modifiers)
+        let hovered = link_modifier(state.modifiers)
             .then(|| cursor.position_in(bounds))
             .flatten()
-            .map(|pos| self.pixel_to_grid(pos, bounds))
-            .and_then(|grid| {
-                self.link_span_at(grid)
-                    .map(|(start, end)| (grid.row, start, end))
+            .and_then(|pos| {
+                self.pane_under(pos, bounds)
+                    .map(|(pane, rect)| (pane, rect, pos))
             });
-        let pad_x = self.padding[0];
-        let pad_y = self.padding[1];
-        let columns = self.grid_size.columns.max(1) as f32;
-        let lines = self.grid_size.lines.max(1) as f32;
-        let inner_w = (bounds.width - pad_x * 2.0).max(1.0);
-        let inner_h = (bounds.height - pad_y * 2.0).max(1.0);
-        let cell_size = [inner_w / columns, inner_h / lines];
+
+        let panes = self
+            .regions(bounds)
+            .into_iter()
+            .filter_map(|(id, rect)| {
+                let pane = self.pane(id)?;
+                let inner = PaneView::inner(rect, self.padding);
+                let link_row =
+                    hovered
+                        .as_ref()
+                        .filter(|(p, _, _)| p.id == id)
+                        .and_then(|(p, r, pos)| {
+                            let grid = p.pixel_to_grid(*pos, *r, self.padding, self.cell_size);
+                            p.link_span_at(grid)
+                                .map(|(start, end)| (grid.row, start, end))
+                        });
+                Some(PanePrimitive {
+                    cells: Arc::clone(&pane.cells),
+                    origin: [inner.x, inner.y],
+                    rect: [rect.x, rect.y, rect.width, rect.height],
+                    focused: pane.id == self.focused,
+                    selection: pane.selection,
+                    display_offset: pane.display_offset,
+                    cursor: pane.cursor.filter(|_| pane.cursor_visible),
+                    cursor_color: pane.cursor_color,
+                    link_row,
+                })
+            })
+            .collect();
+
         TerminalPrimitive {
-            cells: Arc::clone(&self.cells),
-            cell_size,
+            panes,
+            focus_color: self.focus_color,
+            divider_color: self.divider_color,
+            cell_size: self.cell_size,
             viewport: [bounds.width, bounds.height],
-            offset: [pad_x, pad_y],
             clear_color: self.clear_color,
             terminal_font_selection: self.terminal_font_selection.clone(),
             terminal_font_size: self.terminal_font_size,
-            selection: self.selection,
-            display_offset: self.display_offset,
-            cursor: self.cursor,
             cursor_shape: self.cursor_shape,
-            cursor_visible: self.cursor_visible,
-            cursor_color: self.cursor_color,
             background_opacity: self.background_opacity,
-            link_row,
         }
     }
 
@@ -419,7 +525,11 @@ impl ShaderProgram<Message> for TerminalProgram {
         let Some(pos) = cursor.position_in(bounds) else {
             return mouse::Interaction::default();
         };
-        if link_modifier(state.modifiers) && self.link_at(self.pixel_to_grid(pos, bounds)).is_some()
+        if link_modifier(state.modifiers)
+            && let Some((pane, rect)) = self.pane_under(pos, bounds)
+            && pane
+                .link_at(pane.pixel_to_grid(pos, rect, self.padding, self.cell_size))
+                .is_some()
         {
             return mouse::Interaction::Pointer;
         }
@@ -432,18 +542,11 @@ pub struct TerminalPipeline {
     bg: BackgroundPipeline,
     text: TextPipelineData,
     composite: CompositePipeline,
-    last_cells_ptr: usize,
-    last_cells_len: usize,
-    last_cell_size: [f32; 2],
+    last_panes: Vec<PaneSignature>,
     last_viewport: [f32; 2],
-    last_offset: [f32; 2],
+    last_cell_size: [f32; 2],
     last_font_size: f32,
-    last_selection: Option<Selection>,
-    last_display_offset: usize,
-    last_cursor: Option<[u32; 2]>,
     last_cursor_shape: crate::config::CursorShape,
-    last_cursor_visible: bool,
-    last_cursor_color: [f32; 4],
     last_background_opacity: f32,
 }
 
@@ -453,40 +556,77 @@ impl Pipeline for TerminalPipeline {
             bg: BackgroundPipeline::new(device, format),
             text: TextPipelineData::new(device, format),
             composite: CompositePipeline::new(device, format),
-            last_cells_ptr: 0,
-            last_cells_len: 0,
-            last_cell_size: [0.0; 2],
+            last_panes: Vec::new(),
             last_viewport: [0.0; 2],
-            last_offset: [0.0; 2],
+            last_cell_size: [0.0; 2],
             last_font_size: 0.0,
-            last_selection: None,
-            last_display_offset: 0,
-            last_cursor: None,
             last_cursor_shape: crate::config::CursorShape::Block,
-            last_cursor_visible: false,
-            last_cursor_color: [0.0; 4],
             last_background_opacity: 1.0,
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq)]
+struct PaneSignature {
+    cells_ptr: usize,
+    cells_len: usize,
+    origin: [f32; 2],
+    rect: [f32; 4],
+    focused: bool,
+    selection: Option<Selection>,
+    display_offset: usize,
+    cursor: Option<[u32; 2]>,
+    cursor_color: [f32; 4],
+    link_row: Option<(usize, usize, usize)>,
+}
+
+#[derive(Debug)]
+pub struct PanePrimitive {
+    cells: Arc<Vec<CellVisual>>,
+    origin: [f32; 2],
+    rect: [f32; 4],
+    focused: bool,
+    selection: Option<Selection>,
+    display_offset: usize,
+    cursor: Option<[u32; 2]>,
+    cursor_color: [f32; 4],
+    link_row: Option<(usize, usize, usize)>,
+}
+
+impl PanePrimitive {
+    fn signature(&self, scale: f32) -> PaneSignature {
+        PaneSignature {
+            cells_ptr: Arc::as_ptr(&self.cells) as usize,
+            cells_len: self.cells.len(),
+            origin: [self.origin[0] * scale, self.origin[1] * scale],
+            rect: [
+                self.rect[0] * scale,
+                self.rect[1] * scale,
+                self.rect[2] * scale,
+                self.rect[3] * scale,
+            ],
+            focused: self.focused,
+            selection: self.selection,
+            display_offset: self.display_offset,
+            cursor: self.cursor,
+            cursor_color: self.cursor_color,
+            link_row: self.link_row,
         }
     }
 }
 
 #[derive(Debug)]
 pub struct TerminalPrimitive {
-    cells: Arc<Vec<CellVisual>>,
+    panes: Vec<PanePrimitive>,
+    focus_color: [f32; 4],
+    divider_color: [f32; 4],
     cell_size: [f32; 2],
     viewport: [f32; 2],
-    offset: [f32; 2],
     clear_color: [f32; 4],
     terminal_font_selection: Option<String>,
     terminal_font_size: f32,
-    selection: Option<Selection>,
-    display_offset: usize,
-    cursor: Option<[u32; 2]>,
     cursor_shape: crate::config::CursorShape,
-    cursor_visible: bool,
-    cursor_color: [f32; 4],
     background_opacity: f32,
-    link_row: Option<(usize, usize, usize)>,
 }
 
 impl Primitive for TerminalPrimitive {
@@ -501,87 +641,98 @@ impl Primitive for TerminalPrimitive {
         viewport: &Viewport,
     ) {
         let scale = viewport.scale_factor().max(1.0);
-        let cell_size = [self.cell_size[0] * scale, self.cell_size[1] * scale];
-        let viewport = [self.viewport[0] * scale, self.viewport[1] * scale];
-        let offset = [self.offset[0] * scale, self.offset[1] * scale];
+        let view = [self.viewport[0] * scale, self.viewport[1] * scale];
         let font_size = self.terminal_font_size * scale;
         let offscreen_size = [
-            viewport[0].ceil().max(1.0) as u32,
-            viewport[1].ceil().max(1.0) as u32,
+            view[0].ceil().max(1.0) as u32,
+            view[1].ceil().max(1.0) as u32,
         ];
 
         pipeline.composite.ensure_offscreen(device, offscreen_size);
 
-        let cells_ptr = Arc::as_ptr(&self.cells) as usize;
-        let cells_len = self.cells.len();
-        let unchanged = cells_ptr == pipeline.last_cells_ptr
-            && cells_len == pipeline.last_cells_len
+        let cell_size = [self.cell_size[0] * scale, self.cell_size[1] * scale];
+        let signatures: Vec<PaneSignature> =
+            self.panes.iter().map(|p| p.signature(scale)).collect();
+        let unchanged = signatures == pipeline.last_panes
+            && view == pipeline.last_viewport
             && cell_size == pipeline.last_cell_size
-            && viewport == pipeline.last_viewport
-            && offset == pipeline.last_offset
             && (font_size - pipeline.last_font_size).abs() < 0.01
-            && self.selection == pipeline.last_selection
-            && self.display_offset == pipeline.last_display_offset
-            && self.cursor == pipeline.last_cursor
             && self.cursor_shape == pipeline.last_cursor_shape
-            && self.cursor_visible == pipeline.last_cursor_visible
-            && self.cursor_color == pipeline.last_cursor_color
             && self.background_opacity == pipeline.last_background_opacity;
 
         if unchanged {
             return;
         }
 
-        pipeline.last_cells_ptr = cells_ptr;
-        pipeline.last_cells_len = cells_len;
+        pipeline.last_panes = signatures;
+        pipeline.last_viewport = view;
         pipeline.last_cell_size = cell_size;
-        pipeline.last_viewport = viewport;
-        pipeline.last_offset = offset;
         pipeline.last_font_size = font_size;
-        pipeline.last_selection = self.selection;
-        pipeline.last_display_offset = self.display_offset;
-        pipeline.last_cursor = self.cursor;
         pipeline.last_cursor_shape = self.cursor_shape;
-        pipeline.last_cursor_visible = self.cursor_visible;
-        pipeline.last_cursor_color = self.cursor_color;
         pipeline.last_background_opacity = self.background_opacity;
-
-        let cells = self.cells.as_slice();
-
-        // Cursor is only drawn when visible (blink "on" phase).
-        let active_cursor = self.cursor.filter(|_| self.cursor_visible);
-
-        pipeline
-            .bg
-            .update_uniforms(queue, cell_size, viewport, offset);
-        pipeline.bg.prepare_instances(
-            device,
-            queue,
-            cells,
-            self.selection.as_ref(),
-            self.display_offset,
-            active_cursor,
-            self.cursor_shape,
-            self.cursor_color,
-            self.background_opacity,
-            self.link_row,
-        );
 
         pipeline
             .text
             .apply_terminal_font_selection(device, self.terminal_font_selection.as_deref());
         pipeline.text.set_requested_font_size(font_size);
-        pipeline.text.update_uniforms(queue, viewport, offset);
-        pipeline.text.prepare_instances(
-            device,
-            queue,
-            cells,
-            cell_size,
-            self.selection.as_ref(),
-            self.display_offset,
-            active_cursor.filter(|_| self.cursor_shape == crate::config::CursorShape::Block),
-            self.cursor_color,
-        );
+        pipeline.text.update_uniforms(queue, view, [0.0, 0.0]);
+        pipeline
+            .bg
+            .update_uniforms(queue, cell_size, view, [0.0, 0.0]);
+
+        pipeline.bg.begin();
+        pipeline.text.begin();
+
+        for pane in &self.panes {
+            let origin = [pane.origin[0] * scale, pane.origin[1] * scale];
+            let cells = pane.cells.as_slice();
+            pipeline.bg.push_pane(
+                cells,
+                pane.selection.as_ref(),
+                pane.display_offset,
+                pane.cursor,
+                self.cursor_shape,
+                pane.cursor_color,
+                self.background_opacity,
+                pane.link_row,
+                origin,
+            );
+            pipeline.text.push_pane(
+                device,
+                queue,
+                cells,
+                cell_size,
+                pane.selection.as_ref(),
+                pane.display_offset,
+                pane.cursor
+                    .filter(|_| self.cursor_shape == crate::config::CursorShape::Block),
+                pane.cursor_color,
+                origin,
+            );
+        }
+
+        if self.panes.len() > 1 {
+            for pane in &self.panes {
+                let [x, y, w, h] = pane.rect.map(|v| v * scale);
+                let color = if pane.focused {
+                    self.focus_color
+                } else {
+                    self.divider_color
+                };
+                let t = scale;
+                for (origin, size) in [
+                    ([x, y], [w, t]),
+                    ([x, y + h - t], [w, t]),
+                    ([x, y], [t, h]),
+                    ([x + w - t, y], [t, h]),
+                ] {
+                    pipeline.bg.push_px_rect(origin, size, cell_size, color);
+                }
+            }
+        }
+
+        pipeline.bg.upload(device, queue);
+        pipeline.text.upload(device, queue);
     }
 
     fn render(

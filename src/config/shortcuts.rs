@@ -13,15 +13,29 @@ pub enum ShortcutId {
     FontSizeDecrease,
     FontSizeReset,
     DuplicateTab,
+    SplitRight,
+    SplitDown,
+    ClosePane,
+    FocusLeft,
+    FocusRight,
+    FocusUp,
+    FocusDown,
 }
 
 impl ShortcutId {
-    pub const ALL: [Self; 10] = [
+    pub const ALL: [Self; 17] = [
         Self::NewTab,
         Self::CloseTab,
         Self::DuplicateTab,
         Self::NextTab,
         Self::PrevTab,
+        Self::SplitRight,
+        Self::SplitDown,
+        Self::ClosePane,
+        Self::FocusLeft,
+        Self::FocusRight,
+        Self::FocusUp,
+        Self::FocusDown,
         Self::FontSizeIncrease,
         Self::FontSizeDecrease,
         Self::FontSizeReset,
@@ -41,6 +55,13 @@ impl ShortcutId {
             Self::FontSizeDecrease => "font_size_decrease",
             Self::FontSizeReset => "font_size_reset",
             Self::DuplicateTab => "duplicate_tab",
+            Self::SplitRight => "split_right",
+            Self::SplitDown => "split_down",
+            Self::ClosePane => "close_pane",
+            Self::FocusLeft => "focus_left",
+            Self::FocusRight => "focus_right",
+            Self::FocusUp => "focus_up",
+            Self::FocusDown => "focus_down",
         }
     }
 
@@ -56,6 +77,13 @@ impl ShortcutId {
             Self::FontSizeDecrease => crate::t!("settings.shortcuts.font_size_decrease"),
             Self::FontSizeReset => crate::t!("settings.shortcuts.font_size_reset"),
             Self::DuplicateTab => crate::t!("settings.shortcuts.duplicate_tab"),
+            Self::SplitRight => crate::t!("settings.shortcuts.split_right"),
+            Self::SplitDown => crate::t!("settings.shortcuts.split_down"),
+            Self::ClosePane => crate::t!("settings.shortcuts.close_pane"),
+            Self::FocusLeft => crate::t!("settings.shortcuts.focus_left"),
+            Self::FocusRight => crate::t!("settings.shortcuts.focus_right"),
+            Self::FocusUp => crate::t!("settings.shortcuts.focus_up"),
+            Self::FocusDown => crate::t!("settings.shortcuts.focus_down"),
         }
     }
 
@@ -71,6 +99,13 @@ impl ShortcutId {
             Self::FontSizeDecrease => DEFAULT_SHORTCUT_FONT_SIZE_DECREASE,
             Self::FontSizeReset => DEFAULT_SHORTCUT_FONT_SIZE_RESET,
             Self::DuplicateTab => DEFAULT_SHORTCUT_DUPLICATE_TAB,
+            Self::SplitRight => DEFAULT_SHORTCUT_SPLIT_RIGHT,
+            Self::SplitDown => DEFAULT_SHORTCUT_SPLIT_DOWN,
+            Self::ClosePane => DEFAULT_SHORTCUT_CLOSE_PANE,
+            Self::FocusLeft => DEFAULT_SHORTCUT_FOCUS_LEFT,
+            Self::FocusRight => DEFAULT_SHORTCUT_FOCUS_RIGHT,
+            Self::FocusUp => DEFAULT_SHORTCUT_FOCUS_UP,
+            Self::FocusDown => DEFAULT_SHORTCUT_FOCUS_DOWN,
         }
     }
 

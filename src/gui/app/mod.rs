@@ -41,7 +41,7 @@ pub enum Message {
     SshPasswordPromptCancel,
     ShowTabContextMenu(usize),
     CloseTabContextMenu,
-    TerminalRightClick,
+    TerminalRightClick(u64),
     CloseTerminalContextMenu,
     TerminalContextPaste,
     TerminalContextCopy,
@@ -58,8 +58,12 @@ pub enum Message {
 
     TabBarScroll(f32),
     TabBarScrolled(f32),
-    SelectionChanged(Option<crate::terminal::Selection>),
+    SelectionChanged {
+        pane: u64,
+        selection: Option<crate::terminal::Selection>,
+    },
     TerminalMousePress {
+        pane: u64,
         col: usize,
         row: usize,
     },
@@ -87,6 +91,7 @@ pub enum Message {
     TerminalWheelScroll(f32),
 
     WindowResized(Size),
+    TerminalAreaResized(Size),
     ResizeDebounce,
     AnimationTick,
     CursorBlink,
@@ -189,6 +194,7 @@ pub struct App {
     pub(super) show_shell_picker: bool,
     pub(super) shell_picker_selected: usize,
     pub(super) window_size: Size,
+    pub(super) terminal_area: Size,
     pub(super) settings_open: bool,
     pub(super) settings_category: SettingsCategory,
     pub(super) settings_draft: SettingsDraft,
@@ -287,6 +293,7 @@ impl App {
             active_tab: 0,
             show_shell_picker: false,
             shell_picker_selected: 0,
+            terminal_area: Size::new(0.0, 0.0),
             window_size: Size::new(config.ui.window_width, config.ui.window_height),
             settings_open: false,
             settings_category: SettingsCategory::Appearance,
@@ -340,16 +347,40 @@ impl App {
         }
     }
 
-    pub(super) fn grid_for_size(&self, size: Size) -> (usize, usize) {
+    pub(super) fn grid_for_rect(&self, rect: iced::Rectangle) -> (usize, usize) {
         let pad_x = self.config.terminal.padding_x * 2.0;
         let pad_y = self.config.terminal.padding_y * 2.0;
-        let terminal_height = (size.height - 80.0 - pad_y).max(100.0);
-        let terminal_width = (size.width - 20.0 - pad_x).max(100.0);
         let cell_width = self.config.terminal.cell_width.max(1.0);
         let cell_height = self.config.terminal.cell_height.max(1.0);
-        let cols = (terminal_width / cell_width) as usize;
-        let rows = (terminal_height / cell_height) as usize;
+        let cols = ((rect.width - pad_x).max(1.0) / cell_width) as usize;
+        let rows = ((rect.height - pad_y).max(1.0) / cell_height) as usize;
         (cols.max(10), rows.max(5))
+    }
+
+    pub(super) fn terminal_area_rect(&self) -> iced::Rectangle {
+        let (width, height) = if self.terminal_area.width > 1.0 {
+            (self.terminal_area.width, self.terminal_area.height)
+        } else {
+            (
+                (self.window_size.width - 20.0).max(100.0),
+                (self.window_size.height - 80.0).max(100.0),
+            )
+        };
+        iced::Rectangle {
+            x: 0.0,
+            y: 0.0,
+            width,
+            height,
+        }
+    }
+
+    pub(super) fn grid_for_size(&self, size: Size) -> (usize, usize) {
+        self.grid_for_rect(iced::Rectangle {
+            x: 0.0,
+            y: 0.0,
+            width: (size.width - 20.0).max(100.0),
+            height: (size.height - 80.0).max(100.0),
+        })
     }
 
     pub fn window_style(&self) -> iced::theme::Style {

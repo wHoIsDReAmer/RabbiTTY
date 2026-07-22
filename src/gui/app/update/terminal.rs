@@ -10,18 +10,29 @@ impl App {
     pub(super) fn handle_pty_event(&mut self, event: OutputEvent) {
         match event {
             OutputEvent::Data { tab_id, bytes } => {
-                if let Some(tab) = self.tabs.iter_mut().find(|t| t.id == tab_id) {
-                    let bell = tab.feed_bytes(&bytes);
+                if let Some(pane) = self.pane_mut_by_id(tab_id) {
+                    let bell = pane.feed_bytes(&bytes);
                     if bell {
                         self.handle_bell(tab_id);
                     }
                 }
             }
             OutputEvent::Closed { tab_id } => {
-                if let Some(index) = self.tabs.iter().position(|t| t.id == tab_id) {
-                    self.tabs.remove(index);
-                    if self.active_tab >= self.tabs.len() && !self.tabs.is_empty() {
-                        self.active_tab = self.tabs.len() - 1;
+                if let Some(index) = self
+                    .tabs
+                    .iter()
+                    .position(|t| t.panes.iter().any(|p| p.id == tab_id))
+                {
+                    let closed_tab = {
+                        let tab = &mut self.tabs[index];
+                        tab.focused = tab_id;
+                        !tab.close_focused()
+                    };
+                    if closed_tab {
+                        self.tabs.remove(index);
+                        if self.active_tab >= self.tabs.len() && !self.tabs.is_empty() {
+                            self.active_tab = self.tabs.len() - 1;
+                        }
                     }
                 }
             }
@@ -51,10 +62,10 @@ impl App {
         if self.active_tab == SETTINGS_TAB_INDEX {
             return Task::none();
         }
-        let Some(tab) = self.tabs.get(self.active_tab) else {
+        let Some(pane) = self.focused_pane() else {
             return Task::none();
         };
-        let (offset, history) = tab.scroll_position();
+        let (offset, history) = pane.scroll_position();
         if history == 0 {
             return Task::none();
         }
@@ -71,11 +82,11 @@ impl App {
             return Task::none();
         }
 
-        let Some(tab) = self.tabs.get(self.active_tab) else {
+        let Some(pane) = self.focused_pane() else {
             return Task::none();
         };
 
-        let (_offset, history) = tab.scroll_position();
+        let (_offset, history) = pane.scroll_position();
         if history == 0 {
             return Task::none();
         }
@@ -128,10 +139,6 @@ impl App {
             self.queue_config_save();
         }
 
-        let (cols, rows) = self.grid_for_size(size);
-
-        for tab in &mut self.tabs {
-            tab.resize(cols, rows);
-        }
+        self.resize_panes();
     }
 }
