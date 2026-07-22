@@ -1,4 +1,4 @@
-use crate::config::AppConfig;
+use crate::config::{AppConfig, ShortcutId};
 use crate::gui::app::Message;
 use crate::gui::settings::{SettingsDraft, SettingsField, hint_text, input_row, section};
 use crate::gui::theme::{Palette, SPACING_NORMAL};
@@ -10,58 +10,31 @@ pub fn view<'a>(
     draft: &'a SettingsDraft,
     palette: Palette,
 ) -> Element<'a, Message> {
-    let app_section = section(
-        crate::t!("settings.shortcuts.application"),
-        column(vec![
-            input_row(
-                crate::t!("settings.shortcuts.new_tab"),
-                &draft.shortcut_new_tab,
-                SettingsField::ShortcutNewTab,
-                palette,
-            ),
-            input_row(
-                crate::t!("settings.shortcuts.close_tab"),
-                &draft.shortcut_close_tab,
-                SettingsField::ShortcutCloseTab,
-                palette,
-            ),
-            input_row(
-                crate::t!("settings.shortcuts.open_settings"),
-                &draft.shortcut_open_settings,
-                SettingsField::ShortcutOpenSettings,
-                palette,
-            ),
-            input_row(
-                crate::t!("settings.shortcuts.next_tab"),
-                &draft.shortcut_next_tab,
-                SettingsField::ShortcutNextTab,
-                palette,
-            ),
-            input_row(
-                crate::t!("settings.shortcuts.prev_tab"),
-                &draft.shortcut_prev_tab,
-                SettingsField::ShortcutPrevTab,
-                palette,
-            ),
-            input_row(
-                crate::t!("settings.shortcuts.quit"),
-                &draft.shortcut_quit,
-                SettingsField::ShortcutQuit,
-                palette,
-            ),
-            hint_text(
-                "Format: Command+T, Ctrl+W, Ctrl+PageDown, Command+Comma",
-                palette,
-            ),
-        ])
-        .spacing(SPACING_NORMAL)
-        .width(Length::Fill)
-        .into(),
+    let mut rows: Vec<Element<'a, Message>> = ShortcutId::ALL
+        .into_iter()
+        .map(|id| {
+            let value = draft
+                .shortcuts
+                .get(&id)
+                .map(String::as_str)
+                .unwrap_or_default();
+            input_row(id.label(), value, SettingsField::Shortcut(id), palette)
+        })
+        .collect();
+    rows.push(hint_text(
+        "Format: Command+T, Ctrl+W, Ctrl+PageDown, Command+Comma",
         palette,
-    );
+    ));
 
-    column(vec![app_section])
-        .spacing(SPACING_NORMAL)
-        .width(Length::Fill)
-        .into()
+    column(vec![section(
+        crate::t!("settings.shortcuts.application"),
+        column(rows)
+            .spacing(SPACING_NORMAL)
+            .width(Length::Fill)
+            .into(),
+        palette,
+    )])
+    .spacing(SPACING_NORMAL)
+    .width(Length::Fill)
+    .into()
 }

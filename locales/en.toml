@@ -118,6 +118,10 @@ next_tab = "Next tab"
 prev_tab = "Previous tab"
 quit = "Quit"
 
+duplicate_tab = "Duplicate tab"
+font_size_increase = "Increase font size"
+font_size_decrease = "Decrease font size"
+font_size_reset = "Reset font size"
 [settings.ssh]
 profiles = "Profiles"
 no_profiles = "No profiles yet"

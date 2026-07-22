@@ -1,4 +1,4 @@
-use crate::config::ShortcutsConfig;
+use crate::config::{ShortcutId, ShortcutsConfig};
 use iced::keyboard::{Key, Modifiers, key::Named};
 use std::borrow::Cow;
 
@@ -77,42 +77,30 @@ pub(super) enum ShortcutAction {
 }
 
 impl ShortcutAction {
+    fn from_id(id: ShortcutId) -> Self {
+        match id {
+            ShortcutId::NewTab => Self::NewTab,
+            ShortcutId::CloseTab => Self::CloseTab,
+            ShortcutId::OpenSettings => Self::OpenSettings,
+            ShortcutId::NextTab => Self::NextTab,
+            ShortcutId::PrevTab => Self::PrevTab,
+            ShortcutId::Quit => Self::Quit,
+            ShortcutId::FontSizeIncrease => Self::FontSizeIncrease,
+            ShortcutId::FontSizeDecrease => Self::FontSizeDecrease,
+            ShortcutId::FontSizeReset => Self::FontSizeReset,
+            ShortcutId::DuplicateTab => Self::DuplicateTab,
+        }
+    }
+
     pub(super) fn resolve(
         key: &Key,
         modifiers: Modifiers,
         shortcuts: &ShortcutsConfig,
     ) -> Option<Self> {
-        if shortcut_matches(&shortcuts.new_tab, key, modifiers) {
-            return Some(Self::NewTab);
-        }
-        if shortcut_matches(&shortcuts.close_tab, key, modifiers) {
-            return Some(Self::CloseTab);
-        }
-        if shortcut_matches(&shortcuts.open_settings, key, modifiers) {
-            return Some(Self::OpenSettings);
-        }
-        if shortcut_matches(&shortcuts.next_tab, key, modifiers) {
-            return Some(Self::NextTab);
-        }
-        if shortcut_matches(&shortcuts.prev_tab, key, modifiers) {
-            return Some(Self::PrevTab);
-        }
-        if shortcut_matches(&shortcuts.quit, key, modifiers) {
-            return Some(Self::Quit);
-        }
-        if shortcut_matches(&shortcuts.font_size_increase, key, modifiers) {
-            return Some(Self::FontSizeIncrease);
-        }
-        if shortcut_matches(&shortcuts.font_size_decrease, key, modifiers) {
-            return Some(Self::FontSizeDecrease);
-        }
-        if shortcut_matches(&shortcuts.font_size_reset, key, modifiers) {
-            return Some(Self::FontSizeReset);
-        }
-        if shortcut_matches(&shortcuts.duplicate_tab, key, modifiers) {
-            return Some(Self::DuplicateTab);
-        }
-        None
+        shortcuts
+            .iter()
+            .find(|(_, binding)| shortcut_matches(binding, key, modifiers))
+            .map(|(id, _)| Self::from_id(id))
     }
 }
 

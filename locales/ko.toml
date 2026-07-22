@@ -118,6 +118,10 @@ next_tab = "다음 탭"
 prev_tab = "이전 탭"
 quit = "종료"
 
+duplicate_tab = "탭 복제"
+font_size_increase = "글자 크게"
+font_size_decrease = "글자 작게"
+font_size_reset = "글자 크기 초기화"
 [settings.ssh]
 profiles = "프로필"
 no_profiles = "프로필이 없습니다"
