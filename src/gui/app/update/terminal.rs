@@ -23,16 +23,14 @@ impl App {
                     .iter()
                     .position(|t| t.panes.iter().any(|p| p.id == tab_id))
                 {
-                    let closed_tab = {
-                        let tab = &mut self.tabs[index];
-                        tab.focused = tab_id;
-                        !tab.close_focused()
-                    };
+                    let closed_tab = !self.tabs[index].close_pane(tab_id);
                     if closed_tab {
                         self.tabs.remove(index);
                         if self.active_tab >= self.tabs.len() && !self.tabs.is_empty() {
                             self.active_tab = self.tabs.len() - 1;
                         }
+                    } else {
+                        self.resize_panes();
                     }
                 }
             }

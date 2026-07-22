@@ -776,4 +776,78 @@ mod tests {
             "scrolling one pane moved another"
         );
     }
+
+    #[test]
+    fn a_pane_exiting_resizes_the_survivor_to_the_whole_area() {
+        let mut app = app_with_pty();
+        let _ = app.update(Message::CreateTab(Profile::default_shell()));
+        app.terminal_area = Size::new(1000.0, 600.0);
+        app.resize_panes();
+
+        let full = app.tabs[0].focused_mut().size();
+        let _ = app.split_focused(crate::gui::pane::Axis::Vertical);
+
+        let ids = app.tabs[0].layout.leaves();
+        let (survivor, dying) = (ids[0], ids[1]);
+        let split_cols = app.tabs[0].pane_mut(survivor).unwrap().size().columns;
+        assert!(split_cols < full.columns, "split did not shrink the pane");
+
+        let _ = app.update(Message::PtyOutput(crate::session::OutputEvent::Closed {
+            tab_id: dying,
+        }));
+
+        assert_eq!(app.tabs[0].panes.len(), 1);
+        let after = app.tabs[0].pane_mut(survivor).unwrap().size();
+        assert_eq!(
+            after.columns, full.columns,
+            "survivor kept the split grid after the other pane exited"
+        );
+        assert_eq!(after.lines, full.lines);
+    }
+
+    #[test]
+    fn an_unfocused_pane_exiting_leaves_focus_alone() {
+        let mut app = app_with_pty();
+        let _ = app.update(Message::CreateTab(Profile::default_shell()));
+        app.terminal_area = Size::new(1000.0, 600.0);
+        let _ = app.split_focused(crate::gui::pane::Axis::Vertical);
+        let _ = app.split_focused(crate::gui::pane::Axis::Horizontal);
+
+        let focused = app.tabs[0].focused;
+        let other = app.tabs[0]
+            .layout
+            .leaves()
+            .into_iter()
+            .find(|id| *id != focused)
+            .expect("another pane");
+
+        let _ = app.update(Message::PtyOutput(crate::session::OutputEvent::Closed {
+            tab_id: other,
+        }));
+
+        assert_eq!(app.tabs[0].focused, focused, "focus jumped to another pane");
+    }
+
+    #[test]
+    fn probe_typing_while_scrolled_up() {
+        let mut app = app_with_pty();
+        let _ = app.update(Message::CreateTab(Profile::default_shell()));
+        app.terminal_area = Size::new(1000.0, 600.0);
+        app.resize_panes();
+
+        let pane_id = app.tabs[0].focused;
+        let _ = app.update(Message::PtyOutput(crate::session::OutputEvent::Data {
+            tab_id: pane_id,
+            bytes: b"line\r\n".repeat(300).to_vec(),
+        }));
+        app.focused_pane_mut().unwrap().scroll(40);
+        let before = app.focused_pane().unwrap().scroll_position();
+        let _ = app.update(Message::KeyPressed {
+            key: iced::keyboard::Key::Character("a".into()),
+            modifiers: Modifiers::empty(),
+            text: Some("a".to_string()),
+        });
+        let after = app.focused_pane().unwrap().scroll_position();
+        panic!("before={before:?} after={after:?}");
+    }
 }

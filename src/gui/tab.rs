@@ -623,12 +623,17 @@ impl TerminalTab {
     }
 
     pub fn close_focused(&mut self) -> bool {
-        let target = self.focused;
+        self.close_pane(self.focused)
+    }
+
+    pub fn close_pane(&mut self, target: u64) -> bool {
         if !self.layout.remove(target) {
             return false;
         }
         self.panes.retain(|p| p.id != target);
-        self.focused = self.layout.leaves().first().copied().unwrap_or(target);
+        if self.focused == target {
+            self.focused = self.layout.leaves().first().copied().unwrap_or(target);
+        }
         true
     }
 
