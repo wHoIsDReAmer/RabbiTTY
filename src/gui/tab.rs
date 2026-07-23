@@ -1,4 +1,4 @@
-use crate::config::{AppConfig, SshProfile};
+use crate::config::SshProfile;
 use crate::gui::pane::{Axis, Direction, PaneNode, neighbour};
 use crate::gui::sftp::SftpDrawerState;
 use crate::session::{LaunchSpec, OutputEvent, Session, SessionError};
@@ -9,7 +9,7 @@ use serde::{Deserialize, Serialize};
 use std::borrow::Cow;
 use std::fmt::{Display, Formatter};
 use std::io::Write;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
 pub struct Pane {
@@ -35,36 +35,30 @@ pub enum TerminalSession {
     Failed(String),
 }
 
+pub struct PaneSpawn {
+    pub profile: Profile,
+    pub columns: usize,
+    pub lines: usize,
+    pub theme: TerminalTheme,
+    pub id: u64,
+    pub output_tx: mpsc::UnboundedSender<OutputEvent>,
+    pub scrollback_lines: usize,
+    pub cwd: Option<PathBuf>,
+}
+
 impl Pane {
-    pub fn from_profile(
-        profile: Profile,
-        columns: usize,
-        lines: usize,
-        theme: TerminalTheme,
-        id: u64,
-        output_tx: mpsc::UnboundedSender<OutputEvent>,
-        config: &AppConfig,
-    ) -> Self {
-        Self::launch(
+    pub fn from_profile(spec: PaneSpawn) -> Self {
+        let PaneSpawn {
             profile,
             columns,
             lines,
             theme,
             id,
             output_tx,
-            config.terminal.scrollback_lines,
-        )
-    }
+            scrollback_lines,
+            cwd,
+        } = spec;
 
-    fn launch(
-        profile: Profile,
-        columns: usize,
-        lines: usize,
-        theme: TerminalTheme,
-        id: u64,
-        output_tx: mpsc::UnboundedSender<OutputEvent>,
-        scrollback_lines: usize,
-    ) -> Self {
         let size = TerminalSize::new(columns, lines);
 
         let title = profile.display_name();
@@ -75,7 +69,7 @@ impl Pane {
             let w = s.writer();
             (TerminalSession::Active(s), w)
         } else {
-            let spec = profile.launch_spec(size);
+            let spec = profile.launch_spec(size, cwd);
             match Session::spawn(spec, id, output_tx) {
                 Ok(s) => {
                     let w = s.writer();
@@ -252,6 +246,13 @@ impl Pane {
         }
     }
 
+    pub fn working_directory(&self) -> Option<PathBuf> {
+        match &self.session {
+            TerminalSession::Active(session) => session.working_directory(),
+            _ => None,
+        }
+    }
+
     pub fn resize(&mut self, columns: usize, lines: usize) {
         let new_size = TerminalSize::new(columns, lines);
         self.engine.resize(new_size);
@@ -396,7 +397,7 @@ impl Profile {
         }
     }
 
-    fn launch_spec(&self, size: TerminalSize) -> LaunchSpec {
+    fn launch_spec(&self, size: TerminalSize, cwd: Option<PathBuf>) -> LaunchSpec {
         let (program, args) = match &self.kind {
             ProfileKind::Ssh(_) => unreachable!("SSH uses native russh, not launch_spec"),
             ProfileKind::Local { program: None, .. } => resolve_default_shell(),
@@ -414,6 +415,7 @@ impl Profile {
             env,
             rows: size.lines as u16,
             cols: size.columns as u16,
+            cwd,
         }
     }
 
