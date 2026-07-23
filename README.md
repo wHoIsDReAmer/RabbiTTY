@@ -37,13 +37,13 @@ The Unix script installs the binary to `~/.local/bin/rabbitty`. On Linux it also
 
 - [x] Support customizable themes
 - [x] SSH Managing
-- [ ] Profile customization
+- [x] Profile customization
 - [ ] Support serial connection
 - [ ] Plugin support with wasm
 - [x] Easy changing theme
-- [x] i18n (English, 한국어)
+- [x] i18n
 - [x] Easy file upload & download with SFTP
-- [ ] Split terminal in single tab
+- [x] Split terminal in single tab
 
 ## Custom Themes
 
