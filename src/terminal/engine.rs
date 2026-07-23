@@ -7,7 +7,7 @@ use alacritty_terminal::term::cell::Flags;
 use alacritty_terminal::term::{
     Config as TermConfig, RenderableContent, Term, TermMode, point_to_viewport,
 };
-use alacritty_terminal::vte::ansi::{CursorShape, Processor};
+use alacritty_terminal::vte::ansi::{CursorShape, Processor, Rgb};
 use std::cell::{Cell, RefCell};
 use std::io::Write;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -224,16 +224,10 @@ impl TerminalEngine {
 
         cells.clear();
         cells.resize(total, default_cell);
-        for row in 0..self.size.lines {
-            let base = row * self.size.columns;
-            for col in 0..self.size.columns {
-                let slot = &mut cells[base + col];
-                slot.col = col;
-                slot.row = row;
-            }
-        }
 
         let idx = |row: usize, col: usize, cols: usize| row * cols + col;
+
+        let mut contrast_memo: Vec<((Rgb, Rgb), Rgb)> = Vec::with_capacity(32);
 
         for indexed in display_iter {
             if let Some(point) = point_to_viewport(display_offset, indexed.point) {
@@ -260,7 +254,18 @@ impl TerminalEngine {
                         std::mem::swap(&mut fg_rgb, &mut bg_rgb);
                     }
 
-                    fg_rgb = enforce_min_contrast(fg_rgb, bg_rgb);
+                    // Contrast enforcement runs powf per channel; a screen reuses
+                    // only a handful of (fg, bg) pairs, so memoize within the frame.
+                    let key = (fg_rgb, bg_rgb);
+                    fg_rgb = if let Some((_, v)) = contrast_memo.iter().find(|(k, _)| *k == key) {
+                        *v
+                    } else {
+                        let v = enforce_min_contrast(fg_rgb, bg_rgb);
+                        if contrast_memo.len() < 64 {
+                            contrast_memo.push((key, v));
+                        }
+                        v
+                    };
 
                     let mut fg = rgb_to_rgba(fg_rgb, 1.0);
                     // When the cell background matches the theme background, leave
