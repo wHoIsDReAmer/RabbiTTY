@@ -289,16 +289,16 @@ impl Pane {
                     }
                 }
                 Named::Escape => Some(Cow::Borrowed(b"\x1b")),
-                Named::ArrowUp => Some(Cow::Borrowed(b"\x1b[A")),
-                Named::ArrowDown => Some(Cow::Borrowed(b"\x1b[B")),
-                Named::ArrowRight => Some(Cow::Borrowed(b"\x1b[C")),
-                Named::ArrowLeft => Some(Cow::Borrowed(b"\x1b[D")),
-                Named::Home => Some(Cow::Borrowed(b"\x1b[H")),
-                Named::End => Some(Cow::Borrowed(b"\x1b[F")),
-                Named::Delete => Some(Cow::Borrowed(b"\x1b[3~")),
-                Named::PageUp => Some(Cow::Borrowed(b"\x1b[5~")),
-                Named::PageDown => Some(Cow::Borrowed(b"\x1b[6~")),
-                Named::Insert => Some(Cow::Borrowed(b"\x1b[2~")),
+                Named::ArrowUp => Some(cursor_seq(b'A', modifiers)),
+                Named::ArrowDown => Some(cursor_seq(b'B', modifiers)),
+                Named::ArrowRight => Some(cursor_seq(b'C', modifiers)),
+                Named::ArrowLeft => Some(cursor_seq(b'D', modifiers)),
+                Named::Home => Some(cursor_seq(b'H', modifiers)),
+                Named::End => Some(cursor_seq(b'F', modifiers)),
+                Named::Delete => Some(tilde_seq(b"3", modifiers)),
+                Named::PageUp => Some(tilde_seq(b"5", modifiers)),
+                Named::PageDown => Some(tilde_seq(b"6", modifiers)),
+                Named::Insert => Some(tilde_seq(b"2", modifiers)),
                 Named::F1 => Some(Cow::Borrowed(b"\x1bOP")),
                 Named::F2 => Some(Cow::Borrowed(b"\x1bOQ")),
                 Named::F3 => Some(Cow::Borrowed(b"\x1bOR")),
@@ -334,6 +334,38 @@ impl Pane {
             _ => None,
         }
     }
+}
+
+fn csi_modifier(m: Modifiers) -> u8 {
+    1 + m.shift() as u8 + (m.alt() as u8) * 2 + (m.control() as u8) * 4
+}
+
+fn cursor_seq<'a>(final_byte: u8, m: Modifiers) -> Cow<'a, [u8]> {
+    if m.alt() && !m.shift() && !m.control() && matches!(final_byte, b'C' | b'D') {
+        return Cow::Borrowed(if final_byte == b'C' {
+            b"\x1bf"
+        } else {
+            b"\x1bb"
+        });
+    }
+    let code = csi_modifier(m);
+    if code == 1 {
+        Cow::Owned(vec![0x1b, b'[', final_byte])
+    } else {
+        Cow::Owned(vec![0x1b, b'[', b'1', b';', b'0' + code, final_byte])
+    }
+}
+
+fn tilde_seq<'a>(num: &[u8], m: Modifiers) -> Cow<'a, [u8]> {
+    let code = csi_modifier(m);
+    let mut seq = vec![0x1b, b'['];
+    seq.extend_from_slice(num);
+    if code != 1 {
+        seq.push(b';');
+        seq.push(b'0' + code);
+    }
+    seq.push(b'~');
+    Cow::Owned(seq)
 }
 
 /// A launchable session descriptor: a local shell (default or a specific
@@ -650,6 +682,31 @@ impl TerminalTab {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn option_arrows_send_word_jump() {
+        assert_eq!(&*cursor_seq(b'D', Modifiers::ALT), b"\x1bb");
+        assert_eq!(&*cursor_seq(b'C', Modifiers::ALT), b"\x1bf");
+    }
+
+    #[test]
+    fn plain_arrows_are_unmodified() {
+        assert_eq!(&*cursor_seq(b'D', Modifiers::empty()), b"\x1b[D");
+        assert_eq!(&*cursor_seq(b'A', Modifiers::empty()), b"\x1b[A");
+    }
+
+    #[test]
+    fn modified_arrows_use_csi_parameters() {
+        assert_eq!(&*cursor_seq(b'D', Modifiers::SHIFT), b"\x1b[1;2D");
+        assert_eq!(&*cursor_seq(b'C', Modifiers::CTRL), b"\x1b[1;5C");
+        assert_eq!(&*cursor_seq(b'A', Modifiers::ALT), b"\x1b[1;3A");
+    }
+
+    #[test]
+    fn editing_keys_encode_modifiers() {
+        assert_eq!(&*tilde_seq(b"3", Modifiers::empty()), b"\x1b[3~");
+        assert_eq!(&*tilde_seq(b"3", Modifiers::SHIFT), b"\x1b[3;2~");
+    }
 
     #[test]
     fn ssh_profile_tab_title() {
