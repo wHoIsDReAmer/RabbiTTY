@@ -22,6 +22,7 @@ pub struct LaunchSpec {
     pub env: Vec<(String, String)>,
     pub rows: u16,
     pub cols: u16,
+    pub cwd: Option<PathBuf>,
 }
 
 pub struct Session {
@@ -96,7 +97,7 @@ impl Session {
         let options = Options {
             shell: Some(Shell::new(spec.program, spec.args)),
             env: spec.env.into_iter().collect(),
-            working_directory: default_working_directory(),
+            working_directory: spec.cwd.or_else(default_working_directory),
             ..Default::default()
         };
 
@@ -175,7 +176,7 @@ impl Session {
         let options = Options {
             shell: Some(Shell::new(spec.program, spec.args)),
             env: spec.env.into_iter().collect(),
-            working_directory: default_working_directory(),
+            working_directory: spec.cwd.or_else(default_working_directory),
             ..Default::default()
         };
 
@@ -280,6 +281,17 @@ impl Session {
     }
 
     #[cfg(unix)]
+    pub fn working_directory(&self) -> Option<PathBuf> {
+        let pid = self.pty.as_ref()?.child().id();
+        process_cwd(pid)
+    }
+
+    #[cfg(not(unix))]
+    pub fn working_directory(&self) -> Option<PathBuf> {
+        None
+    }
+
+    #[cfg(unix)]
     pub fn resize(&mut self, rows: u16, cols: u16) -> Result<(), SessionError> {
         if let Some(ref tx) = self.resize_tx {
             let _ = tx.send((rows, cols));
@@ -328,6 +340,42 @@ fn send_output_event(
     event: OutputEvent,
 ) -> bool {
     output_tx.unbounded_send(event).is_ok()
+}
+
+#[cfg(target_os = "linux")]
+fn process_cwd(pid: u32) -> Option<PathBuf> {
+    std::fs::read_link(format!("/proc/{pid}/cwd")).ok()
+}
+
+#[cfg(target_os = "macos")]
+fn process_cwd(pid: u32) -> Option<PathBuf> {
+    use std::os::unix::ffi::OsStrExt;
+    let mut info: libc::proc_vnodepathinfo = unsafe { std::mem::zeroed() };
+    let size = std::mem::size_of::<libc::proc_vnodepathinfo>() as libc::c_int;
+    let ret = unsafe {
+        libc::proc_pidinfo(
+            pid as libc::c_int,
+            libc::PROC_PIDVNODEPATHINFO,
+            0,
+            &mut info as *mut _ as *mut libc::c_void,
+            size,
+        )
+    };
+    if ret != size {
+        return None;
+    }
+    let path = &info.pvi_cdir.vip_path;
+    let bytes = unsafe { std::slice::from_raw_parts(path.as_ptr() as *const u8, path.len()) };
+    let end = bytes.iter().position(|&b| b == 0).unwrap_or(bytes.len());
+    if end == 0 {
+        return None;
+    }
+    Some(PathBuf::from(std::ffi::OsStr::from_bytes(&bytes[..end])))
+}
+
+#[cfg(all(unix, not(target_os = "linux"), not(target_os = "macos")))]
+fn process_cwd(_pid: u32) -> Option<PathBuf> {
+    None
 }
 
 fn default_working_directory() -> Option<PathBuf> {

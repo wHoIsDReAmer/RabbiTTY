@@ -108,21 +108,25 @@ impl App {
         let Some(sender) = self.pty_sender.clone() else {
             return Task::none();
         };
+        let cwd = self
+            .focused_pane()
+            .and_then(|pane| pane.working_directory());
 
         let (cols, rows) = self.grid_for_size(self.window_size);
         let theme = TerminalTheme::from_config(&self.config);
         let pane_id = self.next_tab_id;
         self.next_tab_id = self.next_tab_id.wrapping_add(1);
 
-        let pane = crate::gui::tab::Pane::from_profile(
+        let pane = crate::gui::tab::Pane::from_profile(crate::gui::tab::PaneSpawn {
             profile,
-            cols,
-            rows,
+            columns: cols,
+            lines: rows,
             theme,
-            pane_id,
-            sender,
-            &self.config,
-        );
+            id: pane_id,
+            output_tx: sender,
+            scrollback_lines: self.config.terminal.scrollback_lines,
+            cwd,
+        });
         if let Some(tab) = self.tabs.get_mut(self.active_tab) {
             tab.split(axis, pane);
         }
@@ -216,15 +220,16 @@ impl App {
         self.next_tab_id = self.next_tab_id.wrapping_add(1);
         let display_name = profile.display_name();
         self.session_history.record(profile.clone(), display_name);
-        let pane = crate::gui::tab::Pane::from_profile(
+        let pane = crate::gui::tab::Pane::from_profile(crate::gui::tab::PaneSpawn {
             profile,
-            cols,
-            rows,
+            columns: cols,
+            lines: rows,
             theme,
-            tab_id,
-            sender,
-            &self.config,
-        );
+            id: tab_id,
+            output_tx: sender,
+            scrollback_lines: self.config.terminal.scrollback_lines,
+            cwd: None,
+        });
         self.tabs
             .push(crate::gui::tab::TerminalTab::new(tab_id, pane));
         self.active_tab = self.tabs.len() - 1;
