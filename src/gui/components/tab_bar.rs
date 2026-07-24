@@ -141,6 +141,7 @@ pub fn tab_bar<'a>(
     #[cfg(any(target_os = "windows", target_os = "macos"))]
     return mouse_area(tab_bar_container)
         .on_press(Message::WindowDrag)
+        .on_double_click(Message::WindowMaximize)
         .into();
 
     #[cfg(not(any(target_os = "windows", target_os = "macos")))]
@@ -204,7 +205,10 @@ pub fn window_chrome<'a>(palette: Palette, bar_alpha: f32) -> Element<'a, Messag
     )
     .style(move |_theme: &Theme| chrome_bar_style(palette, bar_alpha))
     .width(Length::Fill);
-    mouse_area(strip).on_press(Message::WindowDrag).into()
+    mouse_area(strip)
+        .on_press(Message::WindowDrag)
+        .on_double_click(Message::WindowMaximize)
+        .into()
 }
 
 #[cfg(target_os = "macos")]
@@ -215,7 +219,10 @@ pub fn window_chrome<'a>(palette: Palette, bar_alpha: f32) -> Element<'a, Messag
         .padding(iced::Padding::new(0.0).left(80.0))
         .width(Length::Fill)
         .height(Length::Fixed(32.0));
-    mouse_area(strip).on_press(Message::WindowDrag).into()
+    mouse_area(strip)
+        .on_press(Message::WindowDrag)
+        .on_double_click(Message::WindowMaximize)
+        .into()
 }
 
 #[cfg(not(any(target_os = "windows", target_os = "macos")))]
