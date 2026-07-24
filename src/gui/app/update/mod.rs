@@ -205,10 +205,11 @@ impl App {
             }
             Message::KeyPressed {
                 key,
+                physical_key,
                 modifiers,
                 text,
             } => {
-                return self.handle_key_pressed(key, modifiers, text);
+                return self.handle_key_pressed(key, physical_key, modifiers, text);
             }
             Message::TabBarScroll(delta) => {
                 return self.handle_tab_bar_scroll(delta);
@@ -436,6 +437,7 @@ impl App {
     fn handle_key_pressed(
         &mut self,
         key: Key,
+        physical_key: iced::keyboard::key::Physical,
         modifiers: iced::keyboard::Modifiers,
         text: Option<String>,
     ) -> Task<Message> {
@@ -470,8 +472,8 @@ impl App {
         }
 
         // Cmd+1..9 (macOS) / Ctrl+1..9 (other) — switch to Nth tab
-        if let Key::Character(ref c) = key
-            && let Some(digit) = c.chars().next().and_then(|ch| ch.to_digit(10))
+        if let Some(digit) = crate::gui::app::shortcuts::physical_key_token(&physical_key)
+            .and_then(|token| token.parse::<u32>().ok())
         {
             #[cfg(target_os = "macos")]
             let modifier_held = modifiers.logo();
@@ -487,7 +489,7 @@ impl App {
             }
         }
 
-        if let Some(task) = self.handle_app_shortcut(&key, modifiers) {
+        if let Some(task) = self.handle_app_shortcut(&physical_key, modifiers) {
             return task;
         }
 
@@ -496,7 +498,7 @@ impl App {
         }
 
         // Copy: Cmd+C (macOS) / Ctrl+Shift+C (other)
-        if is_copy_shortcut(&key, modifiers)
+        if is_copy_shortcut(&physical_key, modifiers)
             && let Some(pane) = self.focused_pane_mut()
             && let Some(text) = pane.selected_text()
         {
@@ -506,7 +508,7 @@ impl App {
         // No selection → fall through to send Ctrl+C to terminal
 
         // Paste: Cmd+V (macOS) / Ctrl+Shift+V (other)
-        if is_paste_shortcut(&key, modifiers) {
+        if is_paste_shortcut(&physical_key, modifiers) {
             return iced::clipboard::read()
                 .map(|content| Message::PasteClipboard(content.unwrap_or_default()));
         }
@@ -626,10 +628,11 @@ impl App {
     }
 }
 
-fn is_copy_shortcut(key: &Key, modifiers: iced::keyboard::Modifiers) -> bool {
-    if let Key::Character(c) = key
-        && c.eq_ignore_ascii_case("c")
-    {
+fn is_copy_shortcut(
+    physical: &iced::keyboard::key::Physical,
+    modifiers: iced::keyboard::Modifiers,
+) -> bool {
+    if physical == &iced::keyboard::key::Physical::Code(iced::keyboard::key::Code::KeyC) {
         #[cfg(target_os = "macos")]
         return modifiers.logo();
         #[cfg(not(target_os = "macos"))]
@@ -638,10 +641,11 @@ fn is_copy_shortcut(key: &Key, modifiers: iced::keyboard::Modifiers) -> bool {
     false
 }
 
-fn is_paste_shortcut(key: &Key, modifiers: iced::keyboard::Modifiers) -> bool {
-    if let Key::Character(c) = key
-        && c.eq_ignore_ascii_case("v")
-    {
+fn is_paste_shortcut(
+    physical: &iced::keyboard::key::Physical,
+    modifiers: iced::keyboard::Modifiers,
+) -> bool {
+    if physical == &iced::keyboard::key::Physical::Code(iced::keyboard::key::Code::KeyV) {
         #[cfg(target_os = "macos")]
         return modifiers.logo();
         #[cfg(not(target_os = "macos"))]

@@ -6,7 +6,7 @@ use crate::gui::settings::SettingsDraft;
 use crate::gui::tab::{Profile, ProfileKind};
 use crate::terminal::TerminalTheme;
 use iced::Task;
-use iced::keyboard::{Key, Modifiers};
+use iced::keyboard::Modifiers;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(in crate::gui) enum PickerSection {
@@ -405,10 +405,10 @@ impl App {
 
     pub(super) fn handle_app_shortcut(
         &mut self,
-        key: &Key,
+        physical: &iced::keyboard::key::Physical,
         modifiers: Modifiers,
     ) -> Option<Task<Message>> {
-        let action = ShortcutAction::resolve(key, modifiers, &self.config.shortcuts)?;
+        let action = ShortcutAction::resolve(physical, modifiers, &self.config.shortcuts)?;
 
         match action {
             ShortcutAction::SplitAuto => {

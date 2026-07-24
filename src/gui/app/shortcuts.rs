@@ -1,5 +1,6 @@
 use crate::config::{ShortcutId, ShortcutsConfig};
-use iced::keyboard::{Key, Modifiers, key::Named};
+use iced::keyboard::Modifiers;
+use iced::keyboard::key::{Code, Physical};
 use std::borrow::Cow;
 
 fn ascii_char_to_static(ch: char) -> Option<&'static str> {
@@ -107,13 +108,13 @@ impl ShortcutAction {
     }
 
     pub(super) fn resolve(
-        key: &Key,
+        physical: &Physical,
         modifiers: Modifiers,
         shortcuts: &ShortcutsConfig,
     ) -> Option<Self> {
         shortcuts
             .iter()
-            .find(|(_, binding)| shortcut_matches(binding, key, modifiers))
+            .find(|(_, binding)| shortcut_matches(binding, physical, modifiers))
             .map(|(id, _)| Self::from_id(id))
     }
 }
@@ -123,11 +124,11 @@ struct ParsedShortcut<'a> {
     key: Cow<'a, str>,
 }
 
-pub(super) fn shortcut_matches(binding: &str, key: &Key, modifiers: Modifiers) -> bool {
+pub(super) fn shortcut_matches(binding: &str, physical: &Physical, modifiers: Modifiers) -> bool {
     let Some(parsed) = parse_shortcut(binding) else {
         return false;
     };
-    let Some(event_key) = event_key_token(key) else {
+    let Some(event_key) = physical_key_token(physical) else {
         return false;
     };
 
@@ -168,57 +169,79 @@ fn parse_shortcut(value: &str) -> Option<ParsedShortcut<'static>> {
     })
 }
 
-fn event_key_token(key: &Key) -> Option<Cow<'static, str>> {
-    match key {
-        Key::Named(named) => match named {
-            Named::Enter => Some(Cow::Borrowed("Enter")),
-            Named::Tab => Some(Cow::Borrowed("Tab")),
-            Named::Space => Some(Cow::Borrowed("Space")),
-            Named::Escape => Some(Cow::Borrowed("Escape")),
-            Named::ArrowUp => Some(Cow::Borrowed("ArrowUp")),
-            Named::ArrowDown => Some(Cow::Borrowed("ArrowDown")),
-            Named::ArrowLeft => Some(Cow::Borrowed("ArrowLeft")),
-            Named::ArrowRight => Some(Cow::Borrowed("ArrowRight")),
-            Named::Home => Some(Cow::Borrowed("Home")),
-            Named::End => Some(Cow::Borrowed("End")),
-            Named::Delete => Some(Cow::Borrowed("Delete")),
-            Named::Backspace => Some(Cow::Borrowed("Backspace")),
-            Named::Insert => Some(Cow::Borrowed("Insert")),
-            Named::PageUp => Some(Cow::Borrowed("PageUp")),
-            Named::PageDown => Some(Cow::Borrowed("PageDown")),
-            Named::F1 => Some(Cow::Borrowed("F1")),
-            Named::F2 => Some(Cow::Borrowed("F2")),
-            Named::F3 => Some(Cow::Borrowed("F3")),
-            Named::F4 => Some(Cow::Borrowed("F4")),
-            Named::F5 => Some(Cow::Borrowed("F5")),
-            Named::F6 => Some(Cow::Borrowed("F6")),
-            Named::F7 => Some(Cow::Borrowed("F7")),
-            Named::F8 => Some(Cow::Borrowed("F8")),
-            Named::F9 => Some(Cow::Borrowed("F9")),
-            Named::F10 => Some(Cow::Borrowed("F10")),
-            Named::F11 => Some(Cow::Borrowed("F11")),
-            Named::F12 => Some(Cow::Borrowed("F12")),
-            _ => None,
-        },
-        Key::Character(c) => {
-            let mut chars = c.chars();
-            let ch = chars.next()?;
-            if chars.next().is_some() {
-                return None;
-            }
-
-            if ch.is_ascii_alphabetic() {
-                return ascii_char_to_static(ch.to_ascii_uppercase()).map(Cow::Borrowed);
-            }
-
-            match ch {
-                ',' => Some(Cow::Borrowed("Comma")),
-                '.' => Some(Cow::Borrowed("Period")),
-                _ => ascii_char_to_static(ch).map(Cow::Borrowed),
-            }
-        }
-        Key::Unidentified => None,
-    }
+pub(super) fn physical_key_token(physical: &Physical) -> Option<Cow<'static, str>> {
+    let Physical::Code(code) = physical else {
+        return None;
+    };
+    let token = match code {
+        Code::KeyA => "A",
+        Code::KeyB => "B",
+        Code::KeyC => "C",
+        Code::KeyD => "D",
+        Code::KeyE => "E",
+        Code::KeyF => "F",
+        Code::KeyG => "G",
+        Code::KeyH => "H",
+        Code::KeyI => "I",
+        Code::KeyJ => "J",
+        Code::KeyK => "K",
+        Code::KeyL => "L",
+        Code::KeyM => "M",
+        Code::KeyN => "N",
+        Code::KeyO => "O",
+        Code::KeyP => "P",
+        Code::KeyQ => "Q",
+        Code::KeyR => "R",
+        Code::KeyS => "S",
+        Code::KeyT => "T",
+        Code::KeyU => "U",
+        Code::KeyV => "V",
+        Code::KeyW => "W",
+        Code::KeyX => "X",
+        Code::KeyY => "Y",
+        Code::KeyZ => "Z",
+        Code::Digit0 | Code::Numpad0 => "0",
+        Code::Digit1 | Code::Numpad1 => "1",
+        Code::Digit2 | Code::Numpad2 => "2",
+        Code::Digit3 | Code::Numpad3 => "3",
+        Code::Digit4 | Code::Numpad4 => "4",
+        Code::Digit5 | Code::Numpad5 => "5",
+        Code::Digit6 | Code::Numpad6 => "6",
+        Code::Digit7 | Code::Numpad7 => "7",
+        Code::Digit8 | Code::Numpad8 => "8",
+        Code::Digit9 | Code::Numpad9 => "9",
+        Code::Enter => "Enter",
+        Code::Tab => "Tab",
+        Code::Space => "Space",
+        Code::Escape => "Escape",
+        Code::ArrowUp => "ArrowUp",
+        Code::ArrowDown => "ArrowDown",
+        Code::ArrowLeft => "ArrowLeft",
+        Code::ArrowRight => "ArrowRight",
+        Code::Home => "Home",
+        Code::End => "End",
+        Code::Delete => "Delete",
+        Code::Backspace => "Backspace",
+        Code::Insert => "Insert",
+        Code::PageUp => "PageUp",
+        Code::PageDown => "PageDown",
+        Code::Comma => "Comma",
+        Code::Period => "Period",
+        Code::F1 => "F1",
+        Code::F2 => "F2",
+        Code::F3 => "F3",
+        Code::F4 => "F4",
+        Code::F5 => "F5",
+        Code::F6 => "F6",
+        Code::F7 => "F7",
+        Code::F8 => "F8",
+        Code::F9 => "F9",
+        Code::F10 => "F10",
+        Code::F11 => "F11",
+        Code::F12 => "F12",
+        _ => return None,
+    };
+    Some(Cow::Borrowed(token))
 }
 
 fn normalize_shortcut_key_token(value: &str) -> Option<Cow<'static, str>> {
@@ -280,7 +303,7 @@ mod tests {
     fn shortcut_matches_normalized_named_key() {
         let matches = shortcut_matches(
             "ctrl + shift + pgdown",
-            &Key::Named(Named::PageDown),
+            &Physical::Code(Code::PageDown),
             Modifiers::CTRL | Modifiers::SHIFT,
         );
 
@@ -290,7 +313,7 @@ mod tests {
     #[test]
     fn shortcut_rejects_invalid_binding() {
         let matches =
-            shortcut_matches("Ctrl+Unknown", &Key::Character("x".into()), Modifiers::CTRL);
+            shortcut_matches("Ctrl+Unknown", &Physical::Code(Code::KeyX), Modifiers::CTRL);
 
         assert!(!matches);
     }
@@ -303,10 +326,9 @@ mod tests {
         } else {
             Modifiers::CTRL | Modifiers::SHIFT
         };
-        let key = Key::Character("E".into());
 
         assert!(matches!(
-            ShortcutAction::resolve(&key, modifiers, &shortcuts),
+            ShortcutAction::resolve(&Physical::Code(Code::KeyE), modifiers, &shortcuts),
             Some(ShortcutAction::SplitAuto)
         ));
     }
@@ -321,32 +343,32 @@ mod tests {
             Modifiers::CTRL | Modifiers::ALT
         };
 
-        for (named, expected) in [
-            (Named::ArrowLeft, Direction::Left),
-            (Named::ArrowRight, Direction::Right),
-            (Named::ArrowUp, Direction::Up),
-            (Named::ArrowDown, Direction::Down),
+        for (code, expected) in [
+            (Code::ArrowLeft, Direction::Left),
+            (Code::ArrowRight, Direction::Right),
+            (Code::ArrowUp, Direction::Up),
+            (Code::ArrowDown, Direction::Down),
         ] {
-            let action = ShortcutAction::resolve(&Key::Named(named), modifiers, &shortcuts);
+            let action = ShortcutAction::resolve(&Physical::Code(code), modifiers, &shortcuts);
             assert!(
                 matches!(action, Some(ShortcutAction::FocusPane(d)) if d == expected),
-                "{named:?} resolved to {action:?}"
+                "{code:?} resolved to {action:?}"
             );
         }
     }
 
     #[test]
-    fn auto_split_shortcut_resolves_from_defaults() {
+    fn matching_ignores_ime_composed_logical_key() {
         let shortcuts = crate::config::AppConfig::default().shortcuts;
         let modifiers = if cfg!(target_os = "macos") {
             Modifiers::LOGO | Modifiers::SHIFT
         } else {
             Modifiers::CTRL | Modifiers::SHIFT
         };
-        let action = ShortcutAction::resolve(&Key::Character("E".into()), modifiers, &shortcuts);
-        assert!(
-            matches!(action, Some(ShortcutAction::SplitAuto)),
-            "resolved to {action:?}"
-        );
+
+        assert!(matches!(
+            ShortcutAction::resolve(&Physical::Code(Code::KeyE), modifiers, &shortcuts),
+            Some(ShortcutAction::SplitAuto)
+        ));
     }
 }
