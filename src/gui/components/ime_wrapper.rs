@@ -10,14 +10,18 @@ use iced::{Element, Event, Length, Pixels, Rectangle, Size, Vector};
 
 use std::ops::Range;
 
+use crate::gui::pane::PaneNode;
+
 /// Grid cell that the IME composition window should anchor under.
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone)]
 pub struct CursorCell {
     pub col: usize,
     pub row: usize,
-    pub grid_cols: usize,
-    pub grid_rows: usize,
+    pub cell_width: f32,
+    pub cell_height: f32,
     pub padding: [f32; 2],
+    pub layout: PaneNode,
+    pub focused: u64,
 }
 
 /// A wrapper widget that enables IME input for its child.
@@ -125,6 +129,7 @@ where
             });
             let cursor_rect = self
                 .cursor_cell
+                .as_ref()
                 .map(|cell| cursor_pixel_rect(cell, bounds))
                 .unwrap_or_else(|| {
                     Rectangle::new(
@@ -186,14 +191,20 @@ where
     }
 }
 
-fn cursor_pixel_rect(cell: CursorCell, bounds: Rectangle) -> Rectangle {
-    let inner_w = (bounds.width - cell.padding[0] * 2.0).max(1.0);
-    let inner_h = (bounds.height - cell.padding[1] * 2.0).max(1.0);
-    let cell_w = inner_w / cell.grid_cols.max(1) as f32;
-    let cell_h = inner_h / cell.grid_rows.max(1) as f32;
-    let x = bounds.x + cell.padding[0] + cell.col as f32 * cell_w;
-    let y = bounds.y + cell.padding[1] + (cell.row + 1) as f32 * cell_h;
-    Rectangle::new(iced::Point::new(x, y), Size::new(cell_w, 0.0))
+fn cursor_pixel_rect(cell: &CursorCell, bounds: Rectangle) -> Rectangle {
+    // Anchor to the focused pane's region using the renderer's cell metrics.
+    let region = cell
+        .layout
+        .regions(bounds)
+        .into_iter()
+        .find(|(id, _)| *id == cell.focused)
+        .map(|(_, rect)| rect)
+        .unwrap_or(bounds);
+    let cell_w = cell.cell_width.max(1.0);
+    let cell_h = cell.cell_height.max(1.0);
+    let x = region.x + cell.padding[0] + cell.col as f32 * cell_w;
+    let y = region.y + cell.padding[1] + cell.row as f32 * cell_h;
+    Rectangle::new(iced::Point::new(x, y), Size::new(cell_w, cell_h))
 }
 
 impl<'a, Message, Theme, Renderer> From<ImeEnabled<'a, Message, Theme, Renderer>>
