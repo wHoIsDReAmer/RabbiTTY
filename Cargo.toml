@@ -35,7 +35,7 @@ iced = { version = "0.14.0", default-features = false, features = [
 bytemuck = { version = "1.25", features = ["derive"] }
 ab_glyph = "0.2"
 
-futures = { version = "0.3.32", default-features = false }
+futures = { version = "0.3.33", default-features = false }
 
 # Terminal
 alacritty_terminal = "0.26.0"
@@ -47,7 +47,7 @@ fontdb = "0.23"
 # SSH
 russh = "0.48"
 russh-keys = "0.48"
-russh-sftp = "2.1"
+russh-sftp = "2.3"
 ssh2-config = "0.7"
 async-trait = "0.1"
 rfd = { version = "0.15", default-features = false, features = ["xdg-portal", "tokio"] }
@@ -96,3 +96,7 @@ copyright = "Copyright 2026 RabbiTTY contributors"
 category = "public.app-category.utilities"
 short_description = "Fast, lean terminal emulator."
 long_description = "Rabbitty is a fast, lean, cross-platform terminal emulator with SSH support."
+
+# trigger-key handling. Remove this override once the fix is in a compatible release.
+[patch.crates-io]
+winit = { git = "https://github.com/zilhak/winit-ime-fix", rev = "065d1a09cde54e476dd7f611855f00a1a36bbe10" }
