@@ -280,7 +280,17 @@ impl Pane {
         match key {
             Key::Named(named) => match named {
                 Named::Enter => Some(Cow::Borrowed(b"\r")),
-                Named::Backspace => Some(Cow::Borrowed(b"\x7f")),
+                Named::Backspace => {
+                    if modifiers.alt() || modifiers.control() {
+                        // Alt/Ctrl+Backspace: delete the previous word.
+                        Some(Cow::Borrowed(b"\x1b\x7f"))
+                    } else if modifiers.logo() {
+                        // Cmd+Backspace: delete to the start of the line.
+                        Some(Cow::Borrowed(b"\x15"))
+                    } else {
+                        Some(Cow::Borrowed(b"\x7f"))
+                    }
+                }
                 Named::Tab => {
                     if modifiers.shift() {
                         Some(Cow::Borrowed(b"\x1b[Z"))
