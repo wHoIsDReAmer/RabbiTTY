@@ -103,7 +103,7 @@ pub enum Message {
 
     #[cfg(target_os = "windows")]
     WindowMinimize,
-    #[cfg(target_os = "windows")]
+    #[cfg(any(target_os = "windows", target_os = "macos"))]
     WindowMaximize,
     #[cfg(any(target_os = "windows", target_os = "macos"))]
     WindowDrag,

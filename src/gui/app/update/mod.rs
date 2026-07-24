@@ -419,7 +419,7 @@ impl App {
             Message::WindowMinimize => {
                 return iced::window::latest().and_then(|id| iced::window::minimize(id, true));
             }
-            #[cfg(target_os = "windows")]
+            #[cfg(any(target_os = "windows", target_os = "macos"))]
             Message::WindowMaximize => {
                 return iced::window::latest().and_then(iced::window::toggle_maximize);
             }
