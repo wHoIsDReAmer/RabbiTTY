@@ -52,6 +52,7 @@ pub enum Message {
     PtyOutputBatch(Vec<OutputEvent>),
     KeyPressed {
         key: Key,
+        physical_key: iced::keyboard::key::Physical,
         modifiers: Modifiers,
         text: Option<String>,
     },
@@ -658,6 +659,7 @@ mod tests {
         };
         let _ = app.update(Message::KeyPressed {
             key: Key::Character("E".into()),
+            physical_key: iced::keyboard::key::Physical::Code(iced::keyboard::key::Code::KeyE),
             modifiers,
             text: None,
         });
@@ -668,6 +670,31 @@ mod tests {
             "split shortcut did not add a pane"
         );
         assert_eq!(app.tabs[0].layout.leaves().len(), 2);
+    }
+
+    #[test]
+    fn split_shortcut_fires_under_korean_ime() {
+        let mut app = app_with_pty();
+        let _ = app.update(Message::CreateTab(Profile::default_shell()));
+
+        let modifiers = if cfg!(target_os = "macos") {
+            Modifiers::LOGO | Modifiers::SHIFT
+        } else {
+            Modifiers::CTRL | Modifiers::SHIFT
+        };
+
+        let _ = app.update(Message::KeyPressed {
+            key: Key::Character("ㄷ".into()),
+            physical_key: iced::keyboard::key::Physical::Code(iced::keyboard::key::Code::KeyE),
+            modifiers,
+            text: Some("ㄷ".to_string()),
+        });
+
+        assert_eq!(
+            app.tabs[0].panes.len(),
+            2,
+            "shortcut did not fire with IME-composed logical key"
+        );
     }
 
     #[test]
@@ -712,6 +739,7 @@ mod tests {
         };
         let _ = app.update(Message::KeyPressed {
             key: Key::Named(iced::keyboard::key::Named::ArrowLeft),
+            physical_key: iced::keyboard::key::Physical::Code(iced::keyboard::key::Code::ArrowLeft),
             modifiers,
             text: None,
         });
@@ -735,6 +763,7 @@ mod tests {
         for _ in 0..3 {
             let _ = app.update(Message::KeyPressed {
                 key: Key::Character("E".into()),
+                physical_key: iced::keyboard::key::Physical::Code(iced::keyboard::key::Code::KeyE),
                 modifiers,
                 text: None,
             });

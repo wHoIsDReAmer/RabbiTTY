@@ -77,11 +77,13 @@ impl App {
                 Event::Window(window::Event::Resized(size)) => Some(Message::WindowResized(size)),
                 Event::Keyboard(keyboard::Event::KeyPressed {
                     key,
+                    physical_key,
                     modifiers,
                     text,
                     ..
                 }) => Some(Message::KeyPressed {
                     key,
+                    physical_key,
                     modifiers,
                     text: text.map(|s| s.to_string()),
                 }),
