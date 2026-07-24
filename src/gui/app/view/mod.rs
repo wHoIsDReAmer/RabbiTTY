@@ -168,7 +168,6 @@ impl App {
 
     fn view_terminal<'a>(&'a self, tab: &'a crate::gui::tab::TerminalTab) -> Element<'a, Message> {
         let active_tab = tab.focused();
-        let dims = active_tab.size();
 
         // identical to other panes (e.g. Settings) and avoids double blending.
         let clear_color = [0.0, 0.0, 0.0, 0.0];
@@ -302,12 +301,14 @@ impl App {
         let cursor_cell = crate::gui::components::ime_wrapper::CursorCell {
             col: cursor_col,
             row: cursor_row,
-            grid_cols: dims.columns,
-            grid_rows: dims.lines,
+            cell_width: self.config.terminal.cell_width.max(1.0),
+            cell_height: self.config.terminal.cell_height.max(1.0),
             padding: [
                 self.config.terminal.padding_x,
                 self.config.terminal.padding_y,
             ],
+            layout: tab.layout.clone(),
+            focused: tab.focused,
         };
 
         ImeEnabled::new(with_flash)
