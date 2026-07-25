@@ -11,12 +11,25 @@ use windows::Win32::Foundation::{HWND, LPARAM, LRESULT, POINT, WPARAM};
 use windows::Win32::Graphics::Gdi::ScreenToClient;
 use windows::Win32::UI::Shell::{DefSubclassProc, SetWindowSubclass};
 use windows::Win32::UI::WindowsAndMessaging::{
-    GetClientRect, GetSystemMetrics, SM_CXSIZEFRAME, SM_CYSIZEFRAME, SWP_FRAMECHANGED, SWP_NOMOVE,
-    SWP_NOSIZE, SWP_NOZORDER, SetWindowPos, WM_NCCALCSIZE, WM_NCHITTEST,
+    GetClientRect, GetSystemMetrics, GetWindowPlacement, SM_CXPADDEDBORDER, SM_CXSIZEFRAME,
+    SM_CYSIZEFRAME, SW_SHOWMAXIMIZED, SWP_FRAMECHANGED, SWP_NOMOVE, SWP_NOSIZE, SWP_NOZORDER,
+    SetWindowPos, WINDOWPLACEMENT, WM_NCCALCSIZE, WM_NCHITTEST,
 };
 
 const SUBCLASS_ID: usize = 1;
 const RESIZE_BORDER: i32 = 6; // Pixels for resize detection at top edge
+
+/// Whether the window is currently maximized.
+unsafe fn is_maximized(hwnd: HWND) -> bool {
+    let mut placement = WINDOWPLACEMENT {
+        length: std::mem::size_of::<WINDOWPLACEMENT>() as u32,
+        ..Default::default()
+    };
+    unsafe {
+        GetWindowPlacement(hwnd, &mut placement).is_ok()
+            && placement.showCmd == SW_SHOWMAXIMIZED.0 as u32
+    }
+}
 
 #[repr(C)]
 struct NcCalcSizeParams {
@@ -51,9 +64,19 @@ unsafe extern "system" fn subclass_proc(
                 let border_x = GetSystemMetrics(SM_CXSIZEFRAME);
                 let border_y = GetSystemMetrics(SM_CYSIZEFRAME);
 
-                (*params).rgrc[0].left += border_x;
-                (*params).rgrc[0].right -= border_x;
-                (*params).rgrc[0].bottom -= border_y;
+                if is_maximized(hwnd) {
+                    let padded = GetSystemMetrics(SM_CXPADDEDBORDER);
+                    (*params).rgrc[0].left += border_x + padded;
+                    (*params).rgrc[0].right -= border_x + padded;
+                    (*params).rgrc[0].top += border_y + padded;
+                    (*params).rgrc[0].bottom -= border_y + padded;
+                } else {
+                    // Normal state: strip the frame but keep the top flush so
+                    // the tab bar doubles as a borderless title bar.
+                    (*params).rgrc[0].left += border_x;
+                    (*params).rgrc[0].right -= border_x;
+                    (*params).rgrc[0].bottom -= border_y;
+                }
             }
         }
         return LRESULT(0);
