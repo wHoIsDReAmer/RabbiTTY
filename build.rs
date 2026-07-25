@@ -73,8 +73,6 @@ fn main() {
 
     #[cfg(target_os = "windows")]
     {
-        use std::io::Write;
-
         let logo_path = "assets/logo.png";
         println!("cargo:rerun-if-changed={logo_path}");
 
