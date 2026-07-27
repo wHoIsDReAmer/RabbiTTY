@@ -406,12 +406,10 @@ mod tests {
     #[test]
     fn repeated_auto_splits_alternate_direction() {
         let mut root = PaneNode::Leaf(1);
-        let mut next = 2;
-        for _ in 0..3 {
+        for next in (2..).take(3) {
             let regions = root.regions(area());
             let focused = regions.last().expect("region").1;
             root.split(next - 1, Axis::for_rect(focused), next);
-            next += 1;
         }
 
         let regions = root.regions(area());

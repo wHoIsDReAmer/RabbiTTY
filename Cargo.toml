@@ -1,3 +1,9 @@
+[workspace]
+members = ["plugins/hello"]
+# Host builds default to just the app; wasm guest crates are built explicitly
+# with `cargo build -p <name> --target wasm32-wasip2`.
+default-members = ["."]
+
 [package]
 name = "rabbitty"
 version = "0.1.2"
@@ -52,6 +58,8 @@ ssh2-config = "0.7"
 async-trait = "0.1"
 rfd = { version = "0.15", default-features = false, features = ["xdg-portal", "tokio"] }
 tokio = { version = "1", default-features = false, features = ["io-util", "process", "sync", "fs", "rt"] }
+wasmtime = { version = "44", default-features = false, features = ["component-model", "cranelift", "runtime", "std"] }
+wasmtime-wasi = { version = "44", default-features = false, features = ["p2"] }
 
 # Windows-specific (custom titlebar with resize border)
 [target.'cfg(target_os = "windows")'.dependencies]

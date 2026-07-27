@@ -6,8 +6,9 @@
 package rabbitty:plugin@0.1.0;
 
 interface types {
-    // A capability the plugin requests in its manifest. The host gates each one;
-    // an ungranted capability makes the corresponding host import a no-op/deny.
+    // A capability the plugin requests in its manifest. The host gates each one:
+    // the `host` imports below become no-ops when ungranted, while `network` and
+    // `filesystem` gate the standard WASI interfaces (denied by default).
     enum capability {
         // Write bytes to a pane's PTY (input injection).
         write-pty,
@@ -15,9 +16,9 @@ interface types {
         read-config,
         // Show notifications.
         notify,
-        // Outbound network access (reserved; not yet host-backed).
+        // Outbound access via `wasi:sockets`, including name lookup.
         network,
-        // Filesystem access (reserved; not yet host-backed).
+        // `wasi:filesystem` access, scoped to the plugin's own data directory.
         filesystem,
     }
 
