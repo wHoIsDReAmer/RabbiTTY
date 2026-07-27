@@ -10,14 +10,6 @@ const AUTO: [Capability; 3] = [
 
 const NEEDS_CONSENT: [Capability; 2] = [Capability::WritePty, Capability::Network];
 
-pub fn grant_supported(info: &PluginInfo) -> Vec<Capability> {
-    info.capabilities
-        .iter()
-        .copied()
-        .filter(|cap| AUTO.contains(cap))
-        .collect()
-}
-
 pub fn requires_consent(info: &PluginInfo) -> Vec<Capability> {
     info.capabilities
         .iter()
@@ -34,10 +26,6 @@ pub fn grant_with_consent(info: &PluginInfo, consented: &[Capability]) -> Vec<Ca
             AUTO.contains(cap) || (NEEDS_CONSENT.contains(cap) && consented.contains(cap))
         })
         .collect()
-}
-
-pub fn grant_nothing(_info: &PluginInfo) -> Vec<Capability> {
-    Vec::new()
 }
 
 pub fn capability_name(cap: Capability) -> &'static str {

@@ -4,7 +4,7 @@ use std::path::{Path, PathBuf};
 use crate::config::plugins::{PluginSettings, PluginsConfig};
 
 use super::host::{LoadedPlugin, PluginHost};
-use super::policy::{capability_from_name, grant_with_consent};
+use super::policy::{capability_from_name, capability_name, grant_with_consent, requires_consent};
 use super::{Capability, PluginInfo};
 
 pub const COMPONENT_FILE: &str = "plugin.wasm";
@@ -89,6 +89,42 @@ impl PluginRegistry {
         })
     }
 
+    pub fn contributed_commands(&self) -> Vec<(String, Vec<String>)> {
+        self.entries
+            .iter()
+            .filter_map(|entry| match &entry.slot {
+                Slot::Ready(plugin) => {
+                    let ids: Vec<String> = plugin
+                        .contributions()
+                        .commands
+                        .iter()
+                        .map(|command| command.id.clone())
+                        .collect();
+                    (!ids.is_empty()).then(|| (entry.id.clone(), ids))
+                }
+                _ => None,
+            })
+            .collect()
+    }
+
+    pub fn pending_consent(&self) -> Vec<(String, Vec<Capability>)> {
+        self.entries
+            .iter()
+            .filter_map(|entry| match &entry.slot {
+                Slot::Ready(plugin) => {
+                    let wanted = requires_consent(plugin.info());
+                    let granted = plugin.granted();
+                    let missing: Vec<Capability> = wanted
+                        .into_iter()
+                        .filter(|cap| !granted.contains(cap))
+                        .collect();
+                    (!missing.is_empty()).then(|| (entry.id.clone(), missing))
+                }
+                _ => None,
+            })
+            .collect()
+    }
+
     pub fn get_mut(&mut self, id: &str) -> Option<&mut LoadedPlugin> {
         match &mut self.entry_mut(id)?.slot {
             Slot::Ready(plugin) if plugin.failure().is_none() => Some(plugin),
@@ -152,7 +188,7 @@ impl PluginRegistry {
 
     pub fn consent(&mut self, id: &str, capability: Capability) {
         let settings = self.settings.entry(id.to_string()).or_default();
-        let name = super::capability_name(capability).to_string();
+        let name = capability_name(capability).to_string();
         if !settings.consented.contains(&name) {
             settings.consented.push(name);
         }

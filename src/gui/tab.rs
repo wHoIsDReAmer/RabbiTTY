@@ -262,6 +262,13 @@ impl Pane {
         }
     }
 
+    pub fn send_bytes(&self, bytes: &[u8]) -> bool {
+        match &self.session {
+            TerminalSession::Active(session) => session.send_bytes(bytes).is_ok(),
+            _ => false,
+        }
+    }
+
     pub fn handle_key(&mut self, key: &Key, modifiers: Modifiers, text: Option<&str>) {
         if let TerminalSession::Active(session) = &self.session
             && let Some(bytes) = self.key_to_bytes(key, modifiers, text)

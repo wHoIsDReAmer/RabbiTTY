@@ -1,18 +1,9 @@
-mod config;
-#[macro_use]
-mod i18n;
-mod gui;
-mod keychain;
-mod platform;
-mod session;
-mod ssh;
-mod terminal;
-
 use iced::Size;
 use iced::font;
 
-use crate::config::AppConfig;
-use crate::gui::App;
+use rabbitty::config::AppConfig;
+use rabbitty::gui::{self, App};
+use rabbitty::i18n;
 
 // Embed DejaVu Sans font for better Unicode support (Box Drawing characters)
 const DEJAVU_SANS: &[u8] = include_bytes!("../fonts/DejaVuSans.ttf");
@@ -21,6 +12,7 @@ const APP_ICON_PNG: &[u8] = include_bytes!("../assets/logo.png");
 fn main() -> iced::Result {
     let app_config = AppConfig::load();
     i18n::set_locale(app_config.ui.language.as_deref());
+
     let boot_config = app_config.clone();
 
     iced::application(
@@ -39,7 +31,7 @@ fn main() -> iced::Result {
         App::update,
         App::view,
     )
-    .title("Rabbitty")
+    .title("RabbiTTY")
     .theme(iced::Theme::Dark)
     .style(|state, _| state.window_style())
     .subscription(App::subscription)

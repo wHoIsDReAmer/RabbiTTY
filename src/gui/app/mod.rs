@@ -194,68 +194,94 @@ pub enum SftpMessage {
 }
 
 pub struct App {
+    // ── Content ─────────────────────────────────────────────────────────
     pub(super) tabs: Vec<TerminalTab>,
     pub(super) active_tab: usize,
-    pub(super) show_shell_picker: bool,
-    pub(super) shell_picker_selected: usize,
-    pub(super) window_size: Size,
-    pub(super) terminal_area: Size,
-    pub(super) settings_open: bool,
-    pub(super) settings_category: SettingsCategory,
-    pub(super) settings_draft: SettingsDraft,
-    pub(super) font_combo_state: combo_box::State<TerminalFontOption>,
-    pub(super) show_all_fonts: bool,
-    pub(super) all_font_options: Vec<TerminalFontOption>,
-    pub(super) available_shells: Vec<Profile>,
-    pub(super) config: AppConfig,
+    pub(super) next_tab_id: u64,
+    pub(super) session_history: SessionHistory,
     pub(super) pty_sender: Option<mpsc::UnboundedSender<OutputEvent>>,
     pub(super) initial_shell_opened: bool,
-    pub(super) next_tab_id: u64,
+
+    // ── Window ──────────────────────────────────────────────────────────
+    pub(super) window_size: Size,
+    pub(super) terminal_area: Size,
+    pub(super) palette: crate::gui::theme::Palette,
+    pub(super) window_style_applied: bool,
+
+    // ── Config ──────────────────────────────────────────────────────────
+    pub(super) config: AppConfig,
+    pub(super) config_save_tx: std_mpsc::Sender<AppConfig>,
+
+    // ── Tab bar ─────────────────────────────────────────────────────────
     pub(super) tab_bar_scroll_x: f32,
-    pub(super) scroll_follow_bottom: bool,
-    pub(super) wheel_last_event: Option<std::time::Instant>,
-    pub(super) wheel_suppressed: bool,
     pub(super) dragging_tab: Option<usize>,
     pub(super) drag_target: Option<usize>,
+    pub(super) tab_context_menu: Option<usize>,
+
+    // ── Scrolling ───────────────────────────────────────────────────────
+    pub(super) scroll_follow_bottom: bool,
     pub(super) scroll_accumulator: f32,
+    pub(super) wheel_last_event: Option<std::time::Instant>,
+    pub(super) wheel_suppressed: bool,
+
+    // ── Selection ───────────────────────────────────────────────────────
     // Some(true) = autoscroll up, Some(false) = down, None = off.
     pub(super) selection_autoscroll: Option<bool>,
     pub(super) selection_autoscroll_col: usize,
-    pub(super) resize_debounce_pending: bool,
-    pub(super) resize_debounce_seq: u64,
-    pub(super) resize_debounce_spawned_seq: u64,
-    pub(super) settings_debounce_pending: bool,
-    pub(super) settings_debounce_seq: u64,
-    pub(super) settings_debounce_spawned_seq: u64,
-    pub(super) modal_anim: Animation<bool>,
-    pub(super) settings_category_transition: crate::gui::components::CategoryTransition,
-    pub(super) palette: crate::gui::theme::Palette,
+
+    // ── Input ───────────────────────────────────────────────────────────
     pub(super) ime_active: bool,
     pub(super) ime_preedit: Option<(String, Option<std::ops::Range<usize>>)>,
-    pub(super) session_history: SessionHistory,
-    pub(super) window_style_applied: bool,
-    pub(super) tab_context_menu: Option<usize>,
-    /// Whether the terminal right-click context menu is currently shown.
-    pub(super) terminal_context_menu: bool,
     pub(super) cursor_position: iced::Point,
+    /// Text waiting for multiline-paste confirmation.
+    pub(super) pending_paste: Option<String>,
+
+    // ── Shell picker ────────────────────────────────────────────────────
+    pub(super) show_shell_picker: bool,
+    pub(super) shell_picker_selected: usize,
+    pub(super) available_shells: Vec<Profile>,
+    /// Profiles parsed from `~/.ssh/config`, merged into shell/SSH lists at
+    /// runtime so users do not have to re-enter them in Settings.
+    pub(super) ssh_config_profiles: Vec<crate::config::SshProfile>,
+    /// In-flight password prompt deferred from an SSH tab creation.
+    pub(super) password_prompt: Option<PasswordPromptState>,
+
+    // ── Settings screen ─────────────────────────────────────────────────
+    pub(super) settings_open: bool,
+    pub(super) settings_category: SettingsCategory,
+    pub(super) settings_draft: SettingsDraft,
+    pub(super) settings_category_transition: crate::gui::components::CategoryTransition,
+    pub(super) font_combo_state: combo_box::State<TerminalFontOption>,
+    pub(super) show_all_fonts: bool,
+    pub(super) all_font_options: Vec<TerminalFontOption>,
     #[cfg(target_os = "macos")]
     pub(super) show_restart_confirm: bool,
     #[cfg(target_os = "macos")]
     pub(super) pending_settings_updates: Option<crate::config::AppConfigUpdates>,
     #[cfg(target_os = "macos")]
     pub(super) pending_save_on_restart: bool,
-    pub(super) config_save_tx: std_mpsc::Sender<AppConfig>,
-    /// Profiles parsed from `~/.ssh/config`, merged into shell/SSH lists at
-    /// runtime so users do not have to re-enter them in Settings.
-    pub(super) ssh_config_profiles: Vec<crate::config::SshProfile>,
-    /// In-flight password prompt deferred from an SSH tab creation.
-    pub(super) password_prompt: Option<PasswordPromptState>,
-    /// Text waiting for multiline-paste confirmation.
-    pub(super) pending_paste: Option<String>,
+
+    // ── Overlays ────────────────────────────────────────────────────────
+    pub(super) modal_anim: Animation<bool>,
+    /// Whether the terminal right-click context menu is currently shown.
+    pub(super) terminal_context_menu: bool,
+
+    // ── Terminal paint state ────────────────────────────────────────────
     /// Current on/off phase of the blinking cursor.
     pub(super) cursor_blink_on: bool,
     /// Start time of an active visual bell flash, if any.
     pub(super) bell_flash_start: Option<std::time::Instant>,
+
+    // ── Debounce ────────────────────────────────────────────────────────
+    pub(super) resize_debounce_pending: bool,
+    pub(super) resize_debounce_seq: u64,
+    pub(super) resize_debounce_spawned_seq: u64,
+    pub(super) settings_debounce_pending: bool,
+    pub(super) settings_debounce_seq: u64,
+    pub(super) settings_debounce_spawned_seq: u64,
+
+    // ── Plugins ─────────────────────────────────────────────────────────
+    pub(super) plugins: Option<crate::plugin::PluginRegistry>,
 }
 
 /// Duration of the visual bell flash overlay.
@@ -267,6 +293,43 @@ pub struct PasswordPromptState {
     pub draft: String,
     pub save_to_keychain: bool,
     pub error: Option<String>,
+}
+
+fn load_plugins(config: &AppConfig) -> Option<crate::plugin::PluginRegistry> {
+    let host = match crate::plugin::PluginHost::new() {
+        Ok(host) => host,
+        Err(err) => {
+            eprintln!("plugin host unavailable: {err}");
+            return None;
+        }
+    };
+
+    let mut registry = crate::plugin::PluginRegistry::new(host, config.plugins.clone());
+    registry.load_all();
+    let failures: Vec<String> = registry
+        .ids()
+        .filter_map(|id| match registry.status(id) {
+            Some(crate::plugin::Status::Retired(reason)) => Some(format!("{id}: {reason}")),
+            _ => None,
+        })
+        .collect();
+    for failure in failures {
+        eprintln!("plugin failed to load: {failure}");
+    }
+    for (id, commands) in registry.contributed_commands() {
+        eprintln!("plugin {id} contributes commands: {}", commands.join(", "));
+    }
+    for (id, missing) in registry.pending_consent() {
+        let names: Vec<&str> = missing
+            .iter()
+            .map(|cap| crate::plugin::capability_name(*cap))
+            .collect();
+        eprintln!(
+            "plugin {id} is waiting on consent for: {}",
+            names.join(", ")
+        );
+    }
+    Some(registry)
 }
 
 fn spawn_config_save_worker() -> std_mpsc::Sender<AppConfig> {
@@ -287,6 +350,8 @@ fn spawn_config_save_worker() -> std_mpsc::Sender<AppConfig> {
 impl App {
     pub fn new(config: AppConfig) -> Self {
         let palette = crate::gui::theme::Palette::from_theme(&config.theme);
+        let plugins = load_plugins(&config);
+        let settings_draft = SettingsDraft::from_config(&config);
         let all_font_options = build_all_font_options(config.terminal.font_selection.as_deref());
         let show_all_fonts = false;
         let font_combo_state = build_font_combo_state(
@@ -297,60 +362,73 @@ impl App {
         Self {
             tabs: vec![],
             active_tab: 0,
+            next_tab_id: 1,
+            session_history: SessionHistory::load(),
+            pty_sender: None,
+            initial_shell_opened: false,
+
+            window_size: Size::new(config.ui.window_width, config.ui.window_height),
+            terminal_area: Size::new(0.0, 0.0),
+            palette,
+            window_style_applied: false,
+
+            config,
+            config_save_tx: spawn_config_save_worker(),
+
+            tab_bar_scroll_x: 0.0,
+            dragging_tab: None,
+            drag_target: None,
+            tab_context_menu: None,
+
+            scroll_follow_bottom: true,
+            scroll_accumulator: 0.0,
+            wheel_last_event: None,
+            wheel_suppressed: false,
+
+            selection_autoscroll: None,
+            selection_autoscroll_col: 0,
+
+            ime_active: false,
+            ime_preedit: None,
+            cursor_position: iced::Point::ORIGIN,
+            pending_paste: None,
+
             show_shell_picker: false,
             shell_picker_selected: 0,
-            terminal_area: Size::new(0.0, 0.0),
-            window_size: Size::new(config.ui.window_width, config.ui.window_height),
+            available_shells: discover_available_shells(),
+            ssh_config_profiles: crate::ssh::user_config::load(),
+            password_prompt: None,
+
             settings_open: false,
             settings_category: SettingsCategory::Appearance,
-            settings_draft: SettingsDraft::from_config(&config),
+            settings_draft,
+            settings_category_transition: crate::gui::components::CategoryTransition::new(),
             font_combo_state,
             show_all_fonts,
             all_font_options,
-            available_shells: discover_available_shells(),
-            config,
-            pty_sender: None,
-            initial_shell_opened: false,
-            next_tab_id: 1,
-            tab_bar_scroll_x: 0.0,
-            scroll_follow_bottom: true,
-            wheel_last_event: None,
-            wheel_suppressed: false,
-            dragging_tab: None,
-            drag_target: None,
-            scroll_accumulator: 0.0,
-            selection_autoscroll: None,
-            selection_autoscroll_col: 0,
-            resize_debounce_pending: false,
-            resize_debounce_seq: 0,
-            resize_debounce_spawned_seq: 0,
-            settings_debounce_pending: false,
-            settings_debounce_seq: 0,
-            settings_debounce_spawned_seq: 0,
-            session_history: SessionHistory::load(),
-            palette,
-            tab_context_menu: None,
-            terminal_context_menu: false,
-            cursor_position: iced::Point::ORIGIN,
-            ime_active: false,
-            ime_preedit: None,
-            modal_anim: Animation::new(false)
-                .duration(std::time::Duration::from_millis(250))
-                .easing(iced::animation::Easing::EaseOutQuint),
-            settings_category_transition: crate::gui::components::CategoryTransition::new(),
-            window_style_applied: false,
             #[cfg(target_os = "macos")]
             show_restart_confirm: false,
             #[cfg(target_os = "macos")]
             pending_settings_updates: None,
             #[cfg(target_os = "macos")]
             pending_save_on_restart: false,
-            config_save_tx: spawn_config_save_worker(),
-            ssh_config_profiles: crate::ssh::user_config::load(),
-            password_prompt: None,
-            pending_paste: None,
+
+            modal_anim: Animation::new(false)
+                .duration(std::time::Duration::from_millis(250))
+                .easing(iced::animation::Easing::EaseOutQuint),
+            terminal_context_menu: false,
+
             cursor_blink_on: true,
             bell_flash_start: None,
+
+            resize_debounce_pending: false,
+            resize_debounce_seq: 0,
+            resize_debounce_spawned_seq: 0,
+            settings_debounce_pending: false,
+            settings_debounce_seq: 0,
+            settings_debounce_spawned_seq: 0,
+
+            plugins,
         }
     }
 
@@ -864,5 +942,29 @@ mod tests {
         }));
 
         assert_eq!(app.tabs[0].focused, focused, "focus jumped to another pane");
+    }
+}
+
+#[cfg(test)]
+mod plugin_wiring_tests {
+    use super::*;
+
+    #[test]
+    fn a_missing_plugin_directory_is_not_an_error() {
+        let app = App::new(AppConfig::default());
+
+        assert!(
+            app.plugins.is_some(),
+            "an absent plugin directory should still yield a live registry"
+        );
+    }
+
+    #[test]
+    fn dispatching_without_plugins_is_a_no_op() {
+        let mut app = App::new(AppConfig::default());
+        app.plugins = None;
+
+        app.dispatch_plugin_event(crate::plugin::Event::SessionStart(1));
+        app.shutdown_plugins();
     }
 }

@@ -1,3 +1,4 @@
+mod plugins;
 mod settings;
 mod sftp;
 pub(in crate::gui) mod tab;
@@ -411,6 +412,7 @@ impl App {
 
             // ── Window ──────────────────────────────────────────────
             Message::Exit => {
+                self.shutdown_plugins();
                 return iced::exit();
             }
             Message::ApplyWindowStyle => {
