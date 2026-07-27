@@ -1,3 +1,9 @@
+[workspace]
+members = ["plugins/hello"]
+# Host builds default to just the app; wasm guest crates are built explicitly
+# with `cargo build -p <name> --target wasm32-wasip2`.
+default-members = ["."]
+
 [package]
 name = "rabbitty"
 version = "0.1.2"
