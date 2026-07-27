@@ -52,6 +52,7 @@ impl PluginRegistry {
     }
 
     pub fn load_all(&mut self) {
+        self.shutdown_all();
         self.entries.clear();
         for (id, path) in discover(self.host.root()) {
             let settings = self.settings.get(&id).cloned().unwrap_or_default();
@@ -106,9 +107,20 @@ impl PluginRegistry {
             })
     }
 
+    pub fn shutdown_all(&mut self) {
+        for entry in &mut self.entries {
+            if let Slot::Ready(plugin) = &mut entry.slot {
+                let _ = plugin.shutdown();
+            }
+        }
+    }
+
     pub fn disable(&mut self, id: &str) -> bool {
         match self.entry_mut(id) {
             Some(entry) => {
+                if let Slot::Ready(plugin) = &mut entry.slot {
+                    let _ = plugin.shutdown();
+                }
                 entry.slot = Slot::Disabled;
                 self.settings.entry(id.to_string()).or_default().enabled = false;
                 true
@@ -125,6 +137,9 @@ impl PluginRegistry {
         settings.enabled = true;
         let settings = settings.clone();
 
+        if let Slot::Ready(plugin) = &mut self.entries[index].slot {
+            let _ = plugin.shutdown();
+        }
         let entry = &self.entries[index];
         let slot = Self::instantiate(&self.host, &entry.id, &entry.path, &settings);
         let outcome = match &slot {

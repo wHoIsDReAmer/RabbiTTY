@@ -1,71 +1,47 @@
-// Rabbitty plugin interface (Tier 2 — untrusted WASM extensions).
-//
-// This WIT world IS the compatibility surface: it is versioned with semver and
-// only extended additively within a major version. The host (native Rust) never
-// hands raw resources across this boundary — everything is serializable data.
+// Rabbitty plugin ABI (Tier 2). Semver'd; see README.md.
 package rabbitty:plugin@0.1.0;
 
 interface types {
-    // A capability the plugin requests in its manifest. The host gates each one:
-    // the `host` imports below become no-ops when ungranted, while `network` and
-    // `filesystem` gate the standard WASI interfaces (denied by default).
     enum capability {
-        // Write bytes to a pane's PTY (input injection).
         write-pty,
-        // Read plugin-scoped configuration values.
         read-config,
-        // Show notifications.
         notify,
-        // Outbound access via `wasi:sockets`, including name lookup.
         network,
-        // `wasi:filesystem` access, scoped to the plugin's own data directory.
         filesystem,
     }
 
-    // Plugin identity + the capabilities it needs. Returned from `manifest`.
     record plugin-info {
         name: string,
         version: string,
         capabilities: list<capability>,
     }
 
-    // A command the plugin contributes to the palette / keybinding system.
     record command {
-        // Stable id the host passes back to `run-command`.
         id: string,
-        // Human-facing label.
         title: string,
-        // Optional default keybinding, e.g. "cmd+shift+p". User-overridable.
         default-key: option<string>,
     }
 
-    // A context-menu item the plugin contributes (declarative; host renders it).
     record menu-item {
         id: string,
         label: string,
     }
 
-    // Everything the plugin declaratively contributes. Returned from
-    // `contributions` once, after `init`.
     record contributions {
         commands: list<command>,
         menu-items: list<menu-item>,
     }
 
-    // A completed line of terminal output on a pane.
     record line-event {
         pane: u64,
         line: string,
     }
 
-    // The working directory of a pane changed (from OSC 7).
     record cwd-event {
         pane: u64,
         path: string,
     }
 
-    // Events the host pushes to the plugin. The host only delivers events the
-    // plugin is relevant for; delivery granularity is line/event, never per-frame.
     variant event {
         session-start(u64),
         session-close(u64),
@@ -74,37 +50,23 @@ interface types {
     }
 }
 
-// Functions the host exposes to the plugin. Each call is gated by the matching
-// capability granted in the plugin's manifest.
 interface host {
-    // Write bytes to the given pane's PTY. Requires `write-pty`.
     write-pty: func(pane: u64, data: list<u8>);
-    // Show a notification to the user. Requires `notify`.
     notify: func(message: string);
-    // Read a plugin-scoped config value by key. Requires `read-config`.
     read-config: func(key: string) -> option<string>;
 }
 
-// The plugin component's world: it imports host functions and exports the
-// lifecycle + four extension axes.
 world plugin {
     use types.{plugin-info, contributions, event};
 
     import host;
 
-    // ── Lifecycle / metadata ────────────────────────────────────────────────
-    // Called first; declares identity and requested capabilities.
     export manifest: func() -> plugin-info;
-    // Called once after capabilities are granted, before any event/command.
     export init: func();
+    // Skipped when the instance has already trapped; it cannot be re-entered.
+    export shutdown: func();
 
-    // ── Axis 4: declarative contributions ───────────────────────────────────
     export contributions: func() -> contributions;
-
-    // ── Axis 2: event subscription ──────────────────────────────────────────
     export on-event: func(ev: event);
-
-    // ── Axis 1: command invocation ──────────────────────────────────────────
-    // Invoked when the user triggers a command the plugin contributed.
     export run-command: func(id: string);
 }

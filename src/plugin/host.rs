@@ -179,6 +179,15 @@ impl LoadedPlugin {
         self.failure.as_deref()
     }
 
+    pub fn shutdown(&mut self) -> wasmtime::Result<()> {
+        if self.failure.is_some() {
+            return Ok(());
+        }
+        refuel(&mut self.store)?;
+        let result = self.bindings.call_shutdown(&mut self.store);
+        self.record(result)
+    }
+
     pub fn run_command(&mut self, id: &str) -> wasmtime::Result<()> {
         self.guard()?;
         refuel(&mut self.store)?;

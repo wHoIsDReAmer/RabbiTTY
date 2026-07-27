@@ -524,3 +524,54 @@ fn capability_names_match_the_wit_spelling() {
     assert_eq!(capability_name(Capability::WritePty), "write-pty");
     assert_eq!(capability_from_name("nonsense"), None);
 }
+
+#[test]
+fn disabling_gives_the_plugin_a_chance_to_flush() {
+    let root = TempRoot::new("shutdown");
+    if !install(&root, "alpha") {
+        return;
+    }
+
+    let mut registry = registry_in(&root);
+    registry.load_all();
+    registry.get_mut("alpha").expect("ready").drain_requests();
+
+    registry.disable("alpha");
+
+    assert_eq!(registry.status("alpha"), Some(Status::Disabled));
+}
+
+#[test]
+fn shutdown_reaches_the_guest() {
+    let Some(mut plugin) = load(&grant_supported) else {
+        return;
+    };
+    plugin.drain_requests();
+
+    plugin.shutdown().expect("shutdown runs");
+
+    assert_eq!(
+        plugin.drain_requests(),
+        vec![PluginRequest::Notify {
+            message: "hello plugin shutting down".to_string(),
+        }]
+    );
+}
+
+#[test]
+fn a_trapped_plugin_is_not_asked_to_shut_down() {
+    let Some(mut plugin) = load(&grant_supported) else {
+        return;
+    };
+    plugin.run_command("hello.boom").expect_err("panics");
+    plugin.drain_requests();
+
+    plugin
+        .shutdown()
+        .expect("shutdown is skipped, not an error, once the instance is dead");
+
+    assert!(
+        plugin.drain_requests().is_empty(),
+        "a trapped instance cannot be re-entered, so nothing should reach the guest"
+    );
+}

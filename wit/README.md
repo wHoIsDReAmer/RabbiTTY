@@ -51,7 +51,13 @@ manifest()  → host reviews/grants capabilities
 init()      → one-time setup
 contributions() → commands + menu items registered
 on-event(…) / run-command(…)  → steady state
+shutdown()  → last call before teardown (disable, reload, app exit)
 ```
+
+A trap — fuel exhaustion, or any panic in the guest — permanently poisons the
+instance: the Component Model refuses re-entry because the guest may have stopped
+mid-allocation. The host records the original failure, blocks further calls, and
+skips `shutdown`. Recovery is a fresh instantiation, nothing less.
 
 ## Versioning
 
