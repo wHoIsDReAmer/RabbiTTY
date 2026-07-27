@@ -11,7 +11,7 @@ wasmtime::component::bindgen!({
 });
 
 pub(crate) use self::rabbitty::plugin::types::Capability;
-pub use host::PluginHost;
+pub use host::{PluginError, PluginHost};
 pub use policy::capability_name;
 pub use registry::{PluginRegistry, Status};
 pub use state::PluginRequest;

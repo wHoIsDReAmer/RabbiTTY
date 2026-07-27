@@ -13,7 +13,7 @@ fn auto(info: &PluginInfo) -> Vec<Capability> {
 fn nothing(_info: &PluginInfo) -> Vec<Capability> {
     Vec::new()
 }
-use super::rabbitty::plugin::types::LineEvent;
+use super::rabbitty::plugin::types::{CwdEvent, MatchEvent};
 use super::registry;
 use super::*;
 
@@ -132,16 +132,19 @@ fn events_reach_the_guest() {
     };
 
     plugin
-        .on_event(Event::LineOutput(LineEvent {
+        .on_event(Event::OutputMatched(MatchEvent {
             pane: 7,
+            pattern: "hello.greeting".to_string(),
             line: "a line mentioning hello".to_string(),
+            start: 17,
+            end: 22,
         }))
         .expect("event delivered");
 
     assert_eq!(
         plugin.drain_requests(),
         vec![PluginRequest::Notify {
-            message: "hello plugin saw 'hello' in the output".to_string(),
+            message: "hello plugin matched hello.greeting in pane 7".to_string(),
         }]
     );
 }
@@ -153,9 +156,9 @@ fn unmatched_events_produce_no_requests() {
     };
 
     plugin
-        .on_event(Event::LineOutput(LineEvent {
+        .on_event(Event::CwdChanged(CwdEvent {
             pane: 1,
-            line: "nothing of interest".to_string(),
+            path: "/tmp".to_string(),
         }))
         .expect("delivered");
 
@@ -264,18 +267,47 @@ fn a_panicking_command_retires_the_plugin() {
         return;
     };
 
-    assert!(plugin.run_command("hello.boom").is_err());
+    assert!(matches!(
+        plugin.run_command("hello.boom"),
+        Err(PluginError::Trapped(_))
+    ));
     assert!(
         plugin.failure().is_some(),
         "a trapped instance must be marked retired"
     );
 
-    let err = plugin
-        .run_command("hello.hi")
-        .expect_err("a retired instance cannot be re-entered");
     assert!(
-        err.to_string().starts_with("plugin retired:"),
-        "later calls should report the original failure, not a re-entry error: {err}"
+        matches!(plugin.run_command("hello.hi"), Err(PluginError::Retired(_))),
+        "later calls should report the original failure, not a re-entry error"
+    );
+}
+
+#[test]
+fn a_reported_failure_leaves_the_plugin_usable() {
+    let Some(mut plugin) = load(&auto) else {
+        return;
+    };
+
+    let err = plugin
+        .run_command("hello.fail")
+        .expect_err("the guest returns Err");
+    assert!(
+        matches!(err, PluginError::Reported(_)),
+        "a returned error is not a trap: {err}"
+    );
+    assert!(
+        plugin.failure().is_none(),
+        "a reported failure must not retire the instance"
+    );
+
+    plugin
+        .run_command("hello.hi")
+        .expect("the plugin still works after reporting a failure");
+    assert_eq!(
+        plugin.drain_requests(),
+        vec![PluginRequest::Notify {
+            message: "hello from the hello plugin!".to_string(),
+        }]
     );
 }
 

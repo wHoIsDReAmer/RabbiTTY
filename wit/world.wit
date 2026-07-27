@@ -1,5 +1,5 @@
 // Rabbitty plugin ABI (Tier 2). Semver'd; see README.md.
-package rabbitty:plugin@0.1.0;
+package rabbitty:plugin@0.2.0;
 
 interface types {
     enum capability {
@@ -19,22 +19,25 @@ interface types {
     record command {
         id: string,
         title: string,
-        default-key: option<string>,
     }
 
-    record menu-item {
+    record output-pattern {
         id: string,
-        label: string,
+        regex: string,
     }
 
     record contributions {
         commands: list<command>,
-        menu-items: list<menu-item>,
+        output-patterns: list<output-pattern>,
     }
 
-    record line-event {
+    record match-event {
         pane: u64,
+        pattern: string,
         line: string,
+        // Byte offsets of the match within `line`.
+        start: u32,
+        end: u32,
     }
 
     record cwd-event {
@@ -45,7 +48,7 @@ interface types {
     variant event {
         session-start(u64),
         session-close(u64),
-        line-output(line-event),
+        output-matched(match-event),
         cwd-changed(cwd-event),
     }
 }
@@ -61,12 +64,15 @@ world plugin {
 
     import host;
 
+    // Runs before anything is granted
     export manifest: func() -> plugin-info;
-    export init: func();
-    // Skipped when the instance has already trapped; it cannot be re-entered.
-    export shutdown: func();
 
-    export contributions: func() -> contributions;
-    export on-event: func(ev: event);
-    export run-command: func(id: string);
+    export init: func() -> result<_, string>;
+
+    // Skipped when the instance has already trapped; it cannot be re-entered.
+    export shutdown: func() -> result<_, string>;
+
+    export contributions: func() -> result<contributions, string>;
+    export on-event: func(ev: event) -> result<_, string>;
+    export run-command: func(id: string) -> result<_, string>;
 }
