@@ -208,8 +208,9 @@ impl App {
                 physical_key,
                 modifiers,
                 text,
+                repeat,
             } => {
-                return self.handle_key_pressed(key, physical_key, modifiers, text);
+                return self.handle_key_pressed(key, physical_key, modifiers, text, repeat);
             }
             Message::TabBarScroll(delta) => {
                 return self.handle_tab_bar_scroll(delta);
@@ -440,6 +441,7 @@ impl App {
         physical_key: iced::keyboard::key::Physical,
         modifiers: iced::keyboard::Modifiers,
         text: Option<String>,
+        repeat: bool,
     ) -> Task<Message> {
         // The multi-line paste confirmation is the topmost overlay; while it is
         // shown, Enter confirms, Escape cancels, and all other keys are swallowed.
@@ -481,15 +483,17 @@ impl App {
             let modifier_held = modifiers.control();
 
             if modifier_held && (1..=9).contains(&digit) {
-                let target = (digit as usize) - 1;
-                if target < self.tabs.len() {
-                    self.active_tab = target;
+                if !repeat {
+                    let target = (digit as usize) - 1;
+                    if target < self.tabs.len() {
+                        self.active_tab = target;
+                    }
                 }
                 return Task::none();
             }
         }
 
-        if let Some(task) = self.handle_app_shortcut(&physical_key, modifiers) {
+        if let Some(task) = self.handle_app_shortcut(&physical_key, modifiers, repeat) {
             return task;
         }
 

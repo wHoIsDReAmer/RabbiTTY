@@ -55,6 +55,7 @@ pub enum Message {
         physical_key: iced::keyboard::key::Physical,
         modifiers: Modifiers,
         text: Option<String>,
+        repeat: bool,
     },
 
     TabBarScroll(f32),
@@ -662,6 +663,7 @@ mod tests {
             physical_key: iced::keyboard::key::Physical::Code(iced::keyboard::key::Code::KeyE),
             modifiers,
             text: None,
+            repeat: false,
         });
 
         assert_eq!(
@@ -688,6 +690,7 @@ mod tests {
             physical_key: iced::keyboard::key::Physical::Code(iced::keyboard::key::Code::KeyE),
             modifiers,
             text: Some("ㄷ".to_string()),
+            repeat: false,
         });
 
         assert_eq!(
@@ -742,6 +745,7 @@ mod tests {
             physical_key: iced::keyboard::key::Physical::Code(iced::keyboard::key::Code::ArrowLeft),
             modifiers,
             text: None,
+            repeat: false,
         });
         assert_eq!(
             app.tabs[0].focused, left,
@@ -766,6 +770,7 @@ mod tests {
                 physical_key: iced::keyboard::key::Physical::Code(iced::keyboard::key::Code::KeyE),
                 modifiers,
                 text: None,
+                repeat: false,
             });
         }
 
