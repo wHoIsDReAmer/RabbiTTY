@@ -131,6 +131,7 @@ impl App {
         self.pending_save_on_restart = false;
 
         if restart_spawned {
+            self.shutdown_plugins();
             return iced::exit();
         }
 

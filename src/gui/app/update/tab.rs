@@ -465,7 +465,7 @@ impl App {
                 self.select_relative_tab(-1);
                 Some(Task::none())
             }
-            ShortcutAction::Quit => Some(iced::exit()),
+            ShortcutAction::Quit => Some(self.update(Message::Exit)),
             ShortcutAction::FontSizeIncrease => Some(self.adjust_font_size(1.0)),
             ShortcutAction::FontSizeDecrease => Some(self.adjust_font_size(-1.0)),
             ShortcutAction::FontSizeReset => {
