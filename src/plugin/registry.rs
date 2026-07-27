@@ -143,12 +143,16 @@ impl PluginRegistry {
             })
     }
 
-    pub fn shutdown_all(&mut self) {
+    pub fn shutdown_all(&mut self) -> Vec<(String, String)> {
+        let mut failures = Vec::new();
         for entry in &mut self.entries {
-            if let Slot::Ready(plugin) = &mut entry.slot {
-                let _ = plugin.shutdown();
+            if let Slot::Ready(plugin) = &mut entry.slot
+                && let Err(err) = plugin.shutdown()
+            {
+                failures.push((entry.id.clone(), err.to_string()));
             }
         }
+        failures
     }
 
     pub fn disable(&mut self, id: &str) -> bool {

@@ -8,9 +8,18 @@ impl App {
         };
 
         let mut requests: Vec<PluginRequest> = Vec::new();
-        for (_, plugin) in registry.ready_mut() {
-            let _ = plugin.on_event(event.clone());
+        let mut reported: Vec<(String, String)> = Vec::new();
+        for (id, plugin) in registry.ready_mut() {
+            if let Err(crate::plugin::PluginError::Reported(reason)) =
+                plugin.on_event(event.clone())
+            {
+                reported.push((id.to_string(), reason));
+            }
             requests.append(&mut plugin.drain_requests());
+        }
+
+        for (id, reason) in reported {
+            eprintln!("plugin {id} reported an error handling an event: {reason}");
         }
 
         for (id, reason) in registry.retire_failed() {
@@ -41,7 +50,9 @@ impl App {
         let Some(registry) = self.plugins.as_mut() else {
             return;
         };
-        registry.shutdown_all();
+        for (id, reason) in registry.shutdown_all() {
+            eprintln!("plugin {id} failed to shut down cleanly: {reason}");
+        }
         if self.config.plugins != *registry.settings() {
             self.config.plugins = registry.settings().clone();
             if let Err(err) = self.config.save() {

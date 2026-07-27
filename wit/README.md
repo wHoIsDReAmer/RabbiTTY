@@ -17,17 +17,24 @@ surface for the plugin ecosystem.
   no shared memory. Event delivery is line/event granularity, never per-frame, so
   the rendering hot path stays in native Rust.
 
-## The four extension axes
+## Extension axes
 
 | Axis | WIT surface |
 |------|-------------|
-| 1. Commands | `run-command(id)` + `command` records in `contributions` |
-| 2. Events | `on-event(event)` (session lifecycle, line output, cwd change) |
-| 3. Host functions | `import host` — `write-pty`, `notify`, `read-config` |
-| 4. Declarative contributions | `contributions()` — commands, menu items |
+| Commands | `run-command(id)` + `command` records in `contributions` |
+| Events | `on-event(event)` — session lifecycle, output match, cwd change |
+| Host functions | `import host` — `write-pty`, `notify`, `read-config` |
+| Declarative contributions | `contributions()` — commands, output patterns |
 
-Additional plugin types (output matchers, profile sources, themes, notifications)
-layer on top of these axes as data, without new host machinery.
+Output is **not** streamed to plugins. A plugin declares `output-pattern` records;
+the host matches every line natively and only calls `on-event` on a hit. Sending
+each line across the boundary would put serialization, a boundary crossing, and a
+synchronous guest call on the render path — a smaller fuel budget does not fix
+that, because a plugin that spends its budget on every line still stalls the
+terminal.
+
+Profile sources need a surface these axes do not have — the host pulling data from
+the plugin. That is tracked separately.
 
 ## Capability model
 
@@ -49,7 +56,7 @@ WASI supplies the filesystem and socket *mechanism*; it deliberately leaves the
 ```
 manifest()  → host reviews/grants capabilities
 init()      → one-time setup
-contributions() → commands + menu items registered
+contributions() → commands + output patterns registered
 on-event(…) / run-command(…)  → steady state
 shutdown()  → last call before teardown (disable, reload, app exit)
 ```
@@ -61,5 +68,23 @@ skips `shutdown`. Recovery is a fresh instantiation, nothing less.
 
 ## Versioning
 
-`package rabbitty:plugin@0.1.0`. Semver: **additive-only within a major**. Breaking
-changes bump the major and are gated behind a new world.
+`package rabbitty:plugin@0.2.0`.
+
+**Pre-1.0** — breaking changes bump the minor, and the host supports exactly one
+version. Plugins are recompiled against the new world. Additive-only is not a goal
+yet: the ABI is still being shaped from real plugins, and a surface that nothing
+uses is worse than one break.
+
+**From 1.0** — breaking changes bump the major, and the host supports the previous
+major for a transition period.
+
+Note that "additive" is misleading here: adding a `variant` case or a world export
+is a **breaking** change. The Component Model type-checks the world, so a guest
+compiled against the old shape is rejected at instantiation:
+
+```
+type-checking export func `on-event`
+```
+
+A wildcard arm in the guest's `match` does not help — the mismatch is in the type,
+not the code.

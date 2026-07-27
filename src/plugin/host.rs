@@ -11,6 +11,23 @@ use super::{Capability, Contributions, Event, Plugin, PluginInfo};
 
 const CALL_FUEL: u64 = 10_000_000;
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum PluginError {
+    Trapped(String),
+    Reported(String),
+    Retired(String),
+}
+
+impl std::fmt::Display for PluginError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Trapped(reason) => write!(f, "trapped: {reason}"),
+            Self::Reported(reason) => write!(f, "{reason}"),
+            Self::Retired(reason) => write!(f, "retired earlier: {reason}"),
+        }
+    }
+}
+
 pub struct PluginHost {
     engine: Engine,
     linker: Linker<PluginState>,
@@ -86,9 +103,13 @@ impl PluginHost {
         let mut store = self.store(builder.build(), granted, config)?;
         let bindings = Plugin::instantiate(&mut store, component, &self.linker)?;
 
-        bindings.call_init(&mut store)?;
+        bindings
+            .call_init(&mut store)?
+            .map_err(wasmtime::Error::msg)?;
         refuel(&mut store)?;
-        let contributions = bindings.call_contributions(&mut store)?;
+        let contributions = bindings
+            .call_contributions(&mut store)?
+            .map_err(wasmtime::Error::msg)?;
 
         Ok(LoadedPlugin {
             store,
@@ -179,41 +200,47 @@ impl LoadedPlugin {
         self.failure.as_deref()
     }
 
-    pub fn shutdown(&mut self) -> wasmtime::Result<()> {
+    pub fn shutdown(&mut self) -> Result<(), PluginError> {
         if self.failure.is_some() {
             return Ok(());
         }
-        refuel(&mut self.store)?;
-        let result = self.bindings.call_shutdown(&mut self.store);
-        self.record(result)
+        self.settle(|bindings, store| bindings.call_shutdown(store))
     }
 
-    pub fn run_command(&mut self, id: &str) -> wasmtime::Result<()> {
+    pub fn run_command(&mut self, id: &str) -> Result<(), PluginError> {
         self.guard()?;
-        refuel(&mut self.store)?;
-        let result = self.bindings.call_run_command(&mut self.store, id);
-        self.record(result)
+        let id = id.to_string();
+        self.settle(move |bindings, store| bindings.call_run_command(store, &id))
     }
 
-    pub fn on_event(&mut self, event: Event) -> wasmtime::Result<()> {
+    pub fn on_event(&mut self, event: Event) -> Result<(), PluginError> {
         self.guard()?;
-        refuel(&mut self.store)?;
-        let result = self.bindings.call_on_event(&mut self.store, &event);
-        self.record(result)
+        self.settle(move |bindings, store| bindings.call_on_event(store, &event))
     }
 
-    fn guard(&self) -> wasmtime::Result<()> {
+    fn guard(&self) -> Result<(), PluginError> {
         match &self.failure {
-            Some(reason) => Err(wasmtime::Error::msg(format!("plugin retired: {reason}"))),
+            Some(reason) => Err(PluginError::Retired(reason.clone())),
             None => Ok(()),
         }
     }
 
-    fn record(&mut self, result: wasmtime::Result<()>) -> wasmtime::Result<()> {
-        if let Err(err) = &result {
-            self.failure = Some(err.to_string());
+    fn settle<F>(&mut self, call: F) -> Result<(), PluginError>
+    where
+        F: FnOnce(&Plugin, &mut Store<PluginState>) -> wasmtime::Result<Result<(), String>>,
+    {
+        if let Err(err) = refuel(&mut self.store) {
+            return Err(PluginError::Trapped(err.to_string()));
         }
-        result
+        match call(&self.bindings, &mut self.store) {
+            Err(trap) => {
+                let reason = trap.to_string();
+                self.failure = Some(reason.clone());
+                Err(PluginError::Trapped(reason))
+            }
+            Ok(Err(reported)) => Err(PluginError::Reported(reported)),
+            Ok(Ok(())) => Ok(()),
+        }
     }
 
     pub fn drain_requests(&mut self) -> Vec<PluginRequest> {

@@ -8,7 +8,7 @@ wit_bindgen::generate!({
 });
 
 use crate::rabbitty::plugin::host;
-use crate::rabbitty::plugin::types::{Capability, Command};
+use crate::rabbitty::plugin::types::{Capability, Command, OutputPattern};
 
 struct HelloPlugin;
 
@@ -21,24 +21,29 @@ impl Guest for HelloPlugin {
         }
     }
 
-    fn init() {}
-
-    fn shutdown() {
-        host::notify("hello plugin shutting down");
+    fn init() -> Result<(), String> {
+        Ok(())
     }
 
-    fn contributions() -> Contributions {
-        Contributions {
+    fn shutdown() -> Result<(), String> {
+        host::notify("hello plugin shutting down");
+        Ok(())
+    }
+
+    fn contributions() -> Result<Contributions, String> {
+        Ok(Contributions {
             commands: vec![Command {
                 id: "hello.hi".to_string(),
                 title: "Say hi".to_string(),
-                default_key: None,
             }],
-            menu_items: vec![],
-        }
+            output_patterns: vec![OutputPattern {
+                id: "hello.greeting".to_string(),
+                regex: "hello".to_string(),
+            }],
+        })
     }
 
-    fn on_event(ev: Event) {
+    fn on_event(ev: Event) -> Result<(), String> {
         match ev {
             Event::SessionStart(pane) => {
                 host::notify(&format!("hello plugin saw pane {pane} open"));
@@ -46,18 +51,26 @@ impl Guest for HelloPlugin {
             Event::SessionClose(pane) => {
                 host::notify(&format!("hello plugin saw pane {pane} close"));
             }
-            Event::LineOutput(line) if line.line.contains("hello") => {
-                host::notify("hello plugin saw 'hello' in the output");
+            Event::OutputMatched(matched) => {
+                host::notify(&format!(
+                    "hello plugin matched {} in pane {}",
+                    matched.pattern, matched.pane
+                ));
             }
-            _ => {}
+            Event::CwdChanged(_) => {}
         }
+        Ok(())
     }
 
-    fn run_command(id: String) {
+    fn run_command(id: String) -> Result<(), String> {
         match id.as_str() {
-            "hello.hi" => host::notify("hello from the hello plugin!"),
+            "hello.hi" => {
+                host::notify("hello from the hello plugin!");
+                Ok(())
+            }
             "hello.boom" => panic!("intentional panic, for host failure-isolation tests"),
-            _ => {}
+            "hello.fail" => Err("intentional failure, for host error-path tests".to_string()),
+            other => Err(format!("unknown command: {other}")),
         }
     }
 }
