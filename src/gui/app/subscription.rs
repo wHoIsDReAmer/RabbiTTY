@@ -80,12 +80,14 @@ impl App {
                     physical_key,
                     modifiers,
                     text,
+                    repeat,
                     ..
                 }) => Some(Message::KeyPressed {
                     key,
                     physical_key,
                     modifiers,
                     text: text.map(|s| s.to_string()),
+                    repeat,
                 }),
                 Event::InputMethod(input_method::Event::Opened) => {
                     Some(Message::ImeStateChanged(true))

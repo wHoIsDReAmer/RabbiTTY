@@ -407,8 +407,13 @@ impl App {
         &mut self,
         physical: &iced::keyboard::key::Physical,
         modifiers: Modifiers,
+        repeat: bool,
     ) -> Option<Task<Message>> {
         let action = ShortcutAction::resolve(physical, modifiers, &self.config.shortcuts)?;
+
+        if repeat {
+            return Some(Task::none());
+        }
 
         match action {
             ShortcutAction::SplitAuto => {
