@@ -1,7 +1,19 @@
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
-use super::host::dir_name;
+use super::host::{LoadedPlugin, dir_name};
+use super::policy::{
+    CapabilityPolicy, capability_from_name, capability_name, grant_with_consent, requires_consent,
+};
+
+fn auto(info: &PluginInfo) -> Vec<Capability> {
+    grant_with_consent(info, &[])
+}
+
+fn nothing(_info: &PluginInfo) -> Vec<Capability> {
+    Vec::new()
+}
+use super::rabbitty::plugin::types::LineEvent;
 use super::registry;
 use super::*;
 
@@ -52,7 +64,7 @@ fn load(policy: CapabilityPolicy<'_>) -> Option<LoadedPlugin> {
 
 #[test]
 fn manifest_and_contributions_round_trip() {
-    let Some(plugin) = load(&grant_supported) else {
+    let Some(plugin) = load(&auto) else {
         return;
     };
 
@@ -67,7 +79,7 @@ fn manifest_and_contributions_round_trip() {
 
 #[test]
 fn granted_capability_lets_the_host_call_through() {
-    let Some(mut plugin) = load(&grant_supported) else {
+    let Some(mut plugin) = load(&auto) else {
         return;
     };
 
@@ -83,7 +95,7 @@ fn granted_capability_lets_the_host_call_through() {
 
 #[test]
 fn ungranted_capability_is_a_no_op() {
-    let Some(mut plugin) = load(&grant_nothing) else {
+    let Some(mut plugin) = load(&nothing) else {
         return;
     };
 
@@ -96,8 +108,26 @@ fn ungranted_capability_is_a_no_op() {
 }
 
 #[test]
+fn session_events_reach_the_guest() {
+    let Some(mut plugin) = load(&auto) else {
+        return;
+    };
+
+    plugin
+        .on_event(Event::SessionStart(7))
+        .expect("event delivered");
+
+    assert_eq!(
+        plugin.drain_requests(),
+        vec![PluginRequest::Notify {
+            message: "hello plugin saw pane 7 open".to_string(),
+        }]
+    );
+}
+
+#[test]
 fn events_reach_the_guest() {
-    let Some(mut plugin) = load(&grant_supported) else {
+    let Some(mut plugin) = load(&auto) else {
         return;
     };
 
@@ -118,11 +148,10 @@ fn events_reach_the_guest() {
 
 #[test]
 fn unmatched_events_produce_no_requests() {
-    let Some(mut plugin) = load(&grant_supported) else {
+    let Some(mut plugin) = load(&auto) else {
         return;
     };
 
-    plugin.on_event(Event::SessionStart(1)).expect("delivered");
     plugin
         .on_event(Event::LineOutput(LineEvent {
             pane: 1,
@@ -150,7 +179,7 @@ fn greedy() -> PluginInfo {
 #[test]
 fn self_scoped_capabilities_are_granted_without_asking() {
     assert_eq!(
-        grant_supported(&greedy()),
+        auto(&greedy()),
         vec![
             Capability::Notify,
             Capability::ReadConfig,
@@ -165,8 +194,8 @@ fn command_execution_and_outbound_access_need_consent() {
         requires_consent(&greedy()),
         vec![Capability::WritePty, Capability::Network]
     );
-    assert!(!grant_supported(&greedy()).contains(&Capability::WritePty));
-    assert!(!grant_supported(&greedy()).contains(&Capability::Network));
+    assert!(!auto(&greedy()).contains(&Capability::WritePty));
+    assert!(!auto(&greedy()).contains(&Capability::Network));
 }
 
 #[test]
@@ -222,7 +251,7 @@ fn filesystem_capability_opens_a_scoped_directory() {
 #[test]
 fn without_the_capability_no_directory_is_created() {
     let root = TempRoot::new("fs-denied");
-    let Some(_plugin) = load_in(&root, &grant_nothing) else {
+    let Some(_plugin) = load_in(&root, &nothing) else {
         return;
     };
 
@@ -231,7 +260,7 @@ fn without_the_capability_no_directory_is_created() {
 
 #[test]
 fn a_panicking_command_retires_the_plugin() {
-    let Some(mut plugin) = load(&grant_supported) else {
+    let Some(mut plugin) = load(&auto) else {
         return;
     };
 
@@ -543,7 +572,7 @@ fn disabling_gives_the_plugin_a_chance_to_flush() {
 
 #[test]
 fn shutdown_reaches_the_guest() {
-    let Some(mut plugin) = load(&grant_supported) else {
+    let Some(mut plugin) = load(&auto) else {
         return;
     };
     plugin.drain_requests();
@@ -560,7 +589,7 @@ fn shutdown_reaches_the_guest() {
 
 #[test]
 fn a_trapped_plugin_is_not_asked_to_shut_down() {
-    let Some(mut plugin) = load(&grant_supported) else {
+    let Some(mut plugin) = load(&auto) else {
         return;
     };
     plugin.run_command("hello.boom").expect_err("panics");

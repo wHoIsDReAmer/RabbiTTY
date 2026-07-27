@@ -39,10 +39,17 @@ impl Guest for HelloPlugin {
     }
 
     fn on_event(ev: Event) {
-        if let Event::LineOutput(line) = ev
-            && line.line.contains("hello")
-        {
-            host::notify("hello plugin saw 'hello' in the output");
+        match ev {
+            Event::SessionStart(pane) => {
+                host::notify(&format!("hello plugin saw pane {pane} open"));
+            }
+            Event::SessionClose(pane) => {
+                host::notify(&format!("hello plugin saw pane {pane} close"));
+            }
+            Event::LineOutput(line) if line.line.contains("hello") => {
+                host::notify("hello plugin saw 'hello' in the output");
+            }
+            _ => {}
         }
     }
 

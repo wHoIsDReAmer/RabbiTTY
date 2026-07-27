@@ -131,6 +131,7 @@ impl App {
             tab.split(axis, pane);
         }
         self.resize_panes();
+        self.dispatch_plugin_event(crate::plugin::Event::SessionStart(pane_id));
         Task::none()
     }
 
@@ -138,6 +139,7 @@ impl App {
         if self.active_tab == SETTINGS_TAB_INDEX {
             return;
         }
+        let focused = self.tabs.get(self.active_tab).map(|tab| tab.focused);
         let closed_tab = match self.tabs.get_mut(self.active_tab) {
             Some(tab) => !tab.close_focused(),
             None => return,
@@ -146,6 +148,9 @@ impl App {
             self.handle_close_tab(self.active_tab);
         } else {
             self.resize_panes();
+            if let Some(pane) = focused {
+                self.dispatch_plugin_event(crate::plugin::Event::SessionClose(pane));
+            }
         }
     }
 }
@@ -234,6 +239,7 @@ impl App {
             .push(crate::gui::tab::TerminalTab::new(tab_id, pane));
         self.active_tab = self.tabs.len() - 1;
         self.dismiss_shell_picker();
+        self.dispatch_plugin_event(crate::plugin::Event::SessionStart(tab_id));
         Task::none()
     }
 
@@ -244,7 +250,11 @@ impl App {
                 self.active_tab = self.tabs.len().saturating_sub(1);
             }
         } else if index < self.tabs.len() {
+            let closed: Vec<u64> = self.tabs[index].panes.iter().map(|pane| pane.id).collect();
             self.tabs.remove(index);
+            for pane in closed {
+                self.dispatch_plugin_event(crate::plugin::Event::SessionClose(pane));
+            }
             if self.active_tab != SETTINGS_TAB_INDEX {
                 self.clamp_active_tab();
             }
@@ -455,7 +465,7 @@ impl App {
                 self.select_relative_tab(-1);
                 Some(Task::none())
             }
-            ShortcutAction::Quit => Some(iced::exit()),
+            ShortcutAction::Quit => Some(self.update(Message::Exit)),
             ShortcutAction::FontSizeIncrease => Some(self.adjust_font_size(1.0)),
             ShortcutAction::FontSizeDecrease => Some(self.adjust_font_size(-1.0)),
             ShortcutAction::FontSizeReset => {
