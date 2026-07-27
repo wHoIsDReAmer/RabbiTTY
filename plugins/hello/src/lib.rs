@@ -48,8 +48,10 @@ impl Guest for HelloPlugin {
     }
 
     fn run_command(id: String) {
-        if id == "hello.hi" {
-            host::notify("hello from the hello plugin!");
+        match id.as_str() {
+            "hello.hi" => host::notify("hello from the hello plugin!"),
+            "hello.boom" => panic!("intentional panic, for host failure-isolation tests"),
+            _ => {}
         }
     }
 }
