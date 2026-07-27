@@ -1,11 +1,6 @@
-// This plugin is a WASM component; it is only meaningful for wasm targets.
-// Off-wasm (e.g. the host's `cargo test --workspace`) it compiles to an empty
-// crate so it never breaks native builds.
 #![cfg(target_arch = "wasm32")]
 
 //! Minimal example plugin exercising the Rabbitty plugin ABI (`wit/world.wit`).
-//! Not a real feature — a "hello world" fixture that proves the guest bindings
-//! compile against our WIT and the host can drive them end to end.
 
 wit_bindgen::generate!({
     path: "../../wit",
@@ -28,6 +23,10 @@ impl Guest for HelloPlugin {
 
     fn init() {}
 
+    fn shutdown() {
+        host::notify("hello plugin shutting down");
+    }
+
     fn contributions() -> Contributions {
         Contributions {
             commands: vec![Command {
@@ -48,8 +47,10 @@ impl Guest for HelloPlugin {
     }
 
     fn run_command(id: String) {
-        if id == "hello.hi" {
-            host::notify("hello from the hello plugin!");
+        match id.as_str() {
+            "hello.hi" => host::notify("hello from the hello plugin!"),
+            "hello.boom" => panic!("intentional panic, for host failure-isolation tests"),
+            _ => {}
         }
     }
 }

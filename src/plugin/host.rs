@@ -14,15 +14,15 @@ const CALL_FUEL: u64 = 10_000_000;
 pub struct PluginHost {
     engine: Engine,
     linker: Linker<PluginState>,
-    data_root: PathBuf,
+    root: PathBuf,
 }
 
 impl PluginHost {
     pub fn new() -> wasmtime::Result<Self> {
-        Self::with_data_root(default_data_root()?)
+        Self::with_root(default_root()?)
     }
 
-    pub fn with_data_root(data_root: PathBuf) -> wasmtime::Result<Self> {
+    pub fn with_root(root: PathBuf) -> wasmtime::Result<Self> {
         let mut config = Config::new();
         config.wasm_component_model(true);
         config.consume_fuel(true);
@@ -35,12 +35,13 @@ impl PluginHost {
         Ok(Self {
             engine,
             linker,
-            data_root,
+            root,
         })
     }
 
     pub fn load(
         &self,
+        id: &str,
         path: &Path,
         config: HashMap<String, String>,
         policy: CapabilityPolicy<'_>,
@@ -48,7 +49,8 @@ impl PluginHost {
         let component = Component::from_file(&self.engine, path)?;
         let info = self.read_manifest(&component)?;
         let granted = policy(&info);
-        self.start(&component, info, granted, config)
+
+        self.start(id, &component, info, granted, config)
     }
 
     fn read_manifest(&self, component: &Component) -> wasmtime::Result<PluginInfo> {
@@ -59,6 +61,7 @@ impl PluginHost {
 
     fn start(
         &self,
+        id: &str,
         component: &Component,
         info: PluginInfo,
         mut granted: Vec<Capability>,
@@ -71,7 +74,7 @@ impl PluginHost {
         }
 
         if granted.contains(&Capability::Filesystem) {
-            match self.data_dir(&info.name) {
+            match self.data_dir(id) {
                 Some(dir) => {
                     std::fs::create_dir_all(&dir)?;
                     builder.preopened_dir(&dir, ".", DirPerms::all(), FilePerms::all())?;
@@ -92,6 +95,7 @@ impl PluginHost {
             bindings,
             info,
             contributions,
+            failure: None,
         })
     }
 
@@ -115,12 +119,16 @@ impl PluginHost {
         Ok(store)
     }
 
-    fn data_dir(&self, plugin_name: &str) -> Option<PathBuf> {
-        Some(self.data_root.join(dir_name(plugin_name)?))
+    fn data_dir(&self, id: &str) -> Option<PathBuf> {
+        Some(self.root.join(dir_name(id)?).join("data"))
+    }
+
+    pub fn root(&self) -> &Path {
+        &self.root
     }
 }
 
-fn default_data_root() -> wasmtime::Result<PathBuf> {
+fn default_root() -> wasmtime::Result<PathBuf> {
     dirs::config_dir()
         .map(|dir| dir.join("rabbitty").join("plugins"))
         .ok_or_else(|| wasmtime::Error::msg("no config directory"))
@@ -151,6 +159,7 @@ pub struct LoadedPlugin {
     bindings: Plugin,
     info: PluginInfo,
     contributions: Contributions,
+    failure: Option<String>,
 }
 
 impl LoadedPlugin {
@@ -166,14 +175,45 @@ impl LoadedPlugin {
         &self.store.data().granted
     }
 
-    pub fn run_command(&mut self, id: &str) -> wasmtime::Result<()> {
+    pub fn failure(&self) -> Option<&str> {
+        self.failure.as_deref()
+    }
+
+    pub fn shutdown(&mut self) -> wasmtime::Result<()> {
+        if self.failure.is_some() {
+            return Ok(());
+        }
         refuel(&mut self.store)?;
-        self.bindings.call_run_command(&mut self.store, id)
+        let result = self.bindings.call_shutdown(&mut self.store);
+        self.record(result)
+    }
+
+    pub fn run_command(&mut self, id: &str) -> wasmtime::Result<()> {
+        self.guard()?;
+        refuel(&mut self.store)?;
+        let result = self.bindings.call_run_command(&mut self.store, id);
+        self.record(result)
     }
 
     pub fn on_event(&mut self, event: Event) -> wasmtime::Result<()> {
+        self.guard()?;
         refuel(&mut self.store)?;
-        self.bindings.call_on_event(&mut self.store, &event)
+        let result = self.bindings.call_on_event(&mut self.store, &event);
+        self.record(result)
+    }
+
+    fn guard(&self) -> wasmtime::Result<()> {
+        match &self.failure {
+            Some(reason) => Err(wasmtime::Error::msg(format!("plugin retired: {reason}"))),
+            None => Ok(()),
+        }
+    }
+
+    fn record(&mut self, result: wasmtime::Result<()>) -> wasmtime::Result<()> {
+        if let Err(err) = &result {
+            self.failure = Some(err.to_string());
+        }
+        result
     }
 
     pub fn drain_requests(&mut self) -> Vec<PluginRequest> {

@@ -4,6 +4,7 @@ use std::path::{Path, PathBuf};
 
 use super::AppConfig;
 use super::defaults::*;
+use super::plugins::PluginsConfig;
 use super::types::{BellMode, CursorShape, RightClickAction, TabBarPosition};
 use crate::gui::tab::Profile;
 
@@ -15,6 +16,8 @@ pub(super) struct FileConfig {
     pub(super) shortcuts: Option<ShortcutsFileConfig>,
     #[serde(default)]
     pub(super) profiles: Option<Vec<Profile>>,
+    #[serde(default)]
+    pub(super) plugins: Option<PluginsConfig>,
 }
 
 #[derive(Debug, Deserialize, Serialize)]
@@ -139,6 +142,7 @@ impl From<&AppConfig> for FileConfig {
                         .collect(),
                 )
             },
+            plugins: (!config.plugins.is_empty()).then(|| config.plugins.clone()),
         }
     }
 }
@@ -322,5 +326,40 @@ mod tests {
             config.terminal.font_selection,
             Some("JetBrains Mono".to_string())
         );
+    }
+}
+
+#[cfg(test)]
+mod plugin_tests {
+    use super::*;
+    use crate::config::plugins::PluginSettings;
+
+    #[test]
+    fn plugin_settings_survive_a_config_round_trip() {
+        let mut config = AppConfig::default();
+        config.plugins.insert(
+            "alpha".to_string(),
+            PluginSettings {
+                enabled: false,
+                consented: vec!["network".to_string()],
+            },
+        );
+
+        let text = toml::to_string_pretty(&FileConfig::from(&config)).expect("serialize");
+        let parsed = toml::from_str::<FileConfig>(&text).expect("deserialize");
+
+        let mut restored = AppConfig::default();
+        restored.apply_file(parsed);
+
+        assert_eq!(restored.plugins, config.plugins);
+    }
+
+    #[test]
+    fn a_config_without_plugins_still_loads() {
+        let parsed = toml::from_str::<FileConfig>(&default_config_toml()).expect("parse");
+        let mut restored = AppConfig::default();
+        restored.apply_file(parsed);
+
+        assert!(restored.plugins.is_empty());
     }
 }

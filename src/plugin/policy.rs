@@ -39,3 +39,21 @@ pub fn grant_with_consent(info: &PluginInfo, consented: &[Capability]) -> Vec<Ca
 pub fn grant_nothing(_info: &PluginInfo) -> Vec<Capability> {
     Vec::new()
 }
+
+pub fn capability_name(cap: Capability) -> &'static str {
+    match cap {
+        Capability::WritePty => "write-pty",
+        Capability::ReadConfig => "read-config",
+        Capability::Notify => "notify",
+        Capability::Network => "network",
+        Capability::Filesystem => "filesystem",
+    }
+}
+
+pub fn capability_from_name(name: &str) -> Option<Capability> {
+    NEEDS_CONSENT
+        .iter()
+        .chain(AUTO.iter())
+        .copied()
+        .find(|cap| capability_name(*cap) == name)
+}
