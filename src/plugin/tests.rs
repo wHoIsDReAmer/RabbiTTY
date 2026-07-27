@@ -1,7 +1,28 @@
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
+use super::host::dir_name;
 use super::*;
+
+struct TempRoot(PathBuf);
+
+impl TempRoot {
+    fn new(tag: &str) -> Self {
+        let path = std::env::temp_dir().join(format!(
+            "rabbitty-plugin-{tag}-{}-{:?}",
+            std::process::id(),
+            std::thread::current().id()
+        ));
+        let _ = std::fs::remove_dir_all(&path);
+        Self(path)
+    }
+}
+
+impl Drop for TempRoot {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_dir_all(&self.0);
+    }
+}
 
 fn hello_component() -> Option<PathBuf> {
     ["debug", "release"]
@@ -15,13 +36,17 @@ fn hello_component() -> Option<PathBuf> {
         .find(|path| path.exists())
 }
 
-fn load(policy: CapabilityPolicy) -> Option<LoadedPlugin> {
+fn load_in(root: &TempRoot, policy: CapabilityPolicy) -> Option<LoadedPlugin> {
     let path = hello_component()?;
-    let host = PluginHost::new().expect("engine");
+    let host = PluginHost::with_data_root(root.0.clone()).expect("engine");
     Some(
         host.load(&path, HashMap::new(), policy)
             .expect("hello plugin should load"),
     )
+}
+
+fn load(policy: CapabilityPolicy) -> Option<LoadedPlugin> {
+    load_in(&TempRoot::new("load"), policy)
 }
 
 #[test]
@@ -120,4 +145,38 @@ fn reserved_capabilities_are_never_granted() {
     };
 
     assert_eq!(grant_supported(&info), vec![Capability::Notify]);
+}
+
+#[test]
+fn a_plugin_name_never_escapes_the_data_root() {
+    assert_eq!(dir_name("../../etc").as_deref(), Some("etc"));
+    assert_eq!(dir_name("..").as_deref(), None);
+    assert_eq!(dir_name("a/b").as_deref(), Some("a_b"));
+    assert_eq!(dir_name("").as_deref(), None);
+    assert_eq!(dir_name("Hello Plugin").as_deref(), Some("hello_plugin"));
+    assert_eq!(dir_name("hello").as_deref(), Some("hello"));
+}
+
+#[test]
+fn filesystem_capability_opens_a_scoped_directory() {
+    let root = TempRoot::new("fs-granted");
+    let Some(plugin) = load_in(&root, |_| vec![Capability::Filesystem]) else {
+        return;
+    };
+
+    assert_eq!(plugin.granted(), &[Capability::Filesystem]);
+    assert!(
+        root.0.join("hello").is_dir(),
+        "a granted filesystem capability should preopen the plugin's own directory"
+    );
+}
+
+#[test]
+fn without_the_capability_no_directory_is_created() {
+    let root = TempRoot::new("fs-denied");
+    let Some(_plugin) = load_in(&root, grant_nothing) else {
+        return;
+    };
+
+    assert!(!root.0.exists(), "nothing should be preopened");
 }

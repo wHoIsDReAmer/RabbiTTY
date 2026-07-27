@@ -31,10 +31,18 @@ layer on top of these axes as data, without new host machinery.
 
 ## Capability model
 
-`manifest()` returns the capabilities the plugin requests (`write-pty`,
-`read-config`, `notify`, and the reserved `network` / `filesystem`). The host gates
-each host import against the granted set — an ungranted capability makes its import
-deny/no-op. `network` and `filesystem` are declared but not yet host-backed.
+`manifest()` returns the capabilities the plugin requests. The host reviews them
+before the plugin runs anything, then enforces the grant at two layers:
+
+| Capability | Enforced by |
+|------------|-------------|
+| `write-pty`, `read-config`, `notify` | The `host` imports — an ungranted one becomes a deny/no-op |
+| `network` | `wasi:sockets`, off unless granted (`WasiCtxBuilder` denies every address by default) |
+| `filesystem` | `wasi:filesystem`, preopened to the plugin's own data directory and nothing else |
+
+WASI supplies the filesystem and socket *mechanism*; it deliberately leaves the
+*policy* to the embedder, and this enum is that policy. Nothing is granted while
+`manifest()` runs, so a plugin cannot influence its own review.
 
 ## Lifecycle
 
