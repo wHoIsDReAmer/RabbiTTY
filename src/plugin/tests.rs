@@ -36,7 +36,7 @@ fn hello_component() -> Option<PathBuf> {
         .find(|path| path.exists())
 }
 
-fn load_in(root: &TempRoot, policy: CapabilityPolicy) -> Option<LoadedPlugin> {
+fn load_in(root: &TempRoot, policy: CapabilityPolicy<'_>) -> Option<LoadedPlugin> {
     let path = hello_component()?;
     let host = PluginHost::with_data_root(root.0.clone()).expect("engine");
     Some(
@@ -45,13 +45,13 @@ fn load_in(root: &TempRoot, policy: CapabilityPolicy) -> Option<LoadedPlugin> {
     )
 }
 
-fn load(policy: CapabilityPolicy) -> Option<LoadedPlugin> {
+fn load(policy: CapabilityPolicy<'_>) -> Option<LoadedPlugin> {
     load_in(&TempRoot::new("load"), policy)
 }
 
 #[test]
 fn manifest_and_contributions_round_trip() {
-    let Some(plugin) = load(grant_supported) else {
+    let Some(plugin) = load(&grant_supported) else {
         return;
     };
 
@@ -66,7 +66,7 @@ fn manifest_and_contributions_round_trip() {
 
 #[test]
 fn granted_capability_lets_the_host_call_through() {
-    let Some(mut plugin) = load(grant_supported) else {
+    let Some(mut plugin) = load(&grant_supported) else {
         return;
     };
 
@@ -74,7 +74,7 @@ fn granted_capability_lets_the_host_call_through() {
 
     assert_eq!(
         plugin.drain_requests(),
-        vec![HostRequest::Notify {
+        vec![PluginRequest::Notify {
             message: "hello from the hello plugin!".to_string(),
         }]
     );
@@ -82,7 +82,7 @@ fn granted_capability_lets_the_host_call_through() {
 
 #[test]
 fn ungranted_capability_is_a_no_op() {
-    let Some(mut plugin) = load(grant_nothing) else {
+    let Some(mut plugin) = load(&grant_nothing) else {
         return;
     };
 
@@ -96,7 +96,7 @@ fn ungranted_capability_is_a_no_op() {
 
 #[test]
 fn events_reach_the_guest() {
-    let Some(mut plugin) = load(grant_supported) else {
+    let Some(mut plugin) = load(&grant_supported) else {
         return;
     };
 
@@ -109,7 +109,7 @@ fn events_reach_the_guest() {
 
     assert_eq!(
         plugin.drain_requests(),
-        vec![HostRequest::Notify {
+        vec![PluginRequest::Notify {
             message: "hello plugin saw 'hello' in the output".to_string(),
         }]
     );
@@ -117,7 +117,7 @@ fn events_reach_the_guest() {
 
 #[test]
 fn unmatched_events_produce_no_requests() {
-    let Some(mut plugin) = load(grant_supported) else {
+    let Some(mut plugin) = load(&grant_supported) else {
         return;
     };
 
@@ -132,19 +132,65 @@ fn unmatched_events_produce_no_requests() {
     assert!(plugin.drain_requests().is_empty());
 }
 
-#[test]
-fn reserved_capabilities_are_never_granted() {
-    let info = PluginInfo {
+fn greedy() -> PluginInfo {
+    PluginInfo {
         name: "greedy".to_string(),
         version: "0.1.0".to_string(),
         capabilities: vec![
-            Capability::Network,
-            Capability::Filesystem,
             Capability::Notify,
+            Capability::ReadConfig,
+            Capability::Filesystem,
+            Capability::WritePty,
+            Capability::Network,
         ],
+    }
+}
+
+#[test]
+fn self_scoped_capabilities_are_granted_without_asking() {
+    assert_eq!(
+        grant_supported(&greedy()),
+        vec![
+            Capability::Notify,
+            Capability::ReadConfig,
+            Capability::Filesystem
+        ]
+    );
+}
+
+#[test]
+fn command_execution_and_outbound_access_need_consent() {
+    assert_eq!(
+        requires_consent(&greedy()),
+        vec![Capability::WritePty, Capability::Network]
+    );
+    assert!(!grant_supported(&greedy()).contains(&Capability::WritePty));
+    assert!(!grant_supported(&greedy()).contains(&Capability::Network));
+}
+
+#[test]
+fn consent_grants_only_what_was_agreed_to() {
+    let granted = grant_with_consent(&greedy(), &[Capability::Network]);
+
+    assert!(granted.contains(&Capability::Network));
+    assert!(
+        !granted.contains(&Capability::WritePty),
+        "consenting to one capability must not imply the other"
+    );
+}
+
+#[test]
+fn consent_cannot_grant_what_was_never_requested() {
+    let modest = PluginInfo {
+        name: "modest".to_string(),
+        version: "0.1.0".to_string(),
+        capabilities: vec![Capability::Notify],
     };
 
-    assert_eq!(grant_supported(&info), vec![Capability::Notify]);
+    assert_eq!(
+        grant_with_consent(&modest, &[Capability::Network, Capability::WritePty]),
+        vec![Capability::Notify]
+    );
 }
 
 #[test]
@@ -160,7 +206,7 @@ fn a_plugin_name_never_escapes_the_data_root() {
 #[test]
 fn filesystem_capability_opens_a_scoped_directory() {
     let root = TempRoot::new("fs-granted");
-    let Some(plugin) = load_in(&root, |_| vec![Capability::Filesystem]) else {
+    let Some(plugin) = load_in(&root, &|_: &PluginInfo| vec![Capability::Filesystem]) else {
         return;
     };
 
@@ -174,7 +220,7 @@ fn filesystem_capability_opens_a_scoped_directory() {
 #[test]
 fn without_the_capability_no_directory_is_created() {
     let root = TempRoot::new("fs-denied");
-    let Some(_plugin) = load_in(&root, grant_nothing) else {
+    let Some(_plugin) = load_in(&root, &grant_nothing) else {
         return;
     };
 

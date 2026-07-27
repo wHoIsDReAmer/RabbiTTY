@@ -6,7 +6,7 @@ use wasmtime::{Config, Engine, Store};
 use wasmtime_wasi::{DirPerms, FilePerms, WasiCtx, WasiCtxBuilder};
 
 use super::policy::CapabilityPolicy;
-use super::state::{HostRequest, PluginState};
+use super::state::{PluginRequest, PluginState};
 use super::{Capability, Contributions, Event, Plugin, PluginInfo};
 
 const CALL_FUEL: u64 = 10_000_000;
@@ -43,7 +43,7 @@ impl PluginHost {
         &self,
         path: &Path,
         config: HashMap<String, String>,
-        policy: CapabilityPolicy,
+        policy: CapabilityPolicy<'_>,
     ) -> wasmtime::Result<LoadedPlugin> {
         let component = Component::from_file(&self.engine, path)?;
         let info = self.read_manifest(&component)?;
@@ -51,8 +51,6 @@ impl PluginHost {
         self.start(&component, info, granted, config)
     }
 
-    /// The WASI context is fixed when the store is created, so the manifest is
-    /// read from a throwaway instance that is granted nothing at all.
     fn read_manifest(&self, component: &Component) -> wasmtime::Result<PluginInfo> {
         let mut store = self.store(WasiCtxBuilder::new().build(), Vec::new(), HashMap::new())?;
         let bindings = Plugin::instantiate(&mut store, component, &self.linker)?;
@@ -128,8 +126,6 @@ fn default_data_root() -> wasmtime::Result<PathBuf> {
         .ok_or_else(|| wasmtime::Error::msg("no config directory"))
 }
 
-/// Collapses a plugin name to one path segment. Separators and `.` cannot
-/// survive, so the result can never escape the data root.
 pub(super) fn dir_name(plugin_name: &str) -> Option<String> {
     let mapped: String = plugin_name
         .chars()
@@ -180,7 +176,7 @@ impl LoadedPlugin {
         self.bindings.call_on_event(&mut self.store, &event)
     }
 
-    pub fn drain_requests(&mut self) -> Vec<HostRequest> {
+    pub fn drain_requests(&mut self) -> Vec<PluginRequest> {
         std::mem::take(&mut self.store.data_mut().requests)
     }
 }

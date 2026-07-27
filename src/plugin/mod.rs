@@ -11,5 +11,7 @@ wasmtime::component::bindgen!({
 
 pub use self::rabbitty::plugin::types::{Capability, Command, CwdEvent, LineEvent, MenuItem};
 pub use host::{LoadedPlugin, PluginHost};
-pub use policy::{CapabilityPolicy, grant_nothing, grant_supported};
-pub use state::HostRequest;
+pub use policy::{
+    CapabilityPolicy, grant_nothing, grant_supported, grant_with_consent, requires_consent,
+};
+pub use state::PluginRequest;

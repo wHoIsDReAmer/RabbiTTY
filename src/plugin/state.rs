@@ -6,7 +6,7 @@ use wasmtime_wasi::{WasiCtx, WasiCtxView, WasiView};
 use super::Capability;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum HostRequest {
+pub enum PluginRequest {
     WritePty { pane: u64, data: Vec<u8> },
     Notify { message: String },
 }
@@ -16,7 +16,7 @@ pub(super) struct PluginState {
     pub(super) table: ResourceTable,
     pub(super) granted: Vec<Capability>,
     pub(super) config: HashMap<String, String>,
-    pub(super) requests: Vec<HostRequest>,
+    pub(super) requests: Vec<PluginRequest>,
 }
 
 impl PluginState {
@@ -39,13 +39,13 @@ impl super::rabbitty::plugin::types::Host for PluginState {}
 impl super::rabbitty::plugin::host::Host for PluginState {
     fn write_pty(&mut self, pane: u64, data: Vec<u8>) {
         if self.allows(Capability::WritePty) {
-            self.requests.push(HostRequest::WritePty { pane, data });
+            self.requests.push(PluginRequest::WritePty { pane, data });
         }
     }
 
     fn notify(&mut self, message: String) {
         if self.allows(Capability::Notify) {
-            self.requests.push(HostRequest::Notify { message });
+            self.requests.push(PluginRequest::Notify { message });
         }
     }
 
