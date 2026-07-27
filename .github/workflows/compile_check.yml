@@ -6,6 +6,11 @@ on:
 env:
   CARGO_TERM_COLOR: always
 
+# Cancel superseded runs so stale jobs stop holding the scarce macOS slot.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   build_and_test:
     name: Rust project - latest
@@ -16,6 +21,8 @@ jobs:
         toolchain:
           - stable
     runs-on: ${{ matrix.os }}
+    # Fail fast instead of hanging ~6h when a runner can't be scheduled.
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
 
