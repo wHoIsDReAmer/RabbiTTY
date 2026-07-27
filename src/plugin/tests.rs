@@ -108,6 +108,24 @@ fn ungranted_capability_is_a_no_op() {
 }
 
 #[test]
+fn session_events_reach_the_guest() {
+    let Some(mut plugin) = load(&auto) else {
+        return;
+    };
+
+    plugin
+        .on_event(Event::SessionStart(7))
+        .expect("event delivered");
+
+    assert_eq!(
+        plugin.drain_requests(),
+        vec![PluginRequest::Notify {
+            message: "hello plugin saw pane 7 open".to_string(),
+        }]
+    );
+}
+
+#[test]
 fn events_reach_the_guest() {
     let Some(mut plugin) = load(&auto) else {
         return;
@@ -134,7 +152,6 @@ fn unmatched_events_produce_no_requests() {
         return;
     };
 
-    plugin.on_event(Event::SessionStart(1)).expect("delivered");
     plugin
         .on_event(Event::LineOutput(LineEvent {
             pane: 1,
