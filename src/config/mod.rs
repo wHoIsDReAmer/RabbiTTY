@@ -1,6 +1,7 @@
 mod defaults;
 mod file;
 mod metrics;
+pub mod plugins;
 mod sanitize;
 mod shortcuts;
 mod types;
@@ -19,6 +20,7 @@ pub(crate) use sanitize::parse_hex_color;
 use crate::gui::tab::Profile;
 use file::{FileConfig, config_path, ensure_config_file};
 use metrics::default_cell_metrics;
+use plugins::PluginsConfig;
 use sanitize::*;
 use std::fs;
 
@@ -29,6 +31,7 @@ pub struct AppConfig {
     pub theme: ThemeConfig,
     pub shortcuts: ShortcutsConfig,
     pub profiles: Vec<Profile>,
+    pub plugins: PluginsConfig,
 }
 
 impl AppConfig {
@@ -124,6 +127,7 @@ impl Default for AppConfig {
             },
             shortcuts: ShortcutsConfig::default(),
             profiles: vec![],
+            plugins: PluginsConfig::new(),
         }
     }
 }
@@ -296,6 +300,10 @@ impl AppConfig {
                         .is_none_or(|ssh| !ssh.host.trim().is_empty())
                 })
                 .collect();
+        }
+
+        if let Some(plugins) = file.plugins {
+            self.plugins = plugins;
         }
     }
 }

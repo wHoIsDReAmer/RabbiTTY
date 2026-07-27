@@ -1,8 +1,11 @@
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
+use crate::config::plugins::{PluginSettings, PluginsConfig};
+
 use super::host::{LoadedPlugin, PluginHost};
-use super::policy::CapabilityPolicy;
+use super::policy::{capability_from_name, grant_with_consent};
+use super::{Capability, PluginInfo};
 
 pub const COMPONENT_FILE: &str = "plugin.wasm";
 
@@ -27,29 +30,46 @@ struct Entry {
 
 pub struct PluginRegistry {
     host: PluginHost,
+    settings: PluginsConfig,
     entries: Vec<Entry>,
 }
 
 impl PluginRegistry {
-    pub fn new(host: PluginHost) -> Self {
+    pub fn new(host: PluginHost, settings: PluginsConfig) -> Self {
         Self {
             host,
+            settings,
             entries: Vec::new(),
         }
+    }
+
+    pub fn settings(&self) -> &PluginsConfig {
+        &self.settings
     }
 
     pub fn root(&self) -> &Path {
         self.host.root()
     }
 
-    pub fn load_all(&mut self, policy: CapabilityPolicy<'_>) {
+    pub fn load_all(&mut self) {
         self.entries.clear();
         for (id, path) in discover(self.host.root()) {
-            let slot = match self.host.load(&id, &path, HashMap::new(), policy) {
-                Ok(plugin) => Slot::Ready(Box::new(plugin)),
-                Err(err) => Slot::Retired(err.to_string()),
+            let settings = self.settings.get(&id).cloned().unwrap_or_default();
+            let slot = if settings.enabled {
+                Self::instantiate(&self.host, &id, &path, &settings)
+            } else {
+                Slot::Disabled
             };
             self.entries.push(Entry { id, path, slot });
+        }
+    }
+
+    fn instantiate(host: &PluginHost, id: &str, path: &Path, settings: &PluginSettings) -> Slot {
+        let consented = consented_capabilities(settings);
+        let policy = |info: &PluginInfo| grant_with_consent(info, &consented);
+        match host.load(id, path, HashMap::new(), &policy) {
+            Ok(plugin) => Slot::Ready(Box::new(plugin)),
+            Err(err) => Slot::Retired(err.to_string()),
         }
     }
 
@@ -90,30 +110,37 @@ impl PluginRegistry {
         match self.entry_mut(id) {
             Some(entry) => {
                 entry.slot = Slot::Disabled;
+                self.settings.entry(id.to_string()).or_default().enabled = false;
                 true
             }
             None => false,
         }
     }
 
-    pub fn enable(&mut self, id: &str, policy: CapabilityPolicy<'_>) -> Result<(), String> {
+    pub fn enable(&mut self, id: &str) -> Result<(), String> {
         let Some(index) = self.entries.iter().position(|entry| entry.id == id) else {
             return Err(format!("no plugin named {id}"));
         };
+        let settings = self.settings.entry(id.to_string()).or_default();
+        settings.enabled = true;
+        let settings = settings.clone();
+
         let entry = &self.entries[index];
-        let slot = match self
-            .host
-            .load(&entry.id, &entry.path, HashMap::new(), policy)
-        {
-            Ok(plugin) => Slot::Ready(Box::new(plugin)),
-            Err(err) => {
-                let reason = err.to_string();
-                self.entries[index].slot = Slot::Retired(reason.clone());
-                return Err(reason);
-            }
+        let slot = Self::instantiate(&self.host, &entry.id, &entry.path, &settings);
+        let outcome = match &slot {
+            Slot::Retired(reason) => Err(reason.clone()),
+            _ => Ok(()),
         };
         self.entries[index].slot = slot;
-        Ok(())
+        outcome
+    }
+
+    pub fn consent(&mut self, id: &str, capability: Capability) {
+        let settings = self.settings.entry(id.to_string()).or_default();
+        let name = super::capability_name(capability).to_string();
+        if !settings.consented.contains(&name) {
+            settings.consented.push(name);
+        }
     }
 
     pub fn retire_failed(&mut self) -> Vec<(String, String)> {
@@ -153,4 +180,12 @@ fn discover(root: &Path) -> Vec<(String, PathBuf)> {
         .collect();
     found.sort_by(|a, b| a.0.cmp(&b.0));
     found
+}
+
+fn consented_capabilities(settings: &PluginSettings) -> Vec<Capability> {
+    settings
+        .consented
+        .iter()
+        .filter_map(|name| capability_from_name(name))
+        .collect()
 }
