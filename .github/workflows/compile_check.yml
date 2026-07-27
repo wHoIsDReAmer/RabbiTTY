@@ -34,4 +34,9 @@ jobs:
 
       - run: cargo build
 
+      # The plugin tests drive a real component and skip themselves when it is
+      # missing, so the guest has to be built or they pass without running.
+      - run: rustup target add wasm32-wasip2
+      - run: cargo build -p hello --target wasm32-wasip2
+
       - run: cargo test --workspace
