@@ -4,8 +4,9 @@ use std::path::{Path, PathBuf};
 use crate::config::plugins::{PluginSettings, PluginsConfig};
 
 use super::host::{LoadedPlugin, PluginHost};
+use super::matcher::OutputMatcher;
 use super::policy::{capability_from_name, capability_name, grant_with_consent, requires_consent};
-use super::{Capability, PluginInfo};
+use super::{Capability, MatchEvent, PluginInfo};
 
 pub const COMPONENT_FILE: &str = "plugin.wasm";
 
@@ -17,7 +18,7 @@ pub enum Status {
 }
 
 enum Slot {
-    Ready(Box<LoadedPlugin>),
+    Ready(Box<LoadedPlugin>, Box<OutputMatcher>),
     Disabled,
     Retired(String),
 }
@@ -32,6 +33,16 @@ pub struct PluginRegistry {
     host: PluginHost,
     settings: PluginsConfig,
     entries: Vec<Entry>,
+}
+
+impl Slot {
+    fn ready(plugin: LoadedPlugin) -> Self {
+        let (matcher, rejected) = OutputMatcher::compile(&plugin.contributions().output_patterns);
+        for (id, reason) in rejected {
+            eprintln!("plugin pattern {id} rejected: {reason}");
+        }
+        Self::Ready(Box::new(plugin), Box::new(matcher))
+    }
 }
 
 impl PluginRegistry {
@@ -69,7 +80,7 @@ impl PluginRegistry {
         let consented = consented_capabilities(settings);
         let policy = |info: &PluginInfo| grant_with_consent(info, &consented);
         match host.load(id, path, HashMap::new(), &policy) {
-            Ok(plugin) => Slot::Ready(Box::new(plugin)),
+            Ok(plugin) => Slot::ready(plugin),
             Err(err) => Slot::Retired(err.to_string()),
         }
     }
@@ -80,7 +91,7 @@ impl PluginRegistry {
 
     pub fn status(&self, id: &str) -> Option<Status> {
         self.entry(id).map(|entry| match &entry.slot {
-            Slot::Ready(plugin) => match plugin.failure() {
+            Slot::Ready(plugin, _) => match plugin.failure() {
                 Some(reason) => Status::Retired(reason.to_string()),
                 None => Status::Ready,
             },
@@ -89,11 +100,55 @@ impl PluginRegistry {
         })
     }
 
+    pub fn match_output(
+        &mut self,
+        pane: u64,
+        line: &str,
+        now: std::time::Instant,
+    ) -> Vec<(String, MatchEvent)> {
+        let mut events = Vec::new();
+        for entry in &mut self.entries {
+            let Slot::Ready(plugin, matcher) = &mut entry.slot else {
+                continue;
+            };
+            if plugin.failure().is_some() || matcher.is_empty() {
+                continue;
+            }
+            let found = matcher.hits(line, now);
+            if let Some(dropped) = matcher.take_throttle_warning() {
+                eprintln!(
+                    "plugin {} exceeded the output match rate; {dropped} dropped so far",
+                    entry.id
+                );
+            }
+            for hit in found {
+                events.push((
+                    entry.id.clone(),
+                    MatchEvent {
+                        pane,
+                        pattern: hit.pattern,
+                        line: line.to_string(),
+                        start: hit.start,
+                        end: hit.end,
+                    },
+                ));
+            }
+        }
+        events
+    }
+
+    pub fn watches_output(&self) -> bool {
+        self.entries.iter().any(|entry| {
+            matches!(&entry.slot, Slot::Ready(plugin, matcher)
+                if plugin.failure().is_none() && !matcher.is_empty())
+        })
+    }
+
     pub fn contributed_commands(&self) -> Vec<(String, Vec<String>)> {
         self.entries
             .iter()
             .filter_map(|entry| match &entry.slot {
-                Slot::Ready(plugin) => {
+                Slot::Ready(plugin, _) => {
                     let ids: Vec<String> = plugin
                         .contributions()
                         .commands
@@ -111,7 +166,7 @@ impl PluginRegistry {
         self.entries
             .iter()
             .filter_map(|entry| match &entry.slot {
-                Slot::Ready(plugin) => {
+                Slot::Ready(plugin, _) => {
                     let wanted = requires_consent(plugin.info());
                     let granted = plugin.granted();
                     let missing: Vec<Capability> = wanted
@@ -127,7 +182,7 @@ impl PluginRegistry {
 
     pub fn get_mut(&mut self, id: &str) -> Option<&mut LoadedPlugin> {
         match &mut self.entry_mut(id)?.slot {
-            Slot::Ready(plugin) if plugin.failure().is_none() => Some(plugin),
+            Slot::Ready(plugin, _) if plugin.failure().is_none() => Some(plugin),
             _ => None,
         }
     }
@@ -136,7 +191,7 @@ impl PluginRegistry {
         self.entries
             .iter_mut()
             .filter_map(|entry| match &mut entry.slot {
-                Slot::Ready(plugin) if plugin.failure().is_none() => {
+                Slot::Ready(plugin, _) if plugin.failure().is_none() => {
                     Some((entry.id.as_str(), plugin.as_mut()))
                 }
                 _ => None,
@@ -146,7 +201,7 @@ impl PluginRegistry {
     pub fn shutdown_all(&mut self) -> Vec<(String, String)> {
         let mut failures = Vec::new();
         for entry in &mut self.entries {
-            if let Slot::Ready(plugin) = &mut entry.slot
+            if let Slot::Ready(plugin, _) = &mut entry.slot
                 && let Err(err) = plugin.shutdown()
             {
                 failures.push((entry.id.clone(), err.to_string()));
@@ -158,7 +213,7 @@ impl PluginRegistry {
     pub fn disable(&mut self, id: &str) -> bool {
         match self.entry_mut(id) {
             Some(entry) => {
-                if let Slot::Ready(plugin) = &mut entry.slot {
+                if let Slot::Ready(plugin, _) = &mut entry.slot {
                     let _ = plugin.shutdown();
                 }
                 entry.slot = Slot::Disabled;
@@ -177,7 +232,7 @@ impl PluginRegistry {
         settings.enabled = true;
         let settings = settings.clone();
 
-        if let Slot::Ready(plugin) = &mut self.entries[index].slot {
+        if let Slot::Ready(plugin, _) = &mut self.entries[index].slot {
             let _ = plugin.shutdown();
         }
         let entry = &self.entries[index];
@@ -201,7 +256,7 @@ impl PluginRegistry {
     pub fn retire_failed(&mut self) -> Vec<(String, String)> {
         let mut retired = Vec::new();
         for entry in &mut self.entries {
-            if let Slot::Ready(plugin) = &entry.slot
+            if let Slot::Ready(plugin, _) = &entry.slot
                 && let Some(reason) = plugin.failure()
             {
                 let reason = reason.to_string();

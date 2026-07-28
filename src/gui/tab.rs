@@ -19,7 +19,10 @@ pub struct Pane {
     pub session: TerminalSession,
     pub selection: Option<Selection>,
     pub sftp: SftpDrawerState,
+    pub capture_output: bool,
     engine: TerminalEngine,
+    lines: crate::plugin::LineReader,
+    captured: Vec<String>,
 }
 
 pub struct TerminalTab {
@@ -95,12 +98,24 @@ impl Pane {
             session,
             selection: None,
             sftp: SftpDrawerState::new(),
+            capture_output: false,
+            lines: crate::plugin::LineReader::default(),
+            captured: Vec::new(),
             engine,
         }
     }
 
     /// Feeds PTY bytes to the terminal engine. Returns `true` if a bell rang.
+    pub fn take_output_lines(&mut self) -> Vec<String> {
+        std::mem::take(&mut self.captured)
+    }
+
     pub fn feed_bytes(&mut self, bytes: &[u8]) -> bool {
+        if self.capture_output {
+            let captured = &mut self.captured;
+            self.lines
+                .feed(bytes, |line| captured.push(line.to_string()));
+        }
         self.engine.feed_bytes(bytes);
         if let Some(new_title) = self.engine.take_title() {
             self.title = new_title;

@@ -1,4 +1,6 @@
 mod host;
+mod lines;
+mod matcher;
 mod policy;
 mod registry;
 mod state;
@@ -10,8 +12,9 @@ wasmtime::component::bindgen!({
     world: "plugin",
 });
 
-pub(crate) use self::rabbitty::plugin::types::Capability;
+pub(crate) use self::rabbitty::plugin::types::{Capability, MatchEvent, OutputPattern};
 pub use host::{PluginError, PluginHost};
+pub use lines::LineReader;
 pub use policy::capability_name;
 pub use registry::{PluginRegistry, Status};
 pub use state::PluginRequest;

@@ -636,3 +636,71 @@ fn a_trapped_plugin_is_not_asked_to_shut_down() {
         "a trapped instance cannot be re-entered, so nothing should reach the guest"
     );
 }
+
+#[test]
+fn a_declared_pattern_reaches_the_guest_as_a_match() {
+    let root = TempRoot::new("match");
+    if !install(&root, "alpha") {
+        return;
+    }
+
+    let mut registry = registry_in(&root);
+    registry.load_all();
+    registry.get_mut("alpha").expect("ready").drain_requests();
+
+    assert!(
+        registry.watches_output(),
+        "hello declares a pattern, so output capture must switch on"
+    );
+
+    let now = std::time::Instant::now();
+    let events = registry.match_output(3, "a line saying hello there", now);
+
+    assert_eq!(events.len(), 1);
+    let (id, matched) = &events[0];
+    assert_eq!(id, "alpha");
+    assert_eq!(matched.pattern, "hello.greeting");
+    assert_eq!(matched.pane, 3);
+    assert_eq!(
+        &matched.line[matched.start as usize..matched.end as usize],
+        "hello"
+    );
+
+    let plugin = registry.get_mut("alpha").expect("ready");
+    plugin
+        .on_event(Event::OutputMatched(matched.clone()))
+        .expect("delivered");
+    assert_eq!(
+        plugin.drain_requests(),
+        vec![PluginRequest::Notify {
+            message: "hello plugin matched hello.greeting in pane 3".to_string(),
+        }]
+    );
+}
+
+#[test]
+fn a_line_matching_nothing_produces_no_events() {
+    let root = TempRoot::new("nomatch");
+    if !install(&root, "alpha") {
+        return;
+    }
+
+    let mut registry = registry_in(&root);
+    registry.load_all();
+
+    let events = registry.match_output(1, "nothing of interest", std::time::Instant::now());
+
+    assert!(events.is_empty());
+}
+
+#[test]
+fn a_plugin_without_patterns_does_not_switch_capture_on() {
+    let root = TempRoot::new("nopattern");
+    let mut registry = registry_in(&root);
+    registry.load_all();
+
+    assert!(
+        !registry.watches_output(),
+        "with no plugins there is nothing to match, so panes must not buffer output"
+    );
+}

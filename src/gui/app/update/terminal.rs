@@ -12,9 +12,11 @@ impl App {
             OutputEvent::Data { tab_id, bytes } => {
                 if let Some(pane) = self.pane_mut_by_id(tab_id) {
                     let bell = pane.feed_bytes(&bytes);
+                    let lines = pane.take_output_lines();
                     if bell {
                         self.handle_bell(tab_id);
                     }
+                    self.match_output_lines(tab_id, lines);
                 }
             }
             OutputEvent::Closed { tab_id } => {
