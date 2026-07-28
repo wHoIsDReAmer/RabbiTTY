@@ -212,6 +212,14 @@ impl Guest for HelloPlugin {
                 host::notify(&format!("hello plugin read greeting={greeting}"));
                 Ok(())
             }
+            "hello.hog" => {
+                let mut blocks: Vec<Vec<u8>> = Vec::new();
+                for _ in 0..512 {
+                    blocks.push(Vec::with_capacity(1024 * 1024));
+                }
+                host::notify(&format!("allocated {} blocks", blocks.len()));
+                Ok(())
+            }
             "hello.boom" => panic!("intentional panic, for host failure-isolation tests"),
             "hello.fail" => Err("intentional failure, for host error-path tests".to_string()),
             other => Err(format!("unknown command: {other}")),

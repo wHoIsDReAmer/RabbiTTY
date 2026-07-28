@@ -285,8 +285,13 @@ impl App {
             .plugins
             .as_ref()
             .is_some_and(|registry| registry.watches_output());
+        let listening = self
+            .plugins
+            .as_ref()
+            .is_some_and(|registry| registry.has_ready());
         for pane in self.panes_mut() {
             pane.capture_output = watching;
+            pane.track_cwd = listening;
         }
     }
 

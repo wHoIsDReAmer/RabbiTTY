@@ -20,6 +20,7 @@ pub struct Pane {
     pub selection: Option<Selection>,
     pub sftp: SftpDrawerState,
     pub capture_output: bool,
+    pub track_cwd: bool,
     engine: TerminalEngine,
     lines: crate::plugin::LineReader,
     captured: Vec<String>,
@@ -100,6 +101,7 @@ impl Pane {
             selection: None,
             sftp: SftpDrawerState::new(),
             capture_output: false,
+            track_cwd: false,
             lines: crate::plugin::LineReader::default(),
             captured: Vec::new(),
             pending_title: None,
@@ -116,11 +118,19 @@ impl Pane {
         self.pending_title.take()
     }
 
+    pub fn take_cwd_change(&mut self) -> Option<String> {
+        self.lines.take_cwd()
+    }
+
     pub fn feed_bytes(&mut self, bytes: &[u8]) -> bool {
-        if self.capture_output {
+        if self.capture_output || self.track_cwd {
+            let capture = self.capture_output;
             let captured = &mut self.captured;
-            self.lines
-                .feed(bytes, |line| captured.push(line.to_string()));
+            self.lines.feed(bytes, |line| {
+                if capture {
+                    captured.push(line.to_string());
+                }
+            });
         }
         self.engine.feed_bytes(bytes);
         if let Some(new_title) = self.engine.take_title()

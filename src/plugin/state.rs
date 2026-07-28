@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 
+use wasmtime::StoreLimits;
 use wasmtime::component::ResourceTable;
 use wasmtime_wasi::{WasiCtx, WasiCtxView, WasiView};
 
@@ -14,6 +15,7 @@ pub enum PluginRequest {
 }
 
 pub(super) struct PluginState {
+    pub(super) limits: StoreLimits,
     pub(super) wasi: WasiCtx,
     pub(super) table: ResourceTable,
     pub(super) granted: Vec<Capability>,

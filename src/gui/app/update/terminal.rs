@@ -14,6 +14,7 @@ impl App {
                     let bell = pane.feed_bytes(&bytes);
                     let lines = pane.take_output_lines();
                     let title = pane.take_title_change();
+                    let cwd = pane.take_cwd_change();
                     if bell {
                         self.handle_bell(tab_id);
                         self.dispatch_plugin_event(crate::plugin::Event::Bell(tab_id));
@@ -24,6 +25,11 @@ impl App {
                                 pane: tab_id,
                                 title,
                             },
+                        ));
+                    }
+                    if let Some(path) = cwd {
+                        self.dispatch_plugin_event(crate::plugin::Event::CwdChanged(
+                            crate::plugin::CwdEvent { pane: tab_id, path },
                         ));
                     }
                     self.match_output_lines(tab_id, lines);

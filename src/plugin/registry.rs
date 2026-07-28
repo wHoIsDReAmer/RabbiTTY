@@ -194,6 +194,12 @@ impl PluginRegistry {
         events
     }
 
+    pub fn has_ready(&self) -> bool {
+        self.entries.iter().any(
+            |entry| matches!(&entry.slot, Slot::Ready(plugin, _) if plugin.failure().is_none()),
+        )
+    }
+
     pub fn watches_output(&self) -> bool {
         self.entries.iter().any(|entry| {
             matches!(&entry.slot, Slot::Ready(plugin, matcher)

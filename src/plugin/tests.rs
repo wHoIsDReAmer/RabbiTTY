@@ -1415,3 +1415,25 @@ fn a_status_update_from_an_event_reaches_the_registry() {
         Some(update.1)
     );
 }
+
+#[test]
+fn a_memory_hungry_plugin_is_stopped_instead_of_growing_without_bound() {
+    let Some(mut plugin) = load(&auto) else {
+        return;
+    };
+
+    let outcome = plugin.run_command("hello.hog");
+
+    assert!(
+        matches!(outcome, Err(PluginError::Trapped(_))),
+        "the store limit must stop the allocation, got {outcome:?}"
+    );
+    assert!(
+        plugin.failure().is_some(),
+        "a plugin that hit the memory ceiling is retired like any other trap"
+    );
+    assert!(
+        plugin.drain_requests().is_empty(),
+        "it never reached its notify call"
+    );
+}

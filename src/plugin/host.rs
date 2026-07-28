@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
 use wasmtime::component::{Component, Linker, ResourceTable};
-use wasmtime::{Config, Engine, Store};
+use wasmtime::{Config, Engine, Store, StoreLimitsBuilder};
 use wasmtime_wasi::{DirPerms, FilePerms, WasiCtx, WasiCtxBuilder};
 
 use super::policy::CapabilityPolicy;
@@ -10,6 +10,9 @@ use super::state::{PluginRequest, PluginState};
 use super::{Capability, Contributions, Event, Plugin, PluginInfo, PluginProfile, SettingField};
 
 const CALL_FUEL: u64 = 10_000_000;
+const MAX_MEMORY: usize = 64 * 1024 * 1024;
+const MAX_TABLE_ELEMENTS: usize = 100_000;
+const MAX_INSTANCES: usize = 64;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum PluginError {
@@ -134,9 +137,15 @@ impl PluginHost {
         granted: Vec<Capability>,
         config: HashMap<String, String>,
     ) -> wasmtime::Result<Store<PluginState>> {
+        let limits = StoreLimitsBuilder::new()
+            .memory_size(MAX_MEMORY)
+            .table_elements(MAX_TABLE_ELEMENTS)
+            .instances(MAX_INSTANCES)
+            .build();
         let mut store = Store::new(
             &self.engine,
             PluginState {
+                limits,
                 wasi,
                 table: ResourceTable::new(),
                 granted,
@@ -144,6 +153,7 @@ impl PluginHost {
                 requests: Vec::new(),
             },
         );
+        store.limiter(|state| &mut state.limits);
         store.set_fuel(CALL_FUEL)?;
         Ok(store)
     }
