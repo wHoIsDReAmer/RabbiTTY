@@ -1,5 +1,5 @@
 // Rabbitty plugin ABI (Tier 2). Semver'd; see README.md.
-package rabbitty:plugin@0.2.0;
+package rabbitty:plugin@0.3.0;
 
 interface types {
     enum capability {
@@ -26,9 +26,31 @@ interface types {
         regex: string,
     }
 
+    record number-range {
+        min: f64,
+        max: f64,
+    }
+
+    variant setting-kind {
+        text,
+        toggle,
+        number(number-range),
+        select(list<string>),
+    }
+
+    // Rendered by the host; values are owned by the host config and read back
+    // through `read-config`.
+    record setting-field {
+        key: string,
+        label: string,
+        kind: setting-kind,
+        default-value: string,
+    }
+
     record contributions {
         commands: list<command>,
         output-patterns: list<output-pattern>,
+        settings: list<setting-field>,
     }
 
     record match-event {
@@ -45,11 +67,17 @@ interface types {
         path: string,
     }
 
+    record setting-event {
+        key: string,
+        value: string,
+    }
+
     variant event {
         session-start(u64),
         session-close(u64),
         output-matched(match-event),
         cwd-changed(cwd-event),
+        setting-changed(setting-event),
     }
 }
 

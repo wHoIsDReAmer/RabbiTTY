@@ -6,7 +6,7 @@ use crate::config::plugins::{PluginSettings, PluginsConfig};
 use super::host::{LoadedPlugin, PluginHost};
 use super::matcher::OutputMatcher;
 use super::policy::{capability_from_name, capability_name, grant_with_consent, requires_consent};
-use super::{Capability, MatchEvent, PluginInfo};
+use super::{Capability, MatchEvent, PluginInfo, SettingEvent, SettingField};
 
 pub const COMPONENT_FILE: &str = "plugin.wasm";
 
@@ -79,7 +79,12 @@ impl PluginRegistry {
     fn instantiate(host: &PluginHost, id: &str, path: &Path, settings: &PluginSettings) -> Slot {
         let consented = consented_capabilities(settings);
         let policy = |info: &PluginInfo| grant_with_consent(info, &consented);
-        match host.load(id, path, HashMap::new(), &policy) {
+        let values: HashMap<String, String> = settings
+            .settings
+            .iter()
+            .map(|(key, value)| (key.clone(), value.clone()))
+            .collect();
+        match host.load(id, path, values, &policy) {
             Ok(plugin) => Slot::ready(plugin),
             Err(err) => Slot::Retired(err.to_string()),
         }
@@ -141,6 +146,42 @@ impl PluginRegistry {
         self.entries.iter().any(|entry| {
             matches!(&entry.slot, Slot::Ready(plugin, matcher)
                 if plugin.failure().is_none() && !matcher.is_empty())
+        })
+    }
+
+    pub fn setting_fields(&self, id: &str) -> Vec<SettingField> {
+        match self.entry(id).map(|entry| &entry.slot) {
+            Some(Slot::Ready(plugin, _)) => plugin.contributions().settings.clone(),
+            _ => Vec::new(),
+        }
+    }
+
+    pub fn setting_value(&self, id: &str, key: &str) -> Option<String> {
+        let stored = self
+            .settings
+            .get(id)
+            .and_then(|settings| settings.settings.get(key))
+            .cloned();
+        stored.or_else(|| {
+            self.setting_fields(id)
+                .into_iter()
+                .find(|field| field.key == key)
+                .map(|field| field.default_value)
+        })
+    }
+
+    pub fn set_setting(&mut self, id: &str, key: &str, value: String) -> Option<SettingEvent> {
+        if self.setting_value(id, key).as_deref() == Some(value.as_str()) {
+            return None;
+        }
+        self.settings
+            .entry(id.to_string())
+            .or_default()
+            .settings
+            .insert(key.to_string(), value.clone());
+        Some(SettingEvent {
+            key: key.to_string(),
+            value,
         })
     }
 

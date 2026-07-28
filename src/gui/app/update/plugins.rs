@@ -1,4 +1,5 @@
 use super::super::App;
+use crate::gui::settings::SettingsCategory;
 use crate::plugin::{Event, PluginRequest};
 
 impl App {
@@ -92,6 +93,75 @@ impl App {
         for pane in self.panes_mut() {
             pane.capture_output = watching;
         }
+    }
+
+    pub(in crate::gui) fn settings_categories(&self) -> Vec<(SettingsCategory, String)> {
+        let mut out: Vec<(SettingsCategory, String)> = SettingsCategory::BUILTIN
+            .into_iter()
+            .map(|category| (category, category.label().to_string()))
+            .collect();
+        if let Some(registry) = self.plugins.as_ref() {
+            for (index, id) in registry.ids().enumerate() {
+                out.push((SettingsCategory::Plugin(index), id.to_string()));
+            }
+        }
+        out
+    }
+
+    pub(in crate::gui) fn plugin_id_at(&self, index: usize) -> Option<String> {
+        self.plugins
+            .as_ref()?
+            .ids()
+            .nth(index)
+            .map(|id| id.to_string())
+    }
+
+    pub(in crate::gui) fn refresh_plugin_settings(&mut self) {
+        let SettingsCategory::Plugin(index) = self.settings_category else {
+            return;
+        };
+        let Some(id) = self.plugin_id_at(index) else {
+            self.plugin_settings = Default::default();
+            return;
+        };
+        let Some(registry) = self.plugins.as_ref() else {
+            return;
+        };
+
+        let status = match registry.status(&id) {
+            Some(crate::plugin::Status::Ready) => crate::t!("settings.plugins.ready").to_string(),
+            Some(crate::plugin::Status::Disabled) => {
+                crate::t!("settings.plugins.disabled").to_string()
+            }
+            Some(crate::plugin::Status::Retired(reason)) => reason,
+            None => String::new(),
+        };
+        let fields = registry
+            .setting_fields(&id)
+            .into_iter()
+            .map(|field| {
+                let value = registry
+                    .setting_value(&id, &field.key)
+                    .unwrap_or_else(|| field.default_value.clone());
+                (field, value)
+            })
+            .collect();
+
+        self.plugin_settings =
+            crate::gui::settings::plugins::PluginSettingsState { id, status, fields };
+    }
+
+    pub(in crate::gui) fn change_plugin_setting(&mut self, plugin: &str, key: &str, value: String) {
+        let Some(registry) = self.plugins.as_mut() else {
+            return;
+        };
+        let Some(changed) = registry.set_setting(plugin, key, value) else {
+            return;
+        };
+        self.config.plugins = registry.settings().clone();
+        self.queue_config_save();
+        self.dispatch_to_plugin(plugin, Event::SettingChanged(changed));
+        self.refresh_plugin_settings();
     }
 
     pub(in crate::gui) fn shutdown_plugins(&mut self) {

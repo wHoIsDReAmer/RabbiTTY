@@ -14,10 +14,9 @@ impl App {
         let sidebar_alpha = 0.22;
         let mut category_items: Vec<Element<Message>> = Vec::new();
 
-        for category in SettingsCategory::ALL {
+        for (category, label) in self.settings_categories() {
             let is_active = category == self.settings_category;
             let icon = category.icon();
-            let label = category.label();
             // The background is painted by `hover_fade` behind the button so
             // it can cross-fade on hover; the button itself stays transparent.
             let button_style =
@@ -95,6 +94,7 @@ impl App {
 
         let body_content = container(settings::view_category(
             self.settings_category,
+            &self.plugin_settings,
             &self.config,
             &self.settings_draft,
             &self.font_combo_state,

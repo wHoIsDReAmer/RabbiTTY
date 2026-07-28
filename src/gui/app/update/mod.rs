@@ -377,6 +377,7 @@ impl App {
                 }
                 if let Some(cat) = self.settings_category_transition.tick(now) {
                     self.settings_category = cat;
+                    self.refresh_plugin_settings();
                 }
                 if let Some(start) = self.bell_flash_start
                     && start.elapsed() >= super::BELL_FLASH_DURATION

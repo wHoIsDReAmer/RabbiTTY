@@ -179,3 +179,10 @@ host_required_save = "SSH profile needs a Host before saving."
 profiles_saved = "SSH profiles saved."
 authentication_failed = "Authentication failed"
 testing_connection = "Testing connection..."
+
+[settings.plugins]
+status = "Status"
+settings = "Settings"
+no_settings = "This plugin declares no settings."
+ready = "Running"
+disabled = "Disabled"

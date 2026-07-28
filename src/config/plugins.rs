@@ -8,6 +8,7 @@ pub type PluginsConfig = BTreeMap<String, PluginSettings>;
 pub struct PluginSettings {
     pub enabled: bool,
     pub consented: Vec<String>,
+    pub settings: BTreeMap<String, String>,
 }
 
 impl Default for PluginSettings {
@@ -15,6 +16,7 @@ impl Default for PluginSettings {
         Self {
             enabled: true,
             consented: Vec::new(),
+            settings: BTreeMap::new(),
         }
     }
 }

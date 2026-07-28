@@ -69,8 +69,14 @@ fn manifest_and_contributions_round_trip() {
     };
 
     assert_eq!(plugin.info().name, "hello");
-    assert_eq!(plugin.info().capabilities, vec![Capability::Notify]);
-    assert_eq!(plugin.granted(), &[Capability::Notify]);
+    assert_eq!(
+        plugin.info().capabilities,
+        vec![Capability::Notify, Capability::ReadConfig]
+    );
+    assert_eq!(
+        plugin.granted(),
+        &[Capability::Notify, Capability::ReadConfig]
+    );
 
     let commands = &plugin.contributions().commands;
     assert_eq!(commands.len(), 1);
@@ -456,6 +462,7 @@ fn a_plugin_disabled_in_config_is_not_instantiated() {
         crate::config::plugins::PluginSettings {
             enabled: false,
             consented: Vec::new(),
+            settings: Default::default(),
         },
     );
 
@@ -502,6 +509,7 @@ fn consent_from_config_grants_the_capability() {
         crate::config::plugins::PluginSettings {
             enabled: true,
             consented: vec!["network".to_string()],
+            settings: Default::default(),
         },
     );
 
@@ -549,6 +557,7 @@ fn plugin_settings_round_trip_through_toml() {
         crate::config::plugins::PluginSettings {
             enabled: false,
             consented: vec!["network".to_string(), "write-pty".to_string()],
+            settings: Default::default(),
         },
     );
 
@@ -702,5 +711,159 @@ fn a_plugin_without_patterns_does_not_switch_capture_on() {
     assert!(
         !registry.watches_output(),
         "with no plugins there is nothing to match, so panes must not buffer output"
+    );
+}
+
+#[test]
+fn a_declared_setting_falls_back_to_its_default() {
+    let root = TempRoot::new("setting-default");
+    if !install(&root, "alpha") {
+        return;
+    }
+
+    let mut registry = registry_in(&root);
+    registry.load_all();
+
+    let fields = registry.setting_fields("alpha");
+    assert_eq!(fields.len(), 2);
+    assert_eq!(
+        registry.setting_value("alpha", "greeting").as_deref(),
+        Some("hello"),
+        "an unset field reads back as its declared default"
+    );
+}
+
+#[test]
+fn a_stored_setting_wins_over_the_default() {
+    let root = TempRoot::new("setting-stored");
+    if !install(&root, "alpha") {
+        return;
+    }
+    let mut settings = crate::config::plugins::PluginsConfig::new();
+    settings.insert(
+        "alpha".to_string(),
+        crate::config::plugins::PluginSettings {
+            enabled: true,
+            consented: Vec::new(),
+            settings: [("greeting".to_string(), "howdy".to_string())]
+                .into_iter()
+                .collect(),
+        },
+    );
+
+    let mut registry = registry_with(&root, settings);
+    registry.load_all();
+
+    assert_eq!(
+        registry.setting_value("alpha", "greeting").as_deref(),
+        Some("howdy")
+    );
+}
+
+#[test]
+fn changing_a_setting_is_recorded_and_announced() {
+    let root = TempRoot::new("setting-change");
+    if !install(&root, "alpha") {
+        return;
+    }
+
+    let mut registry = registry_in(&root);
+    registry.load_all();
+
+    let event = registry
+        .set_setting("alpha", "greeting", "howdy".to_string())
+        .expect("a real change produces an event");
+    assert_eq!(event.key, "greeting");
+    assert_eq!(event.value, "howdy");
+
+    assert_eq!(
+        registry
+            .settings()
+            .get("alpha")
+            .and_then(|s| s.settings.get("greeting"))
+            .map(String::as_str),
+        Some("howdy"),
+        "the value must be written back for persistence"
+    );
+}
+
+#[test]
+fn setting_a_value_to_what_it_already_is_announces_nothing() {
+    let root = TempRoot::new("setting-noop");
+    if !install(&root, "alpha") {
+        return;
+    }
+
+    let mut registry = registry_in(&root);
+    registry.load_all();
+
+    assert!(
+        registry
+            .set_setting("alpha", "greeting", "hello".to_string())
+            .is_none(),
+        "writing the current value must not wake the plugin"
+    );
+}
+
+#[test]
+fn a_setting_change_reaches_the_guest() {
+    let root = TempRoot::new("setting-event");
+    if !install(&root, "alpha") {
+        return;
+    }
+
+    let mut registry = registry_in(&root);
+    registry.load_all();
+    let changed = registry
+        .set_setting("alpha", "greeting", "howdy".to_string())
+        .expect("change");
+
+    let plugin = registry.get_mut("alpha").expect("ready");
+    plugin.drain_requests();
+    plugin
+        .on_event(Event::SettingChanged(changed))
+        .expect("delivered");
+
+    assert_eq!(
+        plugin.drain_requests(),
+        vec![PluginRequest::Notify {
+            message: "hello plugin saw greeting change to howdy".to_string(),
+        }]
+    );
+}
+
+#[test]
+fn a_stored_setting_is_visible_to_read_config() {
+    let root = TempRoot::new("setting-readconfig");
+    if !install(&root, "alpha") {
+        return;
+    }
+    let mut settings = crate::config::plugins::PluginsConfig::new();
+    settings.insert(
+        "alpha".to_string(),
+        crate::config::plugins::PluginSettings {
+            enabled: true,
+            consented: vec!["read-config".to_string()],
+            settings: [("greeting".to_string(), "howdy".to_string())]
+                .into_iter()
+                .collect(),
+        },
+    );
+
+    let mut registry = registry_with(&root, settings);
+    registry.load_all();
+
+    let plugin = registry.get_mut("alpha").expect("ready");
+    plugin.drain_requests();
+    plugin
+        .run_command("hello.readconfig")
+        .expect("command runs");
+
+    assert_eq!(
+        plugin.drain_requests(),
+        vec![PluginRequest::Notify {
+            message: "hello plugin read greeting=howdy".to_string(),
+        }],
+        "the guest must see the stored value through read-config"
     );
 }

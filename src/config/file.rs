@@ -342,6 +342,7 @@ mod plugin_tests {
             PluginSettings {
                 enabled: false,
                 consented: vec!["network".to_string()],
+                settings: Default::default(),
             },
         );
 

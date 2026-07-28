@@ -12,7 +12,9 @@ wasmtime::component::bindgen!({
     world: "plugin",
 });
 
-pub(crate) use self::rabbitty::plugin::types::{Capability, MatchEvent, OutputPattern};
+pub(crate) use self::rabbitty::plugin::types::{
+    Capability, MatchEvent, OutputPattern, SettingEvent, SettingField, SettingKind,
+};
 pub use host::{PluginError, PluginHost};
 pub use lines::LineReader;
 pub use policy::capability_name;

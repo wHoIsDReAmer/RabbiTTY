@@ -140,6 +140,11 @@ pub enum SettingsMessage {
     ProfileTemplateSelected(usize),
     ProfileModalFieldChanged(ProfileField, String),
     ProfileModalTabSelected(ProfileModalTab),
+    PluginSettingChanged {
+        plugin: String,
+        key: String,
+        value: String,
+    },
     TestSshConnection,
     SshConnectionTestFinished(Result<(), String>),
     CloseProfileModal,
@@ -282,6 +287,7 @@ pub struct App {
 
     // ── Plugins ─────────────────────────────────────────────────────────
     pub(super) plugins: Option<crate::plugin::PluginRegistry>,
+    pub(super) plugin_settings: crate::gui::settings::plugins::PluginSettingsState,
 }
 
 /// Duration of the visual bell flash overlay.
@@ -429,6 +435,7 @@ impl App {
             settings_debounce_spawned_seq: 0,
 
             plugins,
+            plugin_settings: Default::default(),
         }
     }
 

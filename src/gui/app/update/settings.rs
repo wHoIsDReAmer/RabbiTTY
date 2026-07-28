@@ -209,6 +209,9 @@ impl App {
             SettingsMessage::ProfileModalFieldChanged(field, value) => {
                 self.settings_draft.update_profile_modal(field, value);
             }
+            SettingsMessage::PluginSettingChanged { plugin, key, value } => {
+                self.change_plugin_setting(&plugin, &key, value);
+            }
             SettingsMessage::ProfileModalTabSelected(tab) => {
                 self.settings_draft.set_profile_modal_tab(tab);
             }
@@ -270,6 +273,7 @@ impl App {
                 ) {
                     self.settings_category = immediate;
                 }
+                self.refresh_plugin_settings();
             }
             SettingsMessage::InputChanged(field, value) => {
                 self.settings_draft.update(field, value);

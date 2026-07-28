@@ -179,3 +179,10 @@ host_required_save = "저장하려면 SSH 프로필에 호스트가 필요합니
 profiles_saved = "SSH 프로필을 저장했습니다."
 authentication_failed = "인증 실패"
 testing_connection = "연결 테스트 중..."
+
+[settings.plugins]
+status = "상태"
+settings = "설정"
+no_settings = "이 플러그인은 설정을 제공하지 않습니다."
+ready = "실행 중"
+disabled = "비활성"
