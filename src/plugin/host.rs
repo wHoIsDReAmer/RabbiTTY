@@ -7,7 +7,7 @@ use wasmtime_wasi::{DirPerms, FilePerms, WasiCtx, WasiCtxBuilder};
 
 use super::policy::CapabilityPolicy;
 use super::state::{PluginRequest, PluginState};
-use super::{Capability, Contributions, Event, Plugin, PluginInfo, SettingField};
+use super::{Capability, Contributions, Event, Plugin, PluginInfo, PluginProfile, SettingField};
 
 const CALL_FUEL: u64 = 10_000_000;
 
@@ -237,6 +237,13 @@ impl LoadedPlugin {
     where
         F: FnOnce(&Plugin, &mut Store<PluginState>) -> wasmtime::Result<Result<(), String>>,
     {
+        self.settle_with(call)
+    }
+
+    fn settle_with<T, F>(&mut self, call: F) -> Result<T, PluginError>
+    where
+        F: FnOnce(&Plugin, &mut Store<PluginState>) -> wasmtime::Result<Result<T, String>>,
+    {
         if let Err(err) = refuel(&mut self.store) {
             return Err(PluginError::Trapped(err.to_string()));
         }
@@ -247,8 +254,13 @@ impl LoadedPlugin {
                 Err(PluginError::Trapped(reason))
             }
             Ok(Err(reported)) => Err(PluginError::Reported(reported)),
-            Ok(Ok(())) => Ok(()),
+            Ok(Ok(value)) => Ok(value),
         }
+    }
+
+    pub fn list_profiles(&mut self) -> Result<Vec<PluginProfile>, PluginError> {
+        self.guard()?;
+        self.settle_with(move |bindings, store| bindings.call_list_profiles(store))
     }
 
     pub fn drain_requests(&mut self) -> Vec<PluginRequest> {

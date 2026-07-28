@@ -9,6 +9,8 @@ use super::Capability;
 pub enum PluginRequest {
     WritePty { pane: u64, data: Vec<u8> },
     Notify { message: String },
+    OpenUrl { url: String },
+    SetStatus { id: String, text: String },
 }
 
 pub(super) struct PluginState {
@@ -47,6 +49,16 @@ impl super::rabbitty::plugin::host::Host for PluginState {
         if self.allows(Capability::Notify) {
             self.requests.push(PluginRequest::Notify { message });
         }
+    }
+
+    fn open_url(&mut self, url: String) {
+        if self.allows(Capability::OpenUrl) {
+            self.requests.push(PluginRequest::OpenUrl { url });
+        }
+    }
+
+    fn set_status(&mut self, id: String, text: String) {
+        self.requests.push(PluginRequest::SetStatus { id, text });
     }
 
     fn read_config(&mut self, key: String) -> Option<String> {

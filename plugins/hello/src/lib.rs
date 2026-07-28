@@ -9,7 +9,8 @@ wit_bindgen::generate!({
 
 use crate::rabbitty::plugin::host;
 use crate::rabbitty::plugin::types::{
-    Capability, Command, OutputPattern, SettingField, SettingKind,
+    Capability, Command, LocalTarget, OutputPattern, ProfileTarget, SettingField, SettingKind,
+    SshTarget, StatusItem,
 };
 
 struct HelloPlugin;
@@ -23,6 +24,7 @@ impl Guest for HelloPlugin {
                 Capability::Notify,
                 Capability::ReadConfig,
                 Capability::Network,
+                Capability::OpenUrl,
             ],
         }
     }
@@ -42,20 +44,31 @@ impl Guest for HelloPlugin {
                 Command {
                     id: "hello.hi".to_string(),
                     title: "Say hi".to_string(),
+                    default_key: Some("Ctrl+Shift+H".to_string()),
                 },
                 Command {
                     id: "hello.fail".to_string(),
                     title: "Report a failure".to_string(),
+                    default_key: None,
                 },
                 Command {
                     id: "hello.boom".to_string(),
                     title: "Crash on purpose".to_string(),
+                    default_key: None,
                 },
             ],
-            output_patterns: vec![OutputPattern {
-                id: "hello.greeting".to_string(),
-                regex: "hello".to_string(),
-            }],
+            output_patterns: vec![
+                OutputPattern {
+                    id: "hello.greeting".to_string(),
+                    regex: "hello".to_string(),
+                    clickable: false,
+                },
+                OutputPattern {
+                    id: "hello.issue".to_string(),
+                    regex: r"#\d+".to_string(),
+                    clickable: true,
+                },
+            ],
             settings: vec![
                 SettingField {
                     key: "greeting".to_string(),
@@ -70,13 +83,47 @@ impl Guest for HelloPlugin {
                     default_value: "false".to_string(),
                 },
             ],
+            status_items: vec![StatusItem {
+                id: "hello.counter".to_string(),
+                text: "hello: 0".to_string(),
+                tooltip: Some("Panes opened since launch".to_string()),
+                command: Some("hello.hi".to_string()),
+            }],
         })
+    }
+
+    fn list_profiles() -> Result<Vec<PluginProfile>, String> {
+        Ok(vec![
+            PluginProfile {
+                id: "hello.local".to_string(),
+                name: "Hello echo".to_string(),
+                subtitle: Some("from the hello plugin".to_string()),
+                icon: None,
+                target: ProfileTarget::Local(LocalTarget {
+                    program: Some("echo".to_string()),
+                    args: vec!["hello from a plugin profile".to_string()],
+                }),
+            },
+            PluginProfile {
+                id: "hello.ssh".to_string(),
+                name: "Hello SSH".to_string(),
+                subtitle: Some("example.invalid".to_string()),
+                icon: None,
+                target: ProfileTarget::Ssh(SshTarget {
+                    host: "example.invalid".to_string(),
+                    port: 22,
+                    user: "demo".to_string(),
+                    identity_file: None,
+                }),
+            },
+        ])
     }
 
     fn on_event(ev: Event) -> Result<(), String> {
         match ev {
             Event::SessionStart(pane) => {
                 host::notify(&format!("hello plugin saw pane {pane} open"));
+                host::set_status("hello.counter", &format!("hello: pane {pane}"));
             }
             Event::SessionClose(pane) => {
                 host::notify(&format!("hello plugin saw pane {pane} close"));
@@ -87,7 +134,30 @@ impl Guest for HelloPlugin {
                     matched.pattern, matched.pane
                 ));
             }
-            Event::CwdChanged(_) => {}
+            Event::MatchActivated(matched) => {
+                let start = matched.start as usize;
+                let end = matched.end as usize;
+                let text = matched.line.get(start..end).unwrap_or_default();
+                host::open_url(&format!(
+                    "https://example.com/issues/{}",
+                    text.trim_matches('#')
+                ));
+            }
+            Event::CwdChanged(cwd) => {
+                host::set_status("hello.counter", &format!("cwd: {}", cwd.path));
+            }
+            Event::TitleChanged(title) => {
+                host::notify(&format!(
+                    "hello plugin saw pane {} retitled to {}",
+                    title.pane, title.title
+                ));
+            }
+            Event::PaneFocused(pane) => {
+                host::set_status("hello.counter", &format!("focus: {pane}"));
+            }
+            Event::Bell(pane) => {
+                host::notify(&format!("hello plugin heard a bell in pane {pane}"));
+            }
             Event::SettingChanged(setting) => {
                 host::notify(&format!(
                     "hello plugin saw {} change to {}",

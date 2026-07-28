@@ -74,13 +74,14 @@ fn manifest_and_contributions_round_trip() {
         vec![
             Capability::Notify,
             Capability::ReadConfig,
-            Capability::Network
+            Capability::Network,
+            Capability::OpenUrl
         ]
     );
     assert_eq!(
         plugin.granted(),
         &[Capability::Notify, Capability::ReadConfig],
-        "network is requested but not consented to, so it stays ungranted"
+        "network and open-url are requested but not consented to, so they stay ungranted"
     );
 
     let commands = &plugin.contributions().commands;
@@ -131,9 +132,16 @@ fn session_events_reach_the_guest() {
 
     assert_eq!(
         plugin.drain_requests(),
-        vec![PluginRequest::Notify {
-            message: "hello plugin saw pane 7 open".to_string(),
-        }]
+        vec![
+            PluginRequest::Notify {
+                message: "hello plugin saw pane 7 open".to_string(),
+            },
+            PluginRequest::SetStatus {
+                id: "hello.counter".to_string(),
+                text: "hello: pane 7".to_string(),
+            },
+        ],
+        "every host call the guest makes is queued, in order"
     );
 }
 
@@ -162,7 +170,7 @@ fn events_reach_the_guest() {
 }
 
 #[test]
-fn unmatched_events_produce_no_requests() {
+fn the_host_queues_only_what_the_guest_actually_asked_for() {
     let Some(mut plugin) = load(&auto) else {
         return;
     };
@@ -174,7 +182,63 @@ fn unmatched_events_produce_no_requests() {
         }))
         .expect("delivered");
 
-    assert!(plugin.drain_requests().is_empty());
+    assert_eq!(
+        plugin.drain_requests(),
+        vec![PluginRequest::SetStatus {
+            id: "hello.counter".to_string(),
+            text: "cwd: /tmp".to_string(),
+        }],
+        "this event only sets status, so no notification may appear"
+    );
+}
+
+#[test]
+fn an_ungranted_capability_drops_the_request_it_would_have_made() {
+    let Some(mut plugin) = load(&auto) else {
+        return;
+    };
+
+    plugin
+        .on_event(Event::MatchActivated(MatchEvent {
+            pane: 1,
+            pattern: "hello.issue".to_string(),
+            line: "see #42 for details".to_string(),
+            start: 4,
+            end: 7,
+        }))
+        .expect("delivered");
+
+    assert!(
+        plugin.drain_requests().is_empty(),
+        "open-url needs consent, so the guest's call must be dropped"
+    );
+}
+
+#[test]
+fn a_consented_capability_lets_the_request_through() {
+    let Some(mut plugin) =
+        load(&|info: &PluginInfo| grant_with_consent(info, &[Capability::OpenUrl]))
+    else {
+        return;
+    };
+
+    plugin
+        .on_event(Event::MatchActivated(MatchEvent {
+            pane: 1,
+            pattern: "hello.issue".to_string(),
+            line: "see #42 for details".to_string(),
+            start: 4,
+            end: 7,
+        }))
+        .expect("delivered");
+
+    assert_eq!(
+        plugin.drain_requests(),
+        vec![PluginRequest::OpenUrl {
+            url: "https://example.com/issues/42".to_string(),
+        }],
+        "the guest receives the clicked span, not just the pattern id"
+    );
 }
 
 fn greedy() -> PluginInfo {

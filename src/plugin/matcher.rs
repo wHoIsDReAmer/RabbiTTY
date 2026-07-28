@@ -116,6 +116,7 @@ mod tests {
         OutputPattern {
             id: id.to_string(),
             regex: regex.to_string(),
+            clickable: false,
         }
     }
 

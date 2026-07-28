@@ -6,7 +6,7 @@ use crate::config::plugins::{PluginSettings, PluginsConfig};
 use super::host::{LoadedPlugin, PluginHost};
 use super::matcher::OutputMatcher;
 use super::policy::{capability_from_name, capability_name, grant_with_consent, requires_consent};
-use super::{Capability, MatchEvent, PluginInfo, SettingEvent, SettingField};
+use super::{Capability, MatchEvent, PluginInfo, SettingEvent, SettingField, StatusItem};
 
 pub const COMPONENT_FILE: &str = "plugin.wasm";
 
@@ -37,6 +37,7 @@ struct Entry {
     slot: Slot,
     info: Option<PluginInfo>,
     fields: Vec<SettingField>,
+    status: Vec<StatusItem>,
 }
 
 impl Entry {
@@ -44,6 +45,7 @@ impl Entry {
         if let Slot::Ready(plugin, _) = &self.slot {
             self.info = Some(plugin.info().clone());
             self.fields = plugin.contributions().settings.clone();
+            self.status = plugin.contributions().status_items.clone();
         } else if self.info.is_none()
             && let Ok((info, fields)) = host.inspect(&self.path)
         {
@@ -102,6 +104,7 @@ impl PluginRegistry {
                 slot,
                 info: None,
                 fields: Vec::new(),
+                status: Vec::new(),
             };
             entry.remember(&self.host);
             self.entries.push(entry);
@@ -185,6 +188,34 @@ impl PluginRegistry {
         self.entry(id)
             .map(|entry| entry.fields.clone())
             .unwrap_or_default()
+    }
+
+    pub fn status_items(&self) -> Vec<(String, StatusItem)> {
+        self.entries
+            .iter()
+            .filter(
+                |entry| matches!(&entry.slot, Slot::Ready(plugin, _) if plugin.failure().is_none()),
+            )
+            .flat_map(|entry| {
+                entry
+                    .status
+                    .iter()
+                    .map(move |item| (entry.id.clone(), item.clone()))
+            })
+            .collect()
+    }
+
+    pub fn set_status(&mut self, id: &str, item: &str, text: String) -> bool {
+        let Some(entry) = self.entry_mut(id) else {
+            return false;
+        };
+        match entry.status.iter_mut().find(|slot| slot.id == item) {
+            Some(slot) => {
+                slot.text = text;
+                true
+            }
+            None => false,
+        }
     }
 
     pub fn info(&self, id: &str) -> Option<&PluginInfo> {

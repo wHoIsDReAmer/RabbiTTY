@@ -105,6 +105,14 @@ impl App {
             PluginRequest::Notify { message } => {
                 self.notify_from(source, &message);
             }
+            PluginRequest::OpenUrl { url } => crate::platform::open_url(&url),
+            PluginRequest::SetStatus { id, text } => {
+                if let Some(registry) = self.plugins.as_mut()
+                    && !registry.set_status(source, &id, text)
+                {
+                    eprintln!("plugin {source} set an undeclared status item: {id}");
+                }
+            }
         }
     }
 

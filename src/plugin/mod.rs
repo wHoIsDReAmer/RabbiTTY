@@ -13,7 +13,7 @@ wasmtime::component::bindgen!({
 });
 
 pub(crate) use self::rabbitty::plugin::types::{
-    Capability, MatchEvent, OutputPattern, SettingEvent, SettingField, SettingKind,
+    Capability, MatchEvent, OutputPattern, SettingEvent, SettingField, SettingKind, StatusItem,
 };
 pub use host::{PluginError, PluginHost};
 pub use lines::LineReader;
