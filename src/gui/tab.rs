@@ -23,6 +23,7 @@ pub struct Pane {
     engine: TerminalEngine,
     lines: crate::plugin::LineReader,
     captured: Vec<String>,
+    pending_title: Option<String>,
 }
 
 pub struct TerminalTab {
@@ -101,6 +102,7 @@ impl Pane {
             capture_output: false,
             lines: crate::plugin::LineReader::default(),
             captured: Vec::new(),
+            pending_title: None,
             engine,
         }
     }
@@ -110,6 +112,10 @@ impl Pane {
         std::mem::take(&mut self.captured)
     }
 
+    pub fn take_title_change(&mut self) -> Option<String> {
+        self.pending_title.take()
+    }
+
     pub fn feed_bytes(&mut self, bytes: &[u8]) -> bool {
         if self.capture_output {
             let captured = &mut self.captured;
@@ -117,8 +123,11 @@ impl Pane {
                 .feed(bytes, |line| captured.push(line.to_string()));
         }
         self.engine.feed_bytes(bytes);
-        if let Some(new_title) = self.engine.take_title() {
-            self.title = new_title;
+        if let Some(new_title) = self.engine.take_title()
+            && new_title != self.title
+        {
+            self.title = new_title.clone();
+            self.pending_title = Some(new_title);
         }
         self.engine.take_bell()
     }

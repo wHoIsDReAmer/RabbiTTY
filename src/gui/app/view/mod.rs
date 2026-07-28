@@ -460,18 +460,21 @@ impl App {
         base_layout: impl Into<Element<'a, Message>>,
         tab_index: usize,
     ) -> Element<'a, Message> {
+        let mut items = vec![
+            ContextMenuItem {
+                label: t!("context_menu.duplicate").to_string(),
+                message: Message::DuplicateTab,
+            },
+            ContextMenuItem {
+                label: t!("context_menu.close").to_string(),
+                message: Message::CloseTab(tab_index),
+            },
+        ];
+        items.extend(self.plugin_menu_items(crate::plugin::MenuContext::Tab));
+
         context_menu(
             base_layout,
-            vec![
-                ContextMenuItem {
-                    label: t!("context_menu.duplicate"),
-                    message: Message::DuplicateTab,
-                },
-                ContextMenuItem {
-                    label: t!("context_menu.close"),
-                    message: Message::CloseTab(tab_index),
-                },
-            ],
+            items,
             self.cursor_position,
             Message::CloseTabContextMenu,
             self.palette,
@@ -491,14 +494,15 @@ impl App {
         let mut items = Vec::new();
         if has_selection {
             items.push(ContextMenuItem {
-                label: t!("context_menu.copy"),
+                label: t!("context_menu.copy").to_string(),
                 message: Message::TerminalContextCopy,
             });
         }
         items.push(ContextMenuItem {
-            label: t!("context_menu.paste"),
+            label: t!("context_menu.paste").to_string(),
             message: Message::TerminalContextPaste,
         });
+        items.extend(self.plugin_menu_items(crate::plugin::MenuContext::Terminal));
 
         context_menu(
             base_layout,

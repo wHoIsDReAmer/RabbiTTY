@@ -9,8 +9,8 @@ wit_bindgen::generate!({
 
 use crate::rabbitty::plugin::host;
 use crate::rabbitty::plugin::types::{
-    Capability, Command, LocalTarget, OutputPattern, ProfileTarget, SettingField, SettingKind,
-    SshTarget, StatusItem,
+    Capability, Command, LocalTarget, MenuContext, MenuItem, OutputPattern, ProfileTarget,
+    SettingField, SettingKind, SshTarget, StatusItem,
 };
 
 struct HelloPlugin;
@@ -81,6 +81,18 @@ impl Guest for HelloPlugin {
                     label: "Shout it".to_string(),
                     kind: SettingKind::Toggle,
                     default_value: "false".to_string(),
+                },
+            ],
+            menu_items: vec![
+                MenuItem {
+                    id: "hello.hi".to_string(),
+                    title: "Say hi".to_string(),
+                    context: MenuContext::Terminal,
+                },
+                MenuItem {
+                    id: "hello.readconfig".to_string(),
+                    title: "Read my greeting".to_string(),
+                    context: MenuContext::Tab,
                 },
             ],
             status_items: vec![StatusItem {
@@ -154,6 +166,23 @@ impl Guest for HelloPlugin {
             }
             Event::PaneFocused(pane) => {
                 host::set_status("hello.counter", &format!("focus: {pane}"));
+            }
+            Event::ActiveTabChanged(tab) => {
+                host::set_status("hello.counter", &format!("tab: {tab}"));
+            }
+            Event::SelectionChanged(selection) => {
+                host::notify(&format!(
+                    "hello plugin saw {} chars selected in pane {}",
+                    selection.text.chars().count(),
+                    selection.pane
+                ));
+            }
+            Event::MenuActivated(menu) => {
+                let picked = menu.selection.unwrap_or_else(|| "<nothing>".to_string());
+                host::notify(&format!(
+                    "hello plugin menu {} in pane {} over {picked}",
+                    menu.item, menu.pane
+                ));
             }
             Event::Bell(pane) => {
                 host::notify(&format!("hello plugin heard a bell in pane {pane}"));

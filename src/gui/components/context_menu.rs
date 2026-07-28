@@ -5,7 +5,7 @@ use iced::widget::{column, container, mouse_area, stack, text};
 use iced::{Background, Border, Color, Element, Length, Padding};
 
 pub struct ContextMenuItem {
-    pub label: &'static str,
+    pub label: String,
     pub message: Message,
 }
 

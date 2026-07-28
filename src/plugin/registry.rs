@@ -6,7 +6,10 @@ use crate::config::plugins::{PluginSettings, PluginsConfig};
 use super::host::{LoadedPlugin, PluginHost};
 use super::matcher::OutputMatcher;
 use super::policy::{capability_from_name, capability_name, grant_with_consent, requires_consent};
-use super::{Capability, MatchEvent, PluginInfo, SettingEvent, SettingField, StatusItem};
+use super::{
+    Capability, MatchEvent, MenuContext, MenuItem, PluginInfo, SettingEvent, SettingField,
+    StatusItem,
+};
 
 pub const COMPONENT_FILE: &str = "plugin.wasm";
 
@@ -16,6 +19,7 @@ pub struct ContributedCommand {
     pub source: String,
     pub id: String,
     pub title: String,
+    pub default_key: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -38,6 +42,7 @@ struct Entry {
     info: Option<PluginInfo>,
     fields: Vec<SettingField>,
     status: Vec<StatusItem>,
+    menu: Vec<MenuItem>,
 }
 
 impl Entry {
@@ -46,6 +51,7 @@ impl Entry {
             self.info = Some(plugin.info().clone());
             self.fields = plugin.contributions().settings.clone();
             self.status = plugin.contributions().status_items.clone();
+            self.menu = plugin.contributions().menu_items.clone();
         } else if self.info.is_none()
             && let Ok((info, fields)) = host.inspect(&self.path)
         {
@@ -105,6 +111,7 @@ impl PluginRegistry {
                 info: None,
                 fields: Vec::new(),
                 status: Vec::new(),
+                menu: Vec::new(),
             };
             entry.remember(&self.host);
             self.entries.push(entry);
@@ -205,6 +212,22 @@ impl PluginRegistry {
             .collect()
     }
 
+    pub fn menu_items(&self, context: MenuContext) -> Vec<(String, MenuItem)> {
+        self.entries
+            .iter()
+            .filter(
+                |entry| matches!(&entry.slot, Slot::Ready(plugin, _) if plugin.failure().is_none()),
+            )
+            .flat_map(|entry| {
+                entry
+                    .menu
+                    .iter()
+                    .filter(move |item| item.context == context)
+                    .map(move |item| (entry.id.clone(), item.clone()))
+            })
+            .collect()
+    }
+
     pub fn set_status(&mut self, id: &str, item: &str, text: String) -> bool {
         let Some(entry) = self.entry_mut(id) else {
             return false;
@@ -287,6 +310,7 @@ impl PluginRegistry {
                         source: source.clone(),
                         id: command.id.clone(),
                         title: command.title.clone(),
+                        default_key: command.default_key.clone(),
                     })
             })
             .collect()

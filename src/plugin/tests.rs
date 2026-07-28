@@ -13,7 +13,7 @@ fn auto(info: &PluginInfo) -> Vec<Capability> {
 fn nothing(_info: &PluginInfo) -> Vec<Capability> {
     Vec::new()
 }
-use super::rabbitty::plugin::types::{CwdEvent, MatchEvent};
+use super::rabbitty::plugin::types::{CwdEvent, MatchEvent, MenuEvent, ProfileTarget};
 use super::registry;
 use super::*;
 
@@ -1121,4 +1121,140 @@ fn a_retired_plugin_contributes_no_commands() {
         registry.contributed_commands().is_empty(),
         "a trapped plugin must drop out of the palette"
     );
+}
+
+#[test]
+fn contributed_menu_items_are_split_by_context() {
+    let root = TempRoot::new("menu-context");
+    if !install(&root, "alpha") {
+        return;
+    }
+
+    let mut registry = registry_in(&root);
+    registry.load_all();
+
+    let terminal = registry.menu_items(MenuContext::Terminal);
+    let tab = registry.menu_items(MenuContext::Tab);
+
+    assert_eq!(terminal.len(), 1);
+    assert_eq!(terminal[0].1.id, "hello.hi");
+    assert_eq!(tab.len(), 1);
+    assert_eq!(tab[0].1.id, "hello.readconfig");
+}
+
+#[test]
+fn a_disabled_plugin_contributes_no_menu_items() {
+    let root = TempRoot::new("menu-disabled");
+    if !install(&root, "alpha") {
+        return;
+    }
+
+    let mut registry = registry_in(&root);
+    registry.load_all();
+    registry.disable("alpha");
+
+    assert!(registry.menu_items(MenuContext::Terminal).is_empty());
+}
+
+#[test]
+fn an_activated_menu_item_carries_the_selection() {
+    let Some(mut plugin) = load(&auto) else {
+        return;
+    };
+
+    plugin
+        .on_event(Event::MenuActivated(MenuEvent {
+            item: "hello.hi".to_string(),
+            pane: 3,
+            selection: Some("selected text".to_string()),
+        }))
+        .expect("delivered");
+
+    assert_eq!(
+        plugin.drain_requests(),
+        vec![PluginRequest::Notify {
+            message: "hello plugin menu hello.hi in pane 3 over selected text".to_string(),
+        }]
+    );
+}
+
+#[test]
+fn a_declared_status_slot_can_be_updated_but_an_undeclared_one_cannot() {
+    let root = TempRoot::new("status-slot");
+    if !install(&root, "alpha") {
+        return;
+    }
+
+    let mut registry = registry_in(&root);
+    registry.load_all();
+
+    assert!(
+        registry.set_status("alpha", "hello.counter", "changed".to_string()),
+        "a declared slot accepts updates"
+    );
+    assert!(
+        !registry.set_status("alpha", "hello.nope", "changed".to_string()),
+        "an undeclared slot must be refused, not silently created"
+    );
+    assert_eq!(
+        registry
+            .status_items()
+            .iter()
+            .find(|(_, item)| item.id == "hello.counter")
+            .map(|(_, item)| item.text.as_str()),
+        Some("changed")
+    );
+}
+
+#[test]
+fn a_command_can_declare_a_default_key() {
+    let root = TempRoot::new("default-key");
+    if !install(&root, "alpha") {
+        return;
+    }
+
+    let mut registry = registry_in(&root);
+    registry.load_all();
+
+    let commands = registry.contributed_commands();
+    let hi = commands
+        .iter()
+        .find(|command| command.id == "hello.hi")
+        .expect("hello.hi");
+
+    assert_eq!(hi.default_key.as_deref(), Some("Ctrl+Shift+H"));
+    assert!(
+        commands
+            .iter()
+            .find(|command| command.id == "hello.fail")
+            .is_some_and(|command| command.default_key.is_none()),
+        "a command without a key must stay unbound"
+    );
+}
+
+#[test]
+fn a_plugin_can_supply_profiles() {
+    let root = TempRoot::new("profiles");
+    if !install(&root, "alpha") {
+        return;
+    }
+
+    let mut registry = registry_in(&root);
+    registry.load_all();
+
+    let profiles = registry
+        .get_mut("alpha")
+        .expect("ready")
+        .list_profiles()
+        .expect("listed");
+
+    assert_eq!(profiles.len(), 2);
+    assert!(matches!(profiles[0].target, ProfileTarget::Local(_)));
+    match &profiles[1].target {
+        ProfileTarget::Ssh(target) => {
+            assert_eq!(target.host, "example.invalid");
+            assert_eq!(target.port, 22);
+        }
+        other => panic!("expected an ssh target, got {other:?}"),
+    }
 }

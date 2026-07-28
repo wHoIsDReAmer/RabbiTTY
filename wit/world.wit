@@ -28,6 +28,17 @@ interface types {
         clickable: bool,
     }
 
+    enum menu-context {
+        terminal,
+        tab,
+    }
+
+    record menu-item {
+        id: string,
+        title: string,
+        context: menu-context,
+    }
+
     record status-item {
         id: string,
         text: string,
@@ -84,6 +95,7 @@ interface types {
         output-patterns: list<output-pattern>,
         settings: list<setting-field>,
         status-items: list<status-item>,
+        menu-items: list<menu-item>,
     }
 
     record match-event {
@@ -104,6 +116,17 @@ interface types {
         title: string,
     }
 
+    record selection-event {
+        pane: u64,
+        text: string,
+    }
+
+    record menu-event {
+        item: string,
+        pane: u64,
+        selection: option<string>,
+    }
+
     record setting-event {
         key: string,
         value: string,
@@ -117,6 +140,9 @@ interface types {
         cwd-changed(cwd-event),
         title-changed(title-event),
         pane-focused(u64),
+        active-tab-changed(u64),
+        selection-changed(selection-event),
+        menu-activated(menu-event),
         bell(u64),
         setting-changed(setting-event),
     }

@@ -51,6 +51,46 @@ impl App {
     }
 
     pub fn update(&mut self, message: Message) -> Task<Message> {
+        let task = self.update_inner(message);
+        self.sync_focus_event();
+        task
+    }
+
+    fn sync_focus_event(&mut self) {
+        let pane = self.focused_pane().map(|pane| pane.id);
+        if pane != self.last_focus_dispatched {
+            self.last_focus_dispatched = pane;
+            if let Some(pane) = pane {
+                self.dispatch_plugin_event(crate::plugin::Event::PaneFocused(pane));
+            }
+        }
+
+        let tab = self
+            .tabs
+            .get(self.active_tab)
+            .map(|tab| tab.id)
+            .filter(|_| self.active_tab != SETTINGS_TAB_INDEX);
+        if tab != self.last_tab_dispatched {
+            self.last_tab_dispatched = tab;
+            if let Some(tab) = tab {
+                self.dispatch_plugin_event(crate::plugin::Event::ActiveTabChanged(tab));
+            }
+        }
+
+        let selection = self
+            .focused_pane()
+            .and_then(|pane| pane.selected_text().map(|text| (pane.id, text)));
+        if selection != self.last_selection_dispatched {
+            self.last_selection_dispatched = selection.clone();
+            if let Some((pane, text)) = selection {
+                self.dispatch_plugin_event(crate::plugin::Event::SelectionChanged(
+                    crate::plugin::SelectionEvent { pane, text },
+                ));
+            }
+        }
+    }
+
+    fn update_inner(&mut self, message: Message) -> Task<Message> {
         match message {
             Message::Noop => {}
 
@@ -99,6 +139,11 @@ impl App {
             }
             Message::CloseShellPicker => {
                 self.modal_anim.go_mut(false, Instant::now());
+            }
+            Message::RunPluginMenuItem { plugin, item } => {
+                self.terminal_context_menu = false;
+                self.tab_context_menu = None;
+                self.activate_plugin_menu_item(&plugin, &item);
             }
             Message::OpenCommandPalette => return self.open_command_palette(),
             Message::CloseCommandPalette => self.close_command_palette(),

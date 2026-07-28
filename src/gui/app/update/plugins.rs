@@ -1,4 +1,4 @@
-use super::super::App;
+use super::super::{App, Message};
 use crate::gui::settings::SettingsCategory;
 use crate::gui::settings::plugins::{PluginPermission, PluginState};
 use crate::plugin::{Event, PluginRequest};
@@ -58,6 +58,41 @@ impl App {
         for request in requests {
             self.apply_plugin_request(id, request);
         }
+    }
+
+    pub(in crate::gui) fn plugin_menu_items(
+        &self,
+        context: crate::plugin::MenuContext,
+    ) -> Vec<crate::gui::components::context_menu::ContextMenuItem> {
+        let Some(registry) = self.plugins.as_ref() else {
+            return Vec::new();
+        };
+        registry
+            .menu_items(context)
+            .into_iter()
+            .map(
+                |(plugin, item)| crate::gui::components::context_menu::ContextMenuItem {
+                    label: item.title,
+                    message: Message::RunPluginMenuItem {
+                        plugin,
+                        item: item.id,
+                    },
+                },
+            )
+            .collect()
+    }
+
+    pub(in crate::gui) fn activate_plugin_menu_item(&mut self, plugin: &str, item: &str) {
+        let pane = self.focused_pane().map(|pane| pane.id).unwrap_or_default();
+        let selection = self.focused_pane().and_then(|pane| pane.selected_text());
+        self.dispatch_to_plugin(
+            plugin,
+            Event::MenuActivated(crate::plugin::MenuEvent {
+                item: item.to_string(),
+                pane,
+                selection,
+            }),
+        );
     }
 
     pub(in crate::gui) fn run_plugin_command(&mut self, plugin: &str, command: &str) {

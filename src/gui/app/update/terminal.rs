@@ -13,8 +13,18 @@ impl App {
                 if let Some(pane) = self.pane_mut_by_id(tab_id) {
                     let bell = pane.feed_bytes(&bytes);
                     let lines = pane.take_output_lines();
+                    let title = pane.take_title_change();
                     if bell {
                         self.handle_bell(tab_id);
+                        self.dispatch_plugin_event(crate::plugin::Event::Bell(tab_id));
+                    }
+                    if let Some(title) = title {
+                        self.dispatch_plugin_event(crate::plugin::Event::TitleChanged(
+                            crate::plugin::TitleEvent {
+                                pane: tab_id,
+                                title,
+                            },
+                        ));
                     }
                     self.match_output_lines(tab_id, lines);
                 }

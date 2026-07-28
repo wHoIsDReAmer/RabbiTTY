@@ -31,6 +31,10 @@ pub enum Message {
     CloseTab(usize),
     OpenShellPicker,
     CloseShellPicker,
+    RunPluginMenuItem {
+        plugin: String,
+        item: String,
+    },
     OpenCommandPalette,
     CloseCommandPalette,
     CommandQueryChanged(String),
@@ -282,6 +286,9 @@ pub struct App {
     pub(super) pending_save_on_restart: bool,
 
     // ── Command palette ─────────────────────────────────────────────────
+    pub(super) last_focus_dispatched: Option<u64>,
+    pub(super) last_tab_dispatched: Option<u64>,
+    pub(super) last_selection_dispatched: Option<(u64, String)>,
     pub(super) show_command_palette: bool,
     pub(super) command_query: String,
     pub(super) command_selected: usize,
@@ -436,6 +443,9 @@ impl App {
             #[cfg(target_os = "macos")]
             pending_save_on_restart: false,
 
+            last_focus_dispatched: None,
+            last_tab_dispatched: None,
+            last_selection_dispatched: None,
             show_command_palette: false,
             command_query: String::new(),
             command_selected: 0,
