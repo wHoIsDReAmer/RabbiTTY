@@ -37,6 +37,12 @@ impl App {
             Subscription::none()
         };
 
+        let toast_expiry = if self.toasts.is_empty() {
+            Subscription::none()
+        } else {
+            time::every(std::time::Duration::from_millis(500)).map(|_| Message::ToastTick)
+        };
+
         let selection_autoscroll = if self.selection_autoscroll.is_some() {
             time::every(std::time::Duration::from_millis(30))
                 .map(|_| Message::SelectionAutoscrollTick)
@@ -46,6 +52,7 @@ impl App {
 
         Subscription::batch([
             animation_tick,
+            toast_expiry,
             cursor_blink,
             selection_autoscroll,
             Subscription::run(|| {

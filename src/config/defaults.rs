@@ -24,6 +24,11 @@ pub const DEFAULT_SHORTCUT_OPEN_SETTINGS: &str = "Command+Comma";
 pub const DEFAULT_SHORTCUT_OPEN_SETTINGS: &str = "Ctrl+Comma";
 
 #[cfg(target_os = "macos")]
+pub const DEFAULT_SHORTCUT_COMMAND_PALETTE: &str = "Command+Shift+P";
+#[cfg(not(target_os = "macos"))]
+pub const DEFAULT_SHORTCUT_COMMAND_PALETTE: &str = "Ctrl+Shift+P";
+
+#[cfg(target_os = "macos")]
 pub const DEFAULT_SHORTCUT_NEXT_TAB: &str = "Command+PageDown";
 #[cfg(not(target_os = "macos"))]
 pub const DEFAULT_SHORTCUT_NEXT_TAB: &str = "Ctrl+PageDown";

@@ -38,10 +38,20 @@ impl Guest for HelloPlugin {
 
     fn contributions() -> Result<Contributions, String> {
         Ok(Contributions {
-            commands: vec![Command {
-                id: "hello.hi".to_string(),
-                title: "Say hi".to_string(),
-            }],
+            commands: vec![
+                Command {
+                    id: "hello.hi".to_string(),
+                    title: "Say hi".to_string(),
+                },
+                Command {
+                    id: "hello.fail".to_string(),
+                    title: "Report a failure".to_string(),
+                },
+                Command {
+                    id: "hello.boom".to_string(),
+                    title: "Crash on purpose".to_string(),
+                },
+            ],
             output_patterns: vec![OutputPattern {
                 id: "hello.greeting".to_string(),
                 regex: "hello".to_string(),

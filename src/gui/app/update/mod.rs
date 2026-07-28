@@ -1,3 +1,4 @@
+pub(in crate::gui) mod palette;
 mod plugins;
 mod settings;
 mod sftp;
@@ -98,6 +99,19 @@ impl App {
             }
             Message::CloseShellPicker => {
                 self.modal_anim.go_mut(false, Instant::now());
+            }
+            Message::OpenCommandPalette => return self.open_command_palette(),
+            Message::CloseCommandPalette => self.close_command_palette(),
+            Message::CommandQueryChanged(query) => {
+                self.command_query = query;
+                self.command_selected = 0;
+            }
+            Message::RunCommandEntry(index) => return self.run_command_entry(index),
+            Message::ToastTick => self.expire_toasts(),
+            Message::DismissToast(index) => {
+                if index < self.toasts.len() {
+                    self.toasts.remove(index);
+                }
             }
             Message::CreateTab(profile) => return self.launch_profile(profile),
             Message::LaunchFromHistory(index) => {
@@ -453,6 +467,20 @@ impl App {
                 Key::Named(Named::Enter) => return self.update(Message::ConfirmMultilinePaste),
                 Key::Named(Named::Escape) => return self.update(Message::CancelMultilinePaste),
                 _ => {}
+            }
+            return Task::none();
+        }
+
+        if self.show_command_palette {
+            match key {
+                Key::Named(Named::Escape) => self.close_command_palette(),
+                Key::Named(Named::ArrowUp) => self.shift_command_selection(-1),
+                Key::Named(Named::ArrowDown) => self.shift_command_selection(1),
+                Key::Named(Named::Enter) => {
+                    let selected = self.command_selected;
+                    return self.run_command_entry(selected);
+                }
+                _ => return Task::none(),
             }
             return Task::none();
         }

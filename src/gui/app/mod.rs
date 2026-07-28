@@ -14,12 +14,21 @@ use iced::keyboard::{Key, Modifiers};
 use iced::widget::combo_box;
 use std::sync::mpsc as std_mpsc;
 
+mod command_palette;
 mod shortcuts;
 mod subscription;
 pub(crate) mod update;
 mod view;
 
 pub(super) const SETTINGS_TAB_INDEX: usize = usize::MAX;
+
+pub(super) const TOAST_LIFETIME: std::time::Duration = std::time::Duration::from_secs(4);
+pub(super) const MAX_TOASTS: usize = 3;
+
+pub(super) struct Toast {
+    pub message: String,
+    pub born: std::time::Instant,
+}
 
 #[derive(Clone)]
 pub enum Message {
@@ -30,6 +39,12 @@ pub enum Message {
     CloseTab(usize),
     OpenShellPicker,
     CloseShellPicker,
+    OpenCommandPalette,
+    CloseCommandPalette,
+    CommandQueryChanged(String),
+    RunCommandEntry(usize),
+    DismissToast(usize),
+    ToastTick,
     CreateTab(Profile),
     Settings(SettingsMessage),
     LaunchFromHistory(usize),
@@ -276,6 +291,12 @@ pub struct App {
     #[cfg(target_os = "macos")]
     pub(super) pending_save_on_restart: bool,
 
+    // ── Command palette ─────────────────────────────────────────────────
+    pub(super) show_command_palette: bool,
+    pub(super) command_query: String,
+    pub(super) command_selected: usize,
+    pub(super) toasts: Vec<Toast>,
+
     // ── Overlays ────────────────────────────────────────────────────────
     pub(super) modal_anim: Animation<bool>,
     /// Whether the terminal right-click context menu is currently shown.
@@ -331,9 +352,6 @@ fn load_plugins(config: &AppConfig) -> Option<crate::plugin::PluginRegistry> {
         .collect();
     for failure in failures {
         eprintln!("plugin failed to load: {failure}");
-    }
-    for (id, commands) in registry.contributed_commands() {
-        eprintln!("plugin {id} contributes commands: {}", commands.join(", "));
     }
     for (id, missing) in registry.pending_consent() {
         let names: Vec<&str> = missing
@@ -429,6 +447,10 @@ impl App {
             #[cfg(target_os = "macos")]
             pending_save_on_restart: false,
 
+            show_command_palette: false,
+            command_query: String::new(),
+            command_selected: 0,
+            toasts: Vec::new(),
             modal_anim: Animation::new(false)
                 .duration(std::time::Duration::from_millis(250))
                 .easing(iced::animation::Easing::EaseOutQuint),
@@ -984,4 +1006,127 @@ mod plugin_wiring_tests {
         app.dispatch_plugin_event(crate::plugin::Event::SessionStart(1));
         app.shutdown_plugins();
     }
+}
+
+#[cfg(test)]
+mod command_palette_tests {
+    use super::*;
+    use crate::config::ShortcutId;
+    use crate::gui::app::command_palette::CommandTarget;
+
+    #[test]
+    fn every_bindable_action_is_reachable_from_the_palette() {
+        let app = App::new(AppConfig::default());
+        let entries = app.command_entries();
+
+        for id in ShortcutId::ALL {
+            if id == ShortcutId::CommandPalette {
+                continue;
+            }
+            assert!(
+                entries
+                    .iter()
+                    .any(|entry| entry.target == CommandTarget::Builtin(id)),
+                "{:?} has a keybinding but cannot be found by name",
+                id
+            );
+        }
+    }
+
+    #[test]
+    fn the_palette_does_not_offer_to_open_itself() {
+        let app = App::new(AppConfig::default());
+
+        assert!(
+            !app.command_entries()
+                .iter()
+                .any(|entry| entry.target == CommandTarget::Builtin(ShortcutId::CommandPalette)),
+        );
+    }
+
+    #[test]
+    fn an_entry_carries_its_binding_so_users_can_learn_it() {
+        let app = App::new(AppConfig::default());
+        let entry = app
+            .command_entries()
+            .into_iter()
+            .find(|entry| entry.target == CommandTarget::Builtin(ShortcutId::NewTab))
+            .expect("new tab");
+
+        assert_eq!(entry.detail, app.config.shortcuts.get(ShortcutId::NewTab));
+        assert!(!entry.detail.is_empty());
+    }
+
+    #[test]
+    fn running_an_entry_closes_the_palette() {
+        let mut app = App::new(AppConfig::default());
+        let _ = app.open_command_palette();
+        assert!(app.show_command_palette);
+
+        let index = app
+            .visible_command_entries()
+            .iter()
+            .position(|entry| entry.target == CommandTarget::Builtin(ShortcutId::OpenSettings))
+            .expect("open settings");
+        let _ = app.run_command_entry(index);
+
+        assert!(!app.show_command_palette, "the palette must close on run");
+        assert!(app.settings_open, "the action itself must have run");
+    }
+
+    #[test]
+    fn an_out_of_range_index_is_ignored() {
+        let mut app = App::new(AppConfig::default());
+        let _ = app.open_command_palette();
+
+        let _ = app.run_command_entry(9_999);
+
+        assert!(app.show_command_palette, "a stale index must not close it");
+    }
+
+    #[test]
+    fn filtering_narrows_what_enter_would_run() {
+        let mut app = App::new(AppConfig::default());
+        let _ = app.open_command_palette();
+        app.command_query = ShortcutId::Quit.label().to_string();
+
+        let visible = app.visible_command_entries();
+        assert!(
+            visible
+                .iter()
+                .all(|entry| entry.target == CommandTarget::Builtin(ShortcutId::Quit)),
+            "a full-label query must not leave unrelated entries selectable"
+        );
+    }
+
+    #[test]
+    fn a_toast_expires_on_its_own() {
+        let mut app = App::new(AppConfig::default());
+        app.push_toast("done".to_string());
+        assert_eq!(app.toasts.len(), 1);
+
+        app.expire_toasts();
+        assert_eq!(app.toasts.len(), 1, "a fresh toast must survive a tick");
+
+        app.toasts[0].born = std::time::Instant::now() - TOAST_LIFETIME - ONE_SECOND;
+        app.expire_toasts();
+        assert!(app.toasts.is_empty(), "an aged toast must be dropped");
+    }
+
+    #[test]
+    fn toasts_do_not_pile_up_without_bound() {
+        let mut app = App::new(AppConfig::default());
+        for i in 0..MAX_TOASTS + 5 {
+            app.push_toast(format!("toast {i}"));
+        }
+
+        assert_eq!(app.toasts.len(), MAX_TOASTS);
+        assert_eq!(
+            app.toasts.last().map(|toast| toast.message.as_str()),
+            Some(format!("toast {}", MAX_TOASTS + 4).as_str()),
+            "the newest toast must be the one kept"
+        );
+    }
+
+    const ONE_SECOND: std::time::Duration = std::time::Duration::from_secs(1);
 }

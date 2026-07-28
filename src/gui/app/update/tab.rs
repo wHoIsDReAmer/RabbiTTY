@@ -427,53 +427,61 @@ impl App {
             return Some(Task::none());
         }
 
+        Some(self.apply_shortcut_action(action))
+    }
+
+    pub(in crate::gui::app) fn apply_shortcut_action(
+        &mut self,
+        action: ShortcutAction,
+    ) -> Task<Message> {
         match action {
             ShortcutAction::SplitAuto => {
                 let axis = self
                     .focused_pane_rect()
                     .map(Axis::for_rect)
                     .unwrap_or(Axis::Vertical);
-                Some(self.split_focused(axis))
+                self.split_focused(axis)
             }
-            ShortcutAction::SplitRight => Some(self.split_focused(Axis::Vertical)),
-            ShortcutAction::SplitDown => Some(self.split_focused(Axis::Horizontal)),
+            ShortcutAction::SplitRight => self.split_focused(Axis::Vertical),
+            ShortcutAction::SplitDown => self.split_focused(Axis::Horizontal),
             ShortcutAction::ClosePane => {
                 self.close_focused_pane();
-                Some(Task::none())
+                Task::none()
             }
             ShortcutAction::FocusPane(direction) => {
                 let area = self.terminal_area();
                 if let Some(tab) = self.tabs.get_mut(self.active_tab) {
                     tab.focus_direction(direction, area);
                 }
-                Some(Task::none())
+                Task::none()
             }
-            ShortcutAction::NewTab => Some(self.update(Message::OpenShellPicker)),
+            ShortcutAction::NewTab => self.update(Message::OpenShellPicker),
             ShortcutAction::CloseTab => {
                 self.close_active_target();
-                Some(Task::none())
+                Task::none()
             }
             ShortcutAction::OpenSettings => {
                 self.settings_open = true;
                 self.active_tab = SETTINGS_TAB_INDEX;
                 self.settings_draft = SettingsDraft::from_config(&self.config);
-                Some(Task::none())
+                Task::none()
             }
             ShortcutAction::NextTab => {
                 self.select_relative_tab(1);
-                Some(Task::none())
+                Task::none()
             }
             ShortcutAction::PrevTab => {
                 self.select_relative_tab(-1);
-                Some(Task::none())
+                Task::none()
             }
-            ShortcutAction::Quit => Some(self.update(Message::Exit)),
-            ShortcutAction::FontSizeIncrease => Some(self.adjust_font_size(1.0)),
-            ShortcutAction::FontSizeDecrease => Some(self.adjust_font_size(-1.0)),
+            ShortcutAction::Quit => self.update(Message::Exit),
+            ShortcutAction::FontSizeIncrease => self.adjust_font_size(1.0),
+            ShortcutAction::FontSizeDecrease => self.adjust_font_size(-1.0),
             ShortcutAction::FontSizeReset => {
-                Some(self.set_font_size(crate::config::DEFAULT_TERMINAL_FONT_SIZE))
+                self.set_font_size(crate::config::DEFAULT_TERMINAL_FONT_SIZE)
             }
-            ShortcutAction::DuplicateTab => Some(self.update(Message::DuplicateTab)),
+            ShortcutAction::DuplicateTab => self.update(Message::DuplicateTab),
+            ShortcutAction::OpenCommandPalette => self.open_command_palette(),
         }
     }
 

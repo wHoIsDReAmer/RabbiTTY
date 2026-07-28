@@ -55,6 +55,29 @@ impl App {
         }
     }
 
+    pub(in crate::gui) fn run_plugin_command(&mut self, plugin: &str, command: &str) {
+        let Some(registry) = self.plugins.as_mut() else {
+            return;
+        };
+        let Some(instance) = registry.get_mut(plugin) else {
+            return;
+        };
+
+        let outcome = instance.run_command(command);
+        let requests = instance.drain_requests();
+        let retired = registry.retire_failed();
+
+        if let Err(crate::plugin::PluginError::Reported(reason)) = outcome {
+            self.push_toast(reason);
+        }
+        for (id, reason) in retired {
+            eprintln!("plugin {id} retired: {reason}");
+        }
+        for request in requests {
+            self.apply_plugin_request(request);
+        }
+    }
+
     fn apply_plugin_request(&mut self, request: PluginRequest) {
         match request {
             PluginRequest::WritePty { pane, data } => {
@@ -65,7 +88,7 @@ impl App {
                 }
             }
             PluginRequest::Notify { message } => {
-                eprintln!("plugin notification: {message}");
+                self.push_toast(message);
             }
         }
     }

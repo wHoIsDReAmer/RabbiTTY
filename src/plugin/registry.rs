@@ -11,6 +11,14 @@ use super::{Capability, MatchEvent, PluginInfo, SettingEvent, SettingField};
 pub const COMPONENT_FILE: &str = "plugin.wasm";
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ContributedCommand {
+    pub plugin: String,
+    pub source: String,
+    pub id: String,
+    pub title: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Status {
     Ready,
     Disabled,
@@ -230,20 +238,25 @@ impl PluginRegistry {
         })
     }
 
-    pub fn contributed_commands(&self) -> Vec<(String, Vec<String>)> {
+    pub fn contributed_commands(&self) -> Vec<ContributedCommand> {
         self.entries
             .iter()
             .filter_map(|entry| match &entry.slot {
-                Slot::Ready(plugin, _) => {
-                    let ids: Vec<String> = plugin
-                        .contributions()
-                        .commands
-                        .iter()
-                        .map(|command| command.id.clone())
-                        .collect();
-                    (!ids.is_empty()).then(|| (entry.id.clone(), ids))
-                }
+                Slot::Ready(plugin, _) if plugin.failure().is_none() => Some((entry, plugin)),
                 _ => None,
+            })
+            .flat_map(|(entry, plugin)| {
+                let source = plugin.info().name.clone();
+                plugin
+                    .contributions()
+                    .commands
+                    .iter()
+                    .map(move |command| ContributedCommand {
+                        plugin: entry.id.clone(),
+                        source: source.clone(),
+                        id: command.id.clone(),
+                        title: command.title.clone(),
+                    })
             })
             .collect()
     }

@@ -1,8 +1,10 @@
+mod command_palette;
 mod dialog;
 mod password_prompt;
 mod settings;
 mod sftp;
 mod shell_picker;
+mod toast;
 
 pub(in crate::gui) use dialog::{DialogButton, confirm_dialog};
 
@@ -23,7 +25,12 @@ static LOGO_HANDLE: LazyLock<image::Handle> =
 
 impl App {
     pub fn view(&self) -> Element<'_, Message> {
-        self.view_main()
+        let content = self.view_main();
+        if self.toasts.is_empty() {
+            content
+        } else {
+            self.with_toasts(content)
+        }
     }
 
     fn view_main(&self) -> Element<'_, Message> {
@@ -149,6 +156,10 @@ impl App {
 
         if let Some(prompt) = self.password_prompt.as_ref() {
             return password_prompt::password_prompt(base_layout, prompt, palette);
+        }
+
+        if self.show_command_palette {
+            return self.view_command_palette(base_layout);
         }
 
         if self.show_shell_picker {

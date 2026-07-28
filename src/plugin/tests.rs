@@ -84,8 +84,9 @@ fn manifest_and_contributions_round_trip() {
     );
 
     let commands = &plugin.contributions().commands;
-    assert_eq!(commands.len(), 1);
+    assert_eq!(commands.len(), 3);
     assert_eq!(commands[0].id, "hello.hi");
+    assert_eq!(commands[0].title, "Say hi");
 }
 
 #[test]
@@ -993,5 +994,67 @@ fn consent_takes_effect_after_the_plugin_restarts() {
     assert!(
         plugin.granted().contains(&Capability::Network),
         "capabilities are fixed at instantiation, so consent needs a restart to reach the guest"
+    );
+}
+
+#[test]
+fn contributed_commands_carry_a_title_and_their_source() {
+    let root = TempRoot::new("contributed");
+    if !install(&root, "alpha") {
+        return;
+    }
+
+    let mut registry = registry_in(&root);
+    registry.load_all();
+
+    let commands = registry.contributed_commands();
+    let hi = commands
+        .iter()
+        .find(|command| command.id == "hello.hi")
+        .expect("hello.hi is declared");
+
+    assert_eq!(hi.plugin, "alpha", "the owning entry, used to dispatch");
+    assert_eq!(hi.source, "hello", "the display name, shown to the user");
+    assert_eq!(
+        hi.title, "Say hi",
+        "the palette shows the title, not the id"
+    );
+}
+
+#[test]
+fn a_disabled_plugin_contributes_no_commands() {
+    let root = TempRoot::new("contributed-disabled");
+    if !install(&root, "alpha") {
+        return;
+    }
+
+    let mut registry = registry_in(&root);
+    registry.load_all();
+    assert!(!registry.contributed_commands().is_empty());
+
+    registry.disable("alpha");
+    assert!(
+        registry.contributed_commands().is_empty(),
+        "a disabled plugin must not be runnable from the palette"
+    );
+}
+
+#[test]
+fn a_retired_plugin_contributes_no_commands() {
+    let root = TempRoot::new("contributed-retired");
+    if !install(&root, "alpha") {
+        return;
+    }
+
+    let mut registry = registry_in(&root);
+    registry.load_all();
+
+    let plugin = registry.get_mut("alpha").expect("ready");
+    let _ = plugin.run_command("hello.boom");
+    registry.retire_failed();
+
+    assert!(
+        registry.contributed_commands().is_empty(),
+        "a trapped plugin must drop out of the palette"
     );
 }

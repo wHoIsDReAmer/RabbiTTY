@@ -110,6 +110,7 @@ blur_radius = "Blur Radius"
 blur_radius_hint = "Controls the intensity of the window background blur effect."
 
 [settings.shortcuts]
+command_palette = "Command Palette"
 application = "Application"
 new_tab = "New tab"
 close_tab = "Close tab"
@@ -197,3 +198,7 @@ capability.read_config = "Read its settings"
 capability.notify = "Send notifications"
 capability.network = "Network access"
 capability.filesystem = "Its own data folder"
+
+[command_palette]
+placeholder = "Type a command…"
+no_matches = "No matching commands"
