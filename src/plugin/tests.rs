@@ -245,6 +245,9 @@ fn greedy() -> PluginInfo {
     PluginInfo {
         name: "greedy".to_string(),
         version: "0.1.0".to_string(),
+        description: None,
+        author: None,
+        homepage: None,
         capabilities: vec![
             Capability::Notify,
             Capability::ReadConfig,
@@ -293,6 +296,9 @@ fn consent_cannot_grant_what_was_never_requested() {
     let modest = PluginInfo {
         name: "modest".to_string(),
         version: "0.1.0".to_string(),
+        description: None,
+        author: None,
+        homepage: None,
         capabilities: vec![Capability::Notify],
     };
 
@@ -1315,4 +1321,19 @@ fn a_retired_plugin_supplies_no_profiles() {
     registry.retire_failed();
 
     assert!(registry.profiles().is_empty());
+}
+
+#[test]
+fn the_manifest_carries_authorship() {
+    let Some(plugin) = load(&auto) else {
+        return;
+    };
+
+    let info = plugin.info();
+    assert_eq!(info.author.as_deref(), Some("Rabbitty"));
+    assert_eq!(
+        info.homepage.as_deref(),
+        Some("https://github.com/wHoIsDReAmer/RabbiTTY")
+    );
+    assert!(info.description.is_some());
 }

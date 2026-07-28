@@ -367,6 +367,11 @@ impl App {
                 .map(|info| info.name.clone())
                 .unwrap_or_else(|| id.clone()),
             version: info.map(|info| info.version.clone()).unwrap_or_default(),
+            description: info.and_then(|info| info.description.clone()),
+            author: info.and_then(|info| info.author.clone()),
+            homepage: info
+                .and_then(|info| info.homepage.clone())
+                .filter(|url| crate::terminal::url::is_openable(url)),
             enabled: registry.is_enabled(&id),
             state,
             failure,

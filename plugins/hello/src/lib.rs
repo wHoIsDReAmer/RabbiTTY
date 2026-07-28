@@ -20,6 +20,9 @@ impl Guest for HelloPlugin {
         PluginInfo {
             name: "hello".to_string(),
             version: "0.1.0".to_string(),
+            description: Some("Exercises every surface of the Rabbitty plugin ABI.".to_string()),
+            author: Some("Rabbitty".to_string()),
+            homepage: Some("https://github.com/wHoIsDReAmer/RabbiTTY".to_string()),
             capabilities: vec![
                 Capability::Notify,
                 Capability::ReadConfig,

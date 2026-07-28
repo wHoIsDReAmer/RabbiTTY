@@ -13,6 +13,9 @@ interface types {
     record plugin-info {
         name: string,
         version: string,
+        description: option<string>,
+        author: option<string>,
+        homepage: option<string>,
         capabilities: list<capability>,
     }
 

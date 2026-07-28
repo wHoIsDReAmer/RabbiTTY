@@ -1146,6 +1146,15 @@ mod command_palette_tests {
     }
 
     #[test]
+    fn a_plugin_supplied_homepage_must_be_http() {
+        use crate::terminal::url::is_openable;
+
+        assert!(is_openable("https://example.com"));
+        assert!(!is_openable("file:///etc/passwd"));
+        assert!(!is_openable("javascript:alert(1)"));
+    }
+
+    #[test]
     fn a_declared_default_key_is_adopted_when_it_is_free() {
         let app = App::new(AppConfig::default());
         if !has_plugin_commands(&app) {
