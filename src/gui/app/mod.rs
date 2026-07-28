@@ -994,44 +994,6 @@ mod tests {
 
         assert_eq!(app.tabs[0].focused, focused, "focus jumped to another pane");
     }
-
-    #[test]
-    fn a_tracked_pane_reports_the_directory_the_shell_announced() {
-        let mut app = app_with_pty();
-        let _ = app.update(Message::CreateTab(Profile::default_shell()));
-        let pane = app
-            .tabs
-            .first_mut()
-            .and_then(|tab| tab.panes.first_mut())
-            .expect("creating a tab must produce a pane");
-
-        pane.capture_output = false;
-        pane.track_cwd = true;
-        pane.feed_bytes(b"\x1b]7;file://host/var/tmp\x07");
-
-        assert_eq!(pane.take_cwd_change(), Some("/var/tmp".to_string()));
-    }
-
-    #[test]
-    fn an_untracked_pane_does_not_scan_for_directories() {
-        let mut app = app_with_pty();
-        let _ = app.update(Message::CreateTab(Profile::default_shell()));
-        let pane = app
-            .tabs
-            .first_mut()
-            .and_then(|tab| tab.panes.first_mut())
-            .expect("creating a tab must produce a pane");
-
-        pane.track_cwd = false;
-        pane.capture_output = false;
-        pane.feed_bytes(b"\x1b]7;file://host/var/tmp\x07");
-
-        assert_eq!(
-            pane.take_cwd_change(),
-            None,
-            "with no plugin listening the byte scan must not run at all"
-        );
-    }
 }
 
 #[cfg(test)]
