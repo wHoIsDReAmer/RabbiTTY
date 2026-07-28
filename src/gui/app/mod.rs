@@ -35,6 +35,10 @@ pub enum Message {
         plugin: String,
         item: String,
     },
+    RunPluginCommand {
+        plugin: String,
+        command: String,
+    },
     ActivatePluginMatch {
         plugin: String,
         pattern: String,

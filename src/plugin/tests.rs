@@ -1337,3 +1337,81 @@ fn the_manifest_carries_authorship() {
     );
     assert!(info.description.is_some());
 }
+
+#[test]
+fn a_disabled_plugin_leaves_no_status_behind() {
+    let root = TempRoot::new("status-disabled");
+    if !install(&root, "alpha") {
+        return;
+    }
+
+    let mut registry = registry_in(&root);
+    registry.load_all();
+    assert!(!registry.status_items().is_empty());
+
+    registry.disable("alpha");
+    assert!(
+        registry.status_items().is_empty(),
+        "a stopped plugin must not keep occupying the status bar"
+    );
+}
+
+#[test]
+fn a_retired_plugin_leaves_no_status_behind() {
+    let root = TempRoot::new("status-retired");
+    if !install(&root, "alpha") {
+        return;
+    }
+
+    let mut registry = registry_in(&root);
+    registry.load_all();
+
+    let plugin = registry.get_mut("alpha").expect("ready");
+    let _ = plugin.run_command("hello.boom");
+    registry.retire_failed();
+
+    assert!(
+        registry.status_items().is_empty(),
+        "a crashed plugin must not leave stale text on screen"
+    );
+}
+
+#[test]
+fn a_status_update_from_an_event_reaches_the_registry() {
+    let root = TempRoot::new("status-event");
+    if !install(&root, "alpha") {
+        return;
+    }
+
+    let mut registry = registry_in(&root);
+    registry.load_all();
+
+    let plugin = registry.get_mut("alpha").expect("ready");
+    plugin.drain_requests();
+    plugin
+        .on_event(Event::SessionStart(9))
+        .expect("event delivered");
+    let requests = plugin.drain_requests();
+
+    let update = requests
+        .iter()
+        .find_map(|request| match request {
+            PluginRequest::SetStatus { id, text } => Some((id.clone(), text.clone())),
+            _ => None,
+        })
+        .expect("the guest asked for a status update");
+    assert_eq!(
+        update,
+        ("hello.counter".to_string(), "hello: pane 9".to_string())
+    );
+
+    assert!(registry.set_status("alpha", &update.0, update.1.clone()));
+    assert_eq!(
+        registry
+            .status_items()
+            .into_iter()
+            .find(|(_, item)| item.id == "hello.counter")
+            .map(|(_, item)| item.text),
+        Some(update.1)
+    );
+}

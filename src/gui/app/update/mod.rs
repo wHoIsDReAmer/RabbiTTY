@@ -165,6 +165,9 @@ impl App {
                     }),
                 );
             }
+            Message::RunPluginCommand { plugin, command } => {
+                self.run_plugin_command(&plugin, &command);
+            }
             Message::OpenCommandPalette => return self.open_command_palette(),
             Message::CloseCommandPalette => self.close_command_palette(),
             Message::CommandQueryChanged(query) => {

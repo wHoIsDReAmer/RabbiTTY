@@ -4,6 +4,7 @@ mod password_prompt;
 mod settings;
 mod sftp;
 mod shell_picker;
+mod status_bar;
 
 pub(in crate::gui) use dialog::{DialogButton, confirm_dialog};
 
@@ -79,13 +80,19 @@ impl App {
             self.view_lobby(palette)
         };
 
-        let layout = match self.config.ui.tab_bar_position {
-            TabBarPosition::Top => column(vec![tab_row, main_content]),
-            TabBarPosition::Bottom => column(vec![
-                crate::gui::components::tab_bar::window_chrome(palette, bar_alpha),
-                main_content,
-                tab_row,
-            ]),
+        let status_bar = self.view_status_bar();
+        let layout = match (self.config.ui.tab_bar_position, status_bar) {
+            (TabBarPosition::Top, None) => column(vec![tab_row, main_content]),
+            (TabBarPosition::Top, Some(status)) => column(vec![tab_row, main_content, status]),
+            (TabBarPosition::Bottom, status) => {
+                let mut rows = vec![
+                    crate::gui::components::tab_bar::window_chrome(palette, bar_alpha),
+                    main_content,
+                ];
+                rows.extend(status);
+                rows.push(tab_row);
+                column(rows)
+            }
         };
 
         // `window_style` already clears the window to `background @ opacity`.
