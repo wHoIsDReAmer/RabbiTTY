@@ -19,7 +19,11 @@ impl Guest for HelloPlugin {
         PluginInfo {
             name: "hello".to_string(),
             version: "0.1.0".to_string(),
-            capabilities: vec![Capability::Notify, Capability::ReadConfig],
+            capabilities: vec![
+                Capability::Notify,
+                Capability::ReadConfig,
+                Capability::Network,
+            ],
         }
     }
 

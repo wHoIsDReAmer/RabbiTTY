@@ -1,15 +1,38 @@
 use crate::gui::app::{Message, SettingsMessage};
-use crate::gui::components::accent_toggler_style;
-use crate::gui::settings::{section, segmented_control};
-use crate::gui::theme::{Palette, SPACING_NORMAL};
+use crate::gui::components::{accent_toggler_style, secondary};
+use crate::gui::settings::{
+    NUMERIC_INPUT_WIDTH, ROW_SPACING, SECTION_SPACING, TEXT_INPUT_WIDTH, section,
+    segmented_control, setting_row, styled_text_input,
+};
+use crate::gui::theme::{Palette, SPACING_NORMAL, SPACING_SMALL};
 use crate::plugin::{SettingField, SettingKind};
-use iced::widget::{column, row, text, text_input, toggler};
-use iced::{Alignment, Element, Length};
+use iced::widget::{Space, column, container, row, text, toggler};
+use iced::{Alignment, Background, Border, Color, Element, Length, Theme};
+
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+pub enum PluginState {
+    Ready,
+    #[default]
+    Disabled,
+    Retired,
+}
+
+#[derive(Debug, Clone)]
+pub struct PluginPermission {
+    pub name: String,
+    pub granted: bool,
+    pub optional: bool,
+}
 
 #[derive(Debug, Default)]
 pub struct PluginSettingsState {
     pub id: String,
-    pub status: String,
+    pub name: String,
+    pub version: String,
+    pub enabled: bool,
+    pub state: PluginState,
+    pub failure: Option<String>,
+    pub permissions: Vec<PluginPermission>,
     pub fields: Vec<(SettingField, String)>,
 }
 
@@ -18,53 +41,244 @@ pub fn view<'a>(
     animations_enabled: bool,
     palette: Palette,
 ) -> Element<'a, Message> {
-    let label_width = Length::Fixed(180.0);
-    let mut items: Vec<Element<Message>> = Vec::new();
+    let mut items: Vec<Element<Message>> = vec![header(view, palette, animations_enabled)];
 
-    for (field, value) in &view.fields {
-        items.push(field_row(
+    if let Some(reason) = &view.failure {
+        items.push(failure_notice(
             &view.id,
-            field,
-            value,
-            label_width,
+            reason,
             palette,
             animations_enabled,
         ));
     }
 
-    let body: Element<Message> = if items.is_empty() {
-        text(crate::t!("settings.plugins.no_settings"))
-            .size(12)
-            .color(palette.text_secondary)
-            .into()
-    } else {
-        column(items)
-            .spacing(SPACING_NORMAL)
-            .width(Length::Fill)
-            .into()
-    };
-
-    column![
-        section(
-            crate::t!("settings.plugins.status"),
-            text(view.status.as_str())
-                .size(13)
-                .color(palette.text)
-                .into(),
+    if !view.permissions.is_empty() {
+        items.push(section(
+            crate::t!("settings.plugins.permissions"),
+            permission_list(view, palette, animations_enabled),
             palette,
-        ),
-        section(crate::t!("settings.plugins.settings"), body, palette),
+        ));
+    }
+
+    items.push(section(
+        crate::t!("settings.plugins.settings"),
+        field_list(view, palette, animations_enabled),
+        palette,
+    ));
+
+    column(items)
+        .spacing(SECTION_SPACING)
+        .width(Length::Fill)
+        .into()
+}
+
+fn header<'a>(
+    view: &'a PluginSettingsState,
+    palette: Palette,
+    _animations_enabled: bool,
+) -> Element<'a, Message> {
+    let plugin = view.id.clone();
+    let identity = column![
+        row![
+            text(view.name.as_str()).size(22).color(palette.text),
+            badge(view.state, palette),
+        ]
+        .align_y(Alignment::Center)
+        .spacing(SPACING_SMALL),
+        text(version_line(view))
+            .size(12)
+            .color(palette.text_secondary),
     ]
+    .spacing(4)
+    .width(Length::Fill);
+
+    row![
+        identity,
+        toggler(view.enabled)
+            .on_toggle(
+                move |enabled| Message::Settings(SettingsMessage::PluginToggled {
+                    plugin: plugin.clone(),
+                    enabled,
+                })
+            )
+            .size(20)
+            .style(accent_toggler_style(palette)),
+    ]
+    .align_y(Alignment::Center)
     .spacing(SPACING_NORMAL)
     .width(Length::Fill)
     .into()
+}
+
+fn version_line(view: &PluginSettingsState) -> String {
+    if view.version.is_empty() {
+        view.id.clone()
+    } else {
+        format!("{}  ·  v{}", view.id, view.version)
+    }
+}
+
+fn badge<'a>(state: PluginState, palette: Palette) -> Element<'a, Message> {
+    let (label, color) = match state {
+        PluginState::Ready => (crate::t!("settings.plugins.ready"), palette.success),
+        PluginState::Disabled => (
+            crate::t!("settings.plugins.disabled"),
+            palette.text_secondary,
+        ),
+        PluginState::Retired => (crate::t!("settings.plugins.retired"), palette.error),
+    };
+
+    container(text(label).size(11).color(color))
+        .padding([2, 8])
+        .style(move |_: &Theme| container::Style {
+            background: Some(Background::Color(Color { a: 0.14, ..color })),
+            border: Border {
+                radius: 10.0.into(),
+                ..Default::default()
+            },
+            ..Default::default()
+        })
+        .into()
+}
+
+fn failure_notice<'a>(
+    id: &'a str,
+    reason: &'a str,
+    palette: Palette,
+    animations_enabled: bool,
+) -> Element<'a, Message> {
+    container(
+        row![
+            column![
+                text(crate::t!("settings.plugins.stopped"))
+                    .size(13)
+                    .color(palette.error),
+                text(reason).size(12).color(palette.text_secondary),
+            ]
+            .spacing(4)
+            .width(Length::Fill),
+            secondary(
+                crate::t!("settings.plugins.reload"),
+                Some(Message::Settings(SettingsMessage::PluginReloaded(
+                    id.to_string(),
+                ))),
+                palette,
+                animations_enabled,
+            ),
+        ]
+        .align_y(Alignment::Center)
+        .spacing(SPACING_NORMAL),
+    )
+    .padding(SPACING_NORMAL)
+    .style(move |_: &Theme| container::Style {
+        background: Some(Background::Color(Color {
+            a: 0.10,
+            ..palette.error
+        })),
+        border: Border {
+            radius: 8.0.into(),
+            ..Default::default()
+        },
+        ..Default::default()
+    })
+    .into()
+}
+
+fn permission_list<'a>(
+    view: &'a PluginSettingsState,
+    palette: Palette,
+    animations_enabled: bool,
+) -> Element<'a, Message> {
+    let rows: Vec<Element<Message>> = view
+        .permissions
+        .iter()
+        .map(|permission| permission_row(&view.id, permission, palette, animations_enabled))
+        .collect();
+
+    column(rows).spacing(ROW_SPACING).width(Length::Fill).into()
+}
+
+fn permission_row<'a>(
+    id: &'a str,
+    permission: &'a PluginPermission,
+    palette: Palette,
+    _animations_enabled: bool,
+) -> Element<'a, Message> {
+    let detail = if permission.optional {
+        crate::t!("settings.plugins.needs_consent")
+    } else {
+        crate::t!("settings.plugins.auto_granted")
+    };
+
+    let label = column![
+        text(capability_label(&permission.name))
+            .size(14)
+            .color(palette.text),
+        text(detail).size(12).color(palette.text_secondary),
+    ]
+    .spacing(SPACING_SMALL);
+
+    let control: Element<Message> = if permission.optional {
+        let plugin = id.to_string();
+        let capability = permission.name.clone();
+        toggler(permission.granted)
+            .on_toggle(move |granted| {
+                Message::Settings(SettingsMessage::PluginConsentChanged {
+                    plugin: plugin.clone(),
+                    capability: capability.clone(),
+                    granted,
+                })
+            })
+            .size(18)
+            .style(accent_toggler_style(palette))
+            .into()
+    } else {
+        text("\u{2713}").size(14).color(palette.success).into()
+    };
+
+    row![label, Space::new().width(Length::Fill), control]
+        .align_y(Alignment::Center)
+        .spacing(SPACING_NORMAL)
+        .width(Length::Fill)
+        .into()
+}
+
+fn capability_label(name: &str) -> &'static str {
+    match name {
+        "write-pty" => crate::t!("settings.plugins.capability.write_pty"),
+        "read-config" => crate::t!("settings.plugins.capability.read_config"),
+        "notify" => crate::t!("settings.plugins.capability.notify"),
+        "network" => crate::t!("settings.plugins.capability.network"),
+        "filesystem" => crate::t!("settings.plugins.capability.filesystem"),
+        _ => "",
+    }
+}
+
+fn field_list<'a>(
+    view: &'a PluginSettingsState,
+    palette: Palette,
+    animations_enabled: bool,
+) -> Element<'a, Message> {
+    if view.fields.is_empty() {
+        return text(crate::t!("settings.plugins.no_settings"))
+            .size(12)
+            .color(palette.text_secondary)
+            .into();
+    }
+
+    let rows: Vec<Element<Message>> = view
+        .fields
+        .iter()
+        .map(|(field, value)| field_row(&view.id, field, value, palette, animations_enabled))
+        .collect();
+
+    column(rows).spacing(ROW_SPACING).width(Length::Fill).into()
 }
 
 fn field_row<'a>(
     id: &'a str,
     field: &'a SettingField,
     value: &'a str,
-    label_width: Length,
     palette: Palette,
     animations_enabled: bool,
 ) -> Element<'a, Message> {
@@ -77,15 +291,19 @@ fn field_row<'a>(
             value: next,
         })
     };
+    let label = field.label.as_str();
 
-    let control: Element<Message> = match &field.kind {
-        SettingKind::Toggle => toggler(value == "true")
-            .on_toggle(move |on| change(on.to_string()))
-            .size(18)
-            .style(accent_toggler_style(palette))
-            .into(),
+    match &field.kind {
+        SettingKind::Toggle => setting_row(
+            label,
+            toggler(value == "true")
+                .on_toggle(move |on| change(on.to_string()))
+                .size(18)
+                .style(accent_toggler_style(palette)),
+            palette,
+        ),
         SettingKind::Select(options) => segmented_control(
-            "",
+            label,
             options
                 .iter()
                 .map(|option| (option.as_str(), change(option.clone()), option == value))
@@ -93,23 +311,15 @@ fn field_row<'a>(
             palette,
             animations_enabled,
         ),
-        SettingKind::Text | SettingKind::Number(_) => text_input("", value)
-            .on_input(change)
-            .padding([6, 10])
-            .size(13)
-            .width(Length::Fill)
-            .into(),
-    };
-
-    row![
-        text(field.label.as_str())
-            .size(13)
-            .width(label_width)
-            .color(palette.text),
-        control,
-    ]
-    .align_y(Alignment::Center)
-    .spacing(SPACING_NORMAL)
-    .width(Length::Fill)
-    .into()
+        SettingKind::Number(_) => setting_row(
+            label,
+            styled_text_input(value, change, palette).width(Length::Fixed(NUMERIC_INPUT_WIDTH)),
+            palette,
+        ),
+        SettingKind::Text => setting_row(
+            label,
+            styled_text_input(value, change, palette).width(Length::Fixed(TEXT_INPUT_WIDTH)),
+            palette,
+        ),
+    }
 }

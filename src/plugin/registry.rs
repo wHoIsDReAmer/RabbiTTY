@@ -27,6 +27,22 @@ struct Entry {
     id: String,
     path: PathBuf,
     slot: Slot,
+    info: Option<PluginInfo>,
+    fields: Vec<SettingField>,
+}
+
+impl Entry {
+    fn remember(&mut self, host: &PluginHost) {
+        if let Slot::Ready(plugin, _) = &self.slot {
+            self.info = Some(plugin.info().clone());
+            self.fields = plugin.contributions().settings.clone();
+        } else if self.info.is_none()
+            && let Ok((info, fields)) = host.inspect(&self.path)
+        {
+            self.info = Some(info);
+            self.fields = fields;
+        }
+    }
 }
 
 pub struct PluginRegistry {
@@ -72,7 +88,15 @@ impl PluginRegistry {
             } else {
                 Slot::Disabled
             };
-            self.entries.push(Entry { id, path, slot });
+            let mut entry = Entry {
+                id,
+                path,
+                slot,
+                info: None,
+                fields: Vec::new(),
+            };
+            entry.remember(&self.host);
+            self.entries.push(entry);
         }
     }
 
@@ -150,10 +174,31 @@ impl PluginRegistry {
     }
 
     pub fn setting_fields(&self, id: &str) -> Vec<SettingField> {
-        match self.entry(id).map(|entry| &entry.slot) {
-            Some(Slot::Ready(plugin, _)) => plugin.contributions().settings.clone(),
-            _ => Vec::new(),
-        }
+        self.entry(id)
+            .map(|entry| entry.fields.clone())
+            .unwrap_or_default()
+    }
+
+    pub fn info(&self, id: &str) -> Option<&PluginInfo> {
+        self.entry(id)?.info.as_ref()
+    }
+
+    pub fn is_enabled(&self, id: &str) -> bool {
+        self.settings
+            .get(id)
+            .is_none_or(|settings| settings.enabled)
+    }
+
+    pub fn granted(&self, id: &str) -> Vec<Capability> {
+        let Some(info) = self.info(id) else {
+            return Vec::new();
+        };
+        let consented = self
+            .settings
+            .get(id)
+            .map(consented_capabilities)
+            .unwrap_or_default();
+        grant_with_consent(info, &consented)
     }
 
     pub fn setting_value(&self, id: &str, key: &str) -> Option<String> {
@@ -283,6 +328,7 @@ impl PluginRegistry {
             _ => Ok(()),
         };
         self.entries[index].slot = slot;
+        self.entries[index].remember(&self.host);
         outcome
     }
 
@@ -291,6 +337,13 @@ impl PluginRegistry {
         let name = capability_name(capability).to_string();
         if !settings.consented.contains(&name) {
             settings.consented.push(name);
+        }
+    }
+
+    pub fn revoke(&mut self, id: &str, capability: Capability) {
+        let name = capability_name(capability);
+        if let Some(settings) = self.settings.get_mut(id) {
+            settings.consented.retain(|granted| granted != name);
         }
     }
 

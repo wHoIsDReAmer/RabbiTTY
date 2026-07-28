@@ -71,11 +71,16 @@ fn manifest_and_contributions_round_trip() {
     assert_eq!(plugin.info().name, "hello");
     assert_eq!(
         plugin.info().capabilities,
-        vec![Capability::Notify, Capability::ReadConfig]
+        vec![
+            Capability::Notify,
+            Capability::ReadConfig,
+            Capability::Network
+        ]
     );
     assert_eq!(
         plugin.granted(),
-        &[Capability::Notify, Capability::ReadConfig]
+        &[Capability::Notify, Capability::ReadConfig],
+        "network is requested but not consented to, so it stays ungranted"
     );
 
     let commands = &plugin.contributions().commands;
@@ -518,12 +523,32 @@ fn consent_from_config_grants_the_capability() {
 
     assert_eq!(registry.status("alpha"), Some(Status::Ready));
     assert!(
+        registry
+            .get_mut("alpha")
+            .expect("ready")
+            .granted()
+            .contains(&Capability::Network),
+        "consent recorded in config must reach the instance at startup"
+    );
+}
+
+#[test]
+fn without_recorded_consent_the_capability_stays_ungranted() {
+    let root = TempRoot::new("cfg-no-consent");
+    if !install(&root, "alpha") {
+        return;
+    }
+
+    let mut registry = registry_in(&root);
+    registry.load_all();
+
+    assert!(
         !registry
             .get_mut("alpha")
             .expect("ready")
             .granted()
             .contains(&Capability::Network),
-        "hello never requests network, so consent alone must not grant it"
+        "a requested capability must stay off until the user approves it"
     );
 }
 
@@ -865,5 +890,108 @@ fn a_stored_setting_is_visible_to_read_config() {
             message: "hello plugin read greeting=howdy".to_string(),
         }],
         "the guest must see the stored value through read-config"
+    );
+}
+
+#[test]
+fn a_disabled_plugin_still_reports_what_it_is() {
+    let root = TempRoot::new("disabled-metadata");
+    if !install(&root, "alpha") {
+        return;
+    }
+    let mut settings = crate::config::plugins::PluginsConfig::new();
+    settings.insert(
+        "alpha".to_string(),
+        crate::config::plugins::PluginSettings {
+            enabled: false,
+            consented: Vec::new(),
+            settings: Default::default(),
+        },
+    );
+
+    let mut registry = registry_with(&root, settings);
+    registry.load_all();
+
+    assert_eq!(registry.status("alpha"), Some(Status::Disabled));
+    assert!(!registry.is_enabled("alpha"));
+    assert_eq!(
+        registry.info("alpha").map(|info| info.name.as_str()),
+        Some("hello"),
+        "the panel needs a name and version even while the plugin is off"
+    );
+    assert_eq!(
+        registry.setting_fields("alpha").len(),
+        2,
+        "declared settings stay editable while the plugin is off"
+    );
+}
+
+#[test]
+fn disabling_keeps_the_declared_settings_visible() {
+    let root = TempRoot::new("disable-keeps-fields");
+    if !install(&root, "alpha") {
+        return;
+    }
+
+    let mut registry = registry_in(&root);
+    registry.load_all();
+    let before = registry.setting_fields("alpha").len();
+    registry.disable("alpha");
+
+    assert_eq!(
+        registry.setting_fields("alpha").len(),
+        before,
+        "turning a plugin off must not empty its settings panel"
+    );
+}
+
+#[test]
+fn granted_reflects_consent_without_asking_the_instance() {
+    let root = TempRoot::new("granted-view");
+    if !install(&root, "alpha") {
+        return;
+    }
+
+    let mut registry = registry_in(&root);
+    registry.load_all();
+
+    assert!(
+        !registry.granted("alpha").contains(&Capability::Network),
+        "a consent-gated capability starts ungranted"
+    );
+
+    registry.consent("alpha", Capability::Network);
+    assert!(
+        registry.granted("alpha").contains(&Capability::Network),
+        "consent must show up in the panel before the restart"
+    );
+
+    registry.revoke("alpha", Capability::Network);
+    assert!(!registry.granted("alpha").contains(&Capability::Network));
+    assert!(
+        registry
+            .settings()
+            .get("alpha")
+            .is_some_and(|settings| settings.consented.is_empty()),
+        "revoking must be written back so it survives a restart"
+    );
+}
+
+#[test]
+fn consent_takes_effect_after_the_plugin_restarts() {
+    let root = TempRoot::new("consent-restart");
+    if !install(&root, "alpha") {
+        return;
+    }
+
+    let mut registry = registry_in(&root);
+    registry.load_all();
+    registry.consent("alpha", Capability::Network);
+    registry.enable("alpha").expect("restart");
+
+    let plugin = registry.get_mut("alpha").expect("ready");
+    assert!(
+        plugin.granted().contains(&Capability::Network),
+        "capabilities are fixed at instantiation, so consent needs a restart to reach the guest"
     );
 }

@@ -1,5 +1,6 @@
 use super::super::App;
 use crate::gui::settings::SettingsCategory;
+use crate::gui::settings::plugins::{PluginPermission, PluginState};
 use crate::plugin::{Event, PluginRequest};
 
 impl App {
@@ -101,8 +102,13 @@ impl App {
             .map(|category| (category, category.label().to_string()))
             .collect();
         if let Some(registry) = self.plugins.as_ref() {
-            for (index, id) in registry.ids().enumerate() {
-                out.push((SettingsCategory::Plugin(index), id.to_string()));
+            let ids: Vec<String> = registry.ids().map(|id| id.to_string()).collect();
+            for (index, id) in ids.into_iter().enumerate() {
+                let label = registry
+                    .info(&id)
+                    .map(|info| info.name.clone())
+                    .unwrap_or(id);
+                out.push((SettingsCategory::Plugin(index), label));
             }
         }
         out
@@ -128,14 +134,29 @@ impl App {
             return;
         };
 
-        let status = match registry.status(&id) {
-            Some(crate::plugin::Status::Ready) => crate::t!("settings.plugins.ready").to_string(),
-            Some(crate::plugin::Status::Disabled) => {
-                crate::t!("settings.plugins.disabled").to_string()
-            }
-            Some(crate::plugin::Status::Retired(reason)) => reason,
-            None => String::new(),
+        let (state, failure) = match registry.status(&id) {
+            Some(crate::plugin::Status::Ready) => (PluginState::Ready, None),
+            Some(crate::plugin::Status::Disabled) => (PluginState::Disabled, None),
+            Some(crate::plugin::Status::Retired(reason)) => (PluginState::Retired, Some(reason)),
+            None => (PluginState::Disabled, None),
         };
+
+        let info = registry.info(&id);
+        let granted = registry.granted(&id);
+        let permissions = info
+            .map(|info| {
+                let consent = crate::plugin::requires_consent(info);
+                info.capabilities
+                    .iter()
+                    .map(|cap| PluginPermission {
+                        name: crate::plugin::capability_name(*cap).to_string(),
+                        granted: granted.contains(cap),
+                        optional: consent.contains(cap),
+                    })
+                    .collect()
+            })
+            .unwrap_or_default();
+
         let fields = registry
             .setting_fields(&id)
             .into_iter()
@@ -147,8 +168,80 @@ impl App {
             })
             .collect();
 
-        self.plugin_settings =
-            crate::gui::settings::plugins::PluginSettingsState { id, status, fields };
+        self.plugin_settings = crate::gui::settings::plugins::PluginSettingsState {
+            name: info
+                .map(|info| info.name.clone())
+                .unwrap_or_else(|| id.clone()),
+            version: info.map(|info| info.version.clone()).unwrap_or_default(),
+            enabled: registry.is_enabled(&id),
+            state,
+            failure,
+            permissions,
+            fields,
+            id,
+        };
+    }
+
+    pub(in crate::gui) fn toggle_plugin(&mut self, plugin: &str, enabled: bool) {
+        let Some(registry) = self.plugins.as_mut() else {
+            return;
+        };
+        if enabled {
+            if let Err(reason) = registry.enable(plugin) {
+                eprintln!("plugin {plugin} failed to start: {reason}");
+            }
+        } else {
+            registry.disable(plugin);
+        }
+        self.persist_plugin_settings();
+        self.sync_output_capture();
+        self.refresh_plugin_settings();
+    }
+
+    pub(in crate::gui) fn change_plugin_consent(
+        &mut self,
+        plugin: &str,
+        capability: &str,
+        granted: bool,
+    ) {
+        let Some(capability) = crate::plugin::capability_from_name(capability) else {
+            return;
+        };
+        let Some(registry) = self.plugins.as_mut() else {
+            return;
+        };
+        if granted {
+            registry.consent(plugin, capability);
+        } else {
+            registry.revoke(plugin, capability);
+        }
+        let restart = registry.is_enabled(plugin);
+        self.persist_plugin_settings();
+        if restart {
+            self.reload_plugin(plugin);
+        } else {
+            self.refresh_plugin_settings();
+        }
+    }
+
+    pub(in crate::gui) fn reload_plugin(&mut self, plugin: &str) {
+        let Some(registry) = self.plugins.as_mut() else {
+            return;
+        };
+        if let Err(reason) = registry.enable(plugin) {
+            eprintln!("plugin {plugin} failed to start: {reason}");
+        }
+        self.persist_plugin_settings();
+        self.sync_output_capture();
+        self.refresh_plugin_settings();
+    }
+
+    fn persist_plugin_settings(&mut self) {
+        let Some(registry) = self.plugins.as_ref() else {
+            return;
+        };
+        self.config.plugins = registry.settings().clone();
+        self.queue_config_save();
     }
 
     pub(in crate::gui) fn change_plugin_setting(&mut self, plugin: &str, key: &str, value: String) {
@@ -158,8 +251,7 @@ impl App {
         let Some(changed) = registry.set_setting(plugin, key, value) else {
             return;
         };
-        self.config.plugins = registry.settings().clone();
-        self.queue_config_save();
+        self.persist_plugin_settings();
         self.dispatch_to_plugin(plugin, Event::SettingChanged(changed));
         self.refresh_plugin_settings();
     }

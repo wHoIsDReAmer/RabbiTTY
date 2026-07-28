@@ -212,6 +212,19 @@ impl App {
             SettingsMessage::PluginSettingChanged { plugin, key, value } => {
                 self.change_plugin_setting(&plugin, &key, value);
             }
+            SettingsMessage::PluginToggled { plugin, enabled } => {
+                self.toggle_plugin(&plugin, enabled);
+            }
+            SettingsMessage::PluginConsentChanged {
+                plugin,
+                capability,
+                granted,
+            } => {
+                self.change_plugin_consent(&plugin, &capability, granted);
+            }
+            SettingsMessage::PluginReloaded(plugin) => {
+                self.reload_plugin(&plugin);
+            }
             SettingsMessage::ProfileModalTabSelected(tab) => {
                 self.settings_draft.set_profile_modal_tab(tab);
             }

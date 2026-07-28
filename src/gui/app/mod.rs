@@ -145,6 +145,16 @@ pub enum SettingsMessage {
         key: String,
         value: String,
     },
+    PluginToggled {
+        plugin: String,
+        enabled: bool,
+    },
+    PluginConsentChanged {
+        plugin: String,
+        capability: String,
+        granted: bool,
+    },
+    PluginReloaded(String),
     TestSshConnection,
     SshConnectionTestFinished(Result<(), String>),
     CloseProfileModal,

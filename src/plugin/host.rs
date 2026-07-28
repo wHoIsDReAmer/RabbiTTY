@@ -7,7 +7,7 @@ use wasmtime_wasi::{DirPerms, FilePerms, WasiCtx, WasiCtxBuilder};
 
 use super::policy::CapabilityPolicy;
 use super::state::{PluginRequest, PluginState};
-use super::{Capability, Contributions, Event, Plugin, PluginInfo};
+use super::{Capability, Contributions, Event, Plugin, PluginInfo, SettingField};
 
 const CALL_FUEL: u64 = 10_000_000;
 
@@ -68,6 +68,14 @@ impl PluginHost {
         let granted = policy(&info);
 
         self.start(id, &component, info, granted, config)
+    }
+
+    pub fn inspect(&self, path: &Path) -> wasmtime::Result<(PluginInfo, Vec<SettingField>)> {
+        let component = Component::from_file(&self.engine, path)?;
+        let info = self.read_manifest(&component)?;
+        let probe = self.start("", &component, info.clone(), Vec::new(), HashMap::new())?;
+        let fields = probe.contributions().settings.clone();
+        Ok((info, fields))
     }
 
     fn read_manifest(&self, component: &Component) -> wasmtime::Result<PluginInfo> {
