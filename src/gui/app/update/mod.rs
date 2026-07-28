@@ -146,6 +146,25 @@ impl App {
                 self.tab_context_menu = None;
                 self.activate_plugin_menu_item(&plugin, &item);
             }
+            Message::ActivatePluginMatch {
+                plugin,
+                pattern,
+                pane,
+                line,
+                start,
+                end,
+            } => {
+                self.dispatch_to_plugin(
+                    &plugin,
+                    crate::plugin::Event::MatchActivated(crate::plugin::MatchEvent {
+                        pane,
+                        pattern,
+                        line,
+                        start,
+                        end,
+                    }),
+                );
+            }
             Message::OpenCommandPalette => return self.open_command_palette(),
             Message::CloseCommandPalette => self.close_command_palette(),
             Message::CommandQueryChanged(query) => {

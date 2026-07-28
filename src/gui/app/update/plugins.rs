@@ -38,7 +38,7 @@ impl App {
         }
     }
 
-    fn dispatch_to_plugin(&mut self, id: &str, event: Event) {
+    pub(in crate::gui) fn dispatch_to_plugin(&mut self, id: &str, event: Event) {
         let Some(registry) = self.plugins.as_mut() else {
             return;
         };

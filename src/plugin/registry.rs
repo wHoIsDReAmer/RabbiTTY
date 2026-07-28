@@ -13,6 +13,13 @@ use super::{
 
 pub const COMPONENT_FILE: &str = "plugin.wasm";
 
+#[derive(Clone)]
+pub struct ClickablePattern {
+    pub plugin: String,
+    pub pattern: String,
+    pub regex: std::sync::Arc<regex::Regex>,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ContributedCommand {
     pub plugin: String,
@@ -211,6 +218,28 @@ impl PluginRegistry {
                     .status
                     .iter()
                     .map(move |item| (entry.id.clone(), item.clone()))
+            })
+            .collect()
+    }
+
+    pub fn clickable_patterns(&self) -> Vec<ClickablePattern> {
+        self.entries
+            .iter()
+            .filter_map(|entry| match &entry.slot {
+                Slot::Ready(plugin, matcher) if plugin.failure().is_none() => {
+                    Some((entry, matcher))
+                }
+                _ => None,
+            })
+            .flat_map(|(entry, matcher)| {
+                matcher
+                    .clickable()
+                    .map(|(id, regex)| ClickablePattern {
+                        plugin: entry.id.clone(),
+                        pattern: id.to_string(),
+                        regex,
+                    })
+                    .collect::<Vec<_>>()
             })
             .collect()
     }

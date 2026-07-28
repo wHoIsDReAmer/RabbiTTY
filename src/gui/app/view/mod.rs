@@ -177,7 +177,13 @@ impl App {
         // identical to other panes (e.g. Settings) and avoids double blending.
         let clear_color = [0.0, 0.0, 0.0, 0.0];
         let cursor_visible = !self.config.terminal.cursor_blink || self.cursor_blink_on;
+        let decorations = self
+            .plugins
+            .as_ref()
+            .map(|registry| registry.clickable_patterns())
+            .unwrap_or_default();
         let terminal_widget = TerminalProgram {
+            decorations,
             panes: tab
                 .panes
                 .iter()

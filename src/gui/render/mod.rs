@@ -48,6 +48,7 @@ pub struct TerminalProgram {
     pub clear_color: [f32; 4],
     pub cursor_shape: crate::config::CursorShape,
     pub background_opacity: f32,
+    pub decorations: Vec<crate::plugin::ClickablePattern>,
 }
 
 impl PaneView {
@@ -108,6 +109,34 @@ impl PaneView {
         }
         crate::terminal::url::url_at(&self.row_chars(grid.row), grid.col)
             .map(|span| (span.start, span.end))
+    }
+
+    fn decoration_at(
+        &self,
+        grid: GridPos,
+        decorations: &[crate::plugin::ClickablePattern],
+    ) -> Option<(crate::plugin::ClickablePattern, String, usize, usize)> {
+        if decorations.is_empty() {
+            return None;
+        }
+        let line: String = self.row_chars(grid.row).iter().collect();
+
+        for pattern in decorations {
+            if let Some((start, end)) = crate::plugin::span_at(&pattern.regex, &line, grid.col) {
+                return Some((pattern.clone(), line, start, end));
+            }
+        }
+        None
+    }
+
+    fn decoration_span(
+        &self,
+        grid: GridPos,
+        decorations: &[crate::plugin::ClickablePattern],
+    ) -> Option<(usize, usize)> {
+        let (_, line, start, end) = self.decoration_at(grid, decorations)?;
+        let col_of = |byte: usize| line[..byte].chars().count();
+        Some((col_of(start), col_of(end)))
     }
 
     fn hyperlink_run(&self, grid: GridPos, uri: &str) -> (usize, usize) {
@@ -337,10 +366,25 @@ impl ShaderProgram<Message> for TerminalProgram {
                 let (pane, rect) = self.pane_under(pos, bounds)?;
                 let grid_pos = pane.pixel_to_grid(pos, rect, padding, self.cell_size);
 
-                if link_modifier(state.modifiers)
-                    && let Some(url) = pane.link_at(grid_pos)
-                {
-                    return Some(Action::publish(Message::OpenUrl(url)).and_capture());
+                if link_modifier(state.modifiers) {
+                    if let Some(url) = pane.link_at(grid_pos) {
+                        return Some(Action::publish(Message::OpenUrl(url)).and_capture());
+                    }
+                    if let Some((pattern, line, start, end)) =
+                        pane.decoration_at(grid_pos, &self.decorations)
+                    {
+                        return Some(
+                            Action::publish(Message::ActivatePluginMatch {
+                                plugin: pattern.plugin,
+                                pattern: pattern.pattern,
+                                pane: pane.id,
+                                line,
+                                start: start as u32,
+                                end: end as u32,
+                            })
+                            .and_capture(),
+                        );
+                    }
                 }
                 if pane.mouse_mode {
                     state.dragging = true;
@@ -549,6 +593,7 @@ impl ShaderProgram<Message> for TerminalProgram {
                         .and_then(|(p, r, pos)| {
                             let grid = p.pixel_to_grid(*pos, *r, self.padding, self.cell_size);
                             p.link_span_at(grid)
+                                .or_else(|| p.decoration_span(grid, &self.decorations))
                                 .map(|(start, end)| (grid.row, start, end))
                         });
                 let scrollbar = (pane.scroll_history > 0).then(|| {
