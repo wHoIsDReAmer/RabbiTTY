@@ -2,6 +2,7 @@
 name = "English"
 
 [shell_picker]
+plugins = "Plugins"
 title = "Start New Session"
 ssh = "SSH"
 profiles = "Profiles"

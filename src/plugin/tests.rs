@@ -1258,3 +1258,61 @@ fn a_plugin_can_supply_profiles() {
         other => panic!("expected an ssh target, got {other:?}"),
     }
 }
+
+#[test]
+fn declared_profiles_are_read_back_from_the_cache() {
+    let root = TempRoot::new("profile-cache");
+    if !install(&root, "alpha") {
+        return;
+    }
+
+    let mut registry = registry_in(&root);
+    registry.load_all();
+
+    let profiles = registry.profiles();
+    assert_eq!(profiles.len(), 2);
+    assert_eq!(profiles[0].0, "alpha", "each profile carries its owner");
+    assert_eq!(profiles[0].1.name, "Hello echo");
+
+    let names: Vec<String> = registry
+        .profiles()
+        .into_iter()
+        .map(|(_, profile)| profile.name)
+        .collect();
+    assert_eq!(names, vec!["Hello echo", "Hello SSH"]);
+}
+
+#[test]
+fn a_disabled_plugin_supplies_no_profiles() {
+    let root = TempRoot::new("profile-disabled");
+    if !install(&root, "alpha") {
+        return;
+    }
+
+    let mut registry = registry_in(&root);
+    registry.load_all();
+    assert!(!registry.profiles().is_empty());
+
+    registry.disable("alpha");
+    assert!(
+        registry.profiles().is_empty(),
+        "a disabled plugin must not keep offering profiles"
+    );
+}
+
+#[test]
+fn a_retired_plugin_supplies_no_profiles() {
+    let root = TempRoot::new("profile-retired");
+    if !install(&root, "alpha") {
+        return;
+    }
+
+    let mut registry = registry_in(&root);
+    registry.load_all();
+
+    let plugin = registry.get_mut("alpha").expect("ready");
+    let _ = plugin.run_command("hello.boom");
+    registry.retire_failed();
+
+    assert!(registry.profiles().is_empty());
+}

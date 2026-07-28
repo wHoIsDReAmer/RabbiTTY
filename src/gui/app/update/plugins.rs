@@ -157,6 +157,22 @@ impl App {
             .map(|(plugin, command)| (plugin.to_string(), command.to_string()))
     }
 
+    pub(in crate::gui) fn plugin_picker_profiles(
+        &self,
+    ) -> Vec<(String, Option<String>, crate::gui::tab::Profile)> {
+        let Some(registry) = self.plugins.as_ref() else {
+            return Vec::new();
+        };
+        registry
+            .profiles()
+            .into_iter()
+            .map(|(_, declared)| {
+                let subtitle = declared.subtitle.clone();
+                (declared.name.clone(), subtitle, into_profile(declared))
+            })
+            .collect()
+    }
+
     pub(in crate::gui) fn plugin_menu_items(
         &self,
         context: crate::plugin::MenuContext,
@@ -449,5 +465,35 @@ impl App {
                 eprintln!("failed to persist plugin settings: {err}");
             }
         }
+    }
+}
+
+fn into_profile(declared: crate::plugin::PluginProfile) -> crate::gui::tab::Profile {
+    use crate::gui::tab::{Profile, ProfileKind};
+
+    let kind = match declared.target {
+        crate::plugin::ProfileTarget::Local(local) => ProfileKind::Local {
+            program: local.program.filter(|program| !program.trim().is_empty()),
+            args: local.args,
+        },
+        crate::plugin::ProfileTarget::Ssh(ssh) => ProfileKind::Ssh(crate::config::SshProfile {
+            name: declared.name.clone(),
+            host: ssh.host,
+            port: ssh.port,
+            user: ssh.user,
+            auth_method: match ssh.identity_file {
+                Some(_) => crate::config::SshAuthMethod::KeyFile,
+                None => crate::config::SshAuthMethod::Password,
+            },
+            identity_file: ssh.identity_file,
+            password: None,
+            proxy_command: None,
+        }),
+    };
+
+    Profile {
+        name: declared.name,
+        icon: declared.icon,
+        kind,
     }
 }

@@ -2,6 +2,7 @@
 name = "한국어"
 
 [shell_picker]
+plugins = "플러그인"
 title = "새 세션 시작"
 ssh = "SSH"
 profiles = "프로필"

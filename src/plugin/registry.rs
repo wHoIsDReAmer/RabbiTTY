@@ -7,8 +7,8 @@ use super::host::{LoadedPlugin, PluginHost};
 use super::matcher::OutputMatcher;
 use super::policy::{capability_from_name, capability_name, grant_with_consent, requires_consent};
 use super::{
-    Capability, MatchEvent, MenuContext, MenuItem, PluginInfo, SettingEvent, SettingField,
-    StatusItem,
+    Capability, MatchEvent, MenuContext, MenuItem, PluginInfo, PluginProfile, SettingEvent,
+    SettingField, StatusItem,
 };
 
 pub const COMPONENT_FILE: &str = "plugin.wasm";
@@ -43,15 +43,17 @@ struct Entry {
     fields: Vec<SettingField>,
     status: Vec<StatusItem>,
     menu: Vec<MenuItem>,
+    profiles: Vec<PluginProfile>,
 }
 
 impl Entry {
     fn remember(&mut self, host: &PluginHost) {
-        if let Slot::Ready(plugin, _) = &self.slot {
+        if let Slot::Ready(plugin, _) = &mut self.slot {
             self.info = Some(plugin.info().clone());
             self.fields = plugin.contributions().settings.clone();
             self.status = plugin.contributions().status_items.clone();
             self.menu = plugin.contributions().menu_items.clone();
+            self.profiles = plugin.list_profiles().unwrap_or_default();
         } else if self.info.is_none()
             && let Ok((info, fields)) = host.inspect(&self.path)
         {
@@ -112,6 +114,7 @@ impl PluginRegistry {
                 fields: Vec::new(),
                 status: Vec::new(),
                 menu: Vec::new(),
+                profiles: Vec::new(),
             };
             entry.remember(&self.host);
             self.entries.push(entry);
@@ -208,6 +211,21 @@ impl PluginRegistry {
                     .status
                     .iter()
                     .map(move |item| (entry.id.clone(), item.clone()))
+            })
+            .collect()
+    }
+
+    pub fn profiles(&self) -> Vec<(String, PluginProfile)> {
+        self.entries
+            .iter()
+            .filter(
+                |entry| matches!(&entry.slot, Slot::Ready(plugin, _) if plugin.failure().is_none()),
+            )
+            .flat_map(|entry| {
+                entry
+                    .profiles
+                    .iter()
+                    .map(move |profile| (entry.id.clone(), profile.clone()))
             })
             .collect()
     }

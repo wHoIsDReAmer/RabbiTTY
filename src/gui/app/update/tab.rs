@@ -13,6 +13,7 @@ pub(in crate::gui) enum PickerSection {
     Ssh,
     Profiles,
     SshConfig,
+    Plugin,
     Builtin,
 }
 
@@ -22,6 +23,7 @@ impl PickerSection {
             Self::Ssh => crate::t!("shell_picker.ssh"),
             Self::Profiles => crate::t!("shell_picker.profiles"),
             Self::SshConfig => crate::t!("shell_picker.ssh_config"),
+            Self::Plugin => crate::t!("shell_picker.plugins"),
             Self::Builtin => crate::t!("shell_picker.builtin"),
         }
     }
@@ -347,6 +349,15 @@ impl App {
             self.session_config_profiles(),
             &mut entries,
         );
+
+        for (label, subtitle, profile) in self.plugin_picker_profiles() {
+            entries.push(PickerEntry {
+                section: PickerSection::Plugin,
+                label,
+                subtitle,
+                profile,
+            });
+        }
 
         for shell in &self.available_shells {
             entries.push(PickerEntry {
