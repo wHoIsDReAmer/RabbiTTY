@@ -421,7 +421,14 @@ impl App {
         modifiers: Modifiers,
         repeat: bool,
     ) -> Option<Task<Message>> {
-        let action = ShortcutAction::resolve(physical, modifiers, &self.config.shortcuts)?;
+        let Some(action) = ShortcutAction::resolve(physical, modifiers, &self.config.shortcuts)
+        else {
+            let (plugin, command) = self.resolve_plugin_shortcut(physical, modifiers)?;
+            if !repeat {
+                self.run_plugin_command(&plugin, &command);
+            }
+            return Some(Task::none());
+        };
 
         if repeat {
             return Some(Task::none());
@@ -464,6 +471,7 @@ impl App {
                 self.settings_open = true;
                 self.active_tab = SETTINGS_TAB_INDEX;
                 self.settings_draft = SettingsDraft::from_config(&self.config);
+                self.sync_plugin_shortcut_draft();
                 Task::none()
             }
             ShortcutAction::NextTab => {

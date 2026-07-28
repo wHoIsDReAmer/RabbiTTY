@@ -15,7 +15,7 @@ use iced::widget::combo_box;
 use std::sync::mpsc as std_mpsc;
 
 mod command_palette;
-mod shortcuts;
+pub(in crate::gui) mod shortcuts;
 mod subscription;
 pub(crate) mod update;
 mod view;
@@ -389,7 +389,7 @@ impl App {
             show_all_fonts,
             config.terminal.font_selection.as_deref(),
         );
-        Self {
+        let mut app = Self {
             tabs: vec![],
             active_tab: 0,
             next_tab_id: 1,
@@ -466,7 +466,9 @@ impl App {
 
             plugins,
             plugin_settings: Default::default(),
-        }
+        };
+        app.adopt_plugin_shortcuts();
+        app
     }
 
     pub(super) fn grid_for_rect(&self, rect: iced::Rectangle) -> (usize, usize) {
@@ -1134,6 +1136,68 @@ mod command_palette_tests {
                 .iter()
                 .all(|entry| entry.target == CommandTarget::Builtin(ShortcutId::Quit)),
             "a full-label query must not leave unrelated entries selectable"
+        );
+    }
+
+    fn has_plugin_commands(app: &App) -> bool {
+        app.plugins
+            .as_ref()
+            .is_some_and(|registry| !registry.contributed_commands().is_empty())
+    }
+
+    #[test]
+    fn a_declared_default_key_is_adopted_when_it_is_free() {
+        let app = App::new(AppConfig::default());
+        if !has_plugin_commands(&app) {
+            return;
+        }
+
+        assert_eq!(
+            app.config.shortcuts.plugin_binding("hello", "hello.hi"),
+            Some("Ctrl+Shift+H"),
+            "the plugin asked for a free key, so it should hold it"
+        );
+    }
+
+    #[test]
+    fn a_plugin_cannot_take_a_key_a_builtin_already_holds() {
+        let mut config = AppConfig::default();
+        config
+            .shortcuts
+            .set(ShortcutId::NewTab, "Ctrl+Shift+H".to_string());
+
+        let app = App::new(config);
+        if !has_plugin_commands(&app) {
+            return;
+        }
+
+        assert_eq!(
+            app.config.shortcuts.plugin_binding("hello", "hello.hi"),
+            None,
+            "the key was taken, so the command must stay unbound"
+        );
+        assert_eq!(
+            app.config.shortcuts.get(ShortcutId::NewTab),
+            "Ctrl+Shift+H",
+            "the builtin must keep its binding"
+        );
+    }
+
+    #[test]
+    fn a_user_chosen_binding_survives_the_declared_default() {
+        let mut config = AppConfig::default();
+        config
+            .shortcuts
+            .set_plugin_binding("hello", "hello.hi", "Ctrl+Alt+J".to_string());
+
+        let app = App::new(config);
+        if !has_plugin_commands(&app) {
+            return;
+        }
+
+        assert_eq!(
+            app.config.shortcuts.plugin_binding("hello", "hello.hi"),
+            Some("Ctrl+Alt+J")
         );
     }
 }

@@ -110,6 +110,7 @@ blur_radius = "Blur Radius"
 blur_radius_hint = "Controls the intensity of the window background blur effect."
 
 [settings.shortcuts]
+plugins = "Plugin commands"
 command_palette = "Command Palette"
 application = "Application"
 new_tab = "New tab"

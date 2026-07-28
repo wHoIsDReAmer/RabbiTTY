@@ -126,7 +126,11 @@ struct ParsedShortcut<'a> {
     key: Cow<'a, str>,
 }
 
-pub(super) fn shortcut_matches(binding: &str, physical: &Physical, modifiers: Modifiers) -> bool {
+pub(in crate::gui) fn shortcut_matches(
+    binding: &str,
+    physical: &Physical,
+    modifiers: Modifiers,
+) -> bool {
     let Some(parsed) = parse_shortcut(binding) else {
         return false;
     };

@@ -40,6 +40,7 @@ impl App {
         match self.config.save() {
             Ok(()) => {
                 self.settings_draft = SettingsDraft::from_config(&self.config);
+                self.sync_plugin_shortcut_draft();
                 self.settings_draft.set_profiles_saved();
             }
             Err(err) => {

@@ -26,15 +26,41 @@ pub fn view<'a>(
         palette,
     ));
 
-    column(vec![section(
+    let mut sections = vec![section(
         crate::t!("settings.shortcuts.application"),
         column(rows)
             .spacing(SPACING_NORMAL)
             .width(Length::Fill)
             .into(),
         palette,
-    )])
-    .spacing(SPACING_NORMAL)
-    .width(Length::Fill)
-    .into()
+    )];
+
+    if !draft.plugin_shortcuts.is_empty() {
+        let plugin_rows: Vec<Element<'a, Message>> = draft
+            .plugin_shortcuts
+            .iter()
+            .enumerate()
+            .map(|(index, row)| {
+                input_row(
+                    &row.label,
+                    &row.binding,
+                    SettingsField::PluginShortcut(index),
+                    palette,
+                )
+            })
+            .collect();
+        sections.push(section(
+            crate::t!("settings.shortcuts.plugins"),
+            column(plugin_rows)
+                .spacing(SPACING_NORMAL)
+                .width(Length::Fill)
+                .into(),
+            palette,
+        ));
+    }
+
+    column(sections)
+        .spacing(SPACING_NORMAL)
+        .width(Length::Fill)
+        .into()
 }

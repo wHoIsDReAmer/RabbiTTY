@@ -60,6 +60,103 @@ impl App {
         }
     }
 
+    pub(in crate::gui) fn adopt_plugin_shortcuts(&mut self) {
+        let Some(registry) = self.plugins.as_ref() else {
+            return;
+        };
+        let wanted: Vec<(String, String, String)> = registry
+            .contributed_commands()
+            .into_iter()
+            .filter_map(|command| {
+                let key = command.default_key?;
+                Some((command.plugin, command.id, key))
+            })
+            .collect();
+
+        for (plugin, command, key) in wanted {
+            if self
+                .config
+                .shortcuts
+                .plugin_binding(&plugin, &command)
+                .is_some()
+            {
+                continue;
+            }
+            if self.config.shortcuts.is_taken(&key) {
+                eprintln!(
+                    "plugin {plugin} wanted {key} for {command}, but it is already bound; \
+                     leaving the command unbound"
+                );
+                continue;
+            }
+            self.config
+                .shortcuts
+                .set_plugin_binding(&plugin, &command, key);
+        }
+    }
+
+    pub(in crate::gui) fn sync_plugin_shortcut_draft(&mut self) {
+        let Some(registry) = self.plugins.as_ref() else {
+            self.settings_draft.plugin_shortcuts.clear();
+            return;
+        };
+        let rows: Vec<crate::gui::settings::PluginShortcutDraft> = registry
+            .contributed_commands()
+            .into_iter()
+            .map(|command| crate::gui::settings::PluginShortcutDraft {
+                binding: self
+                    .config
+                    .shortcuts
+                    .plugin_binding(&command.plugin, &command.id)
+                    .unwrap_or_default()
+                    .to_string(),
+                label: format!("{} — {}", command.source, command.title),
+                plugin: command.plugin,
+                command: command.id,
+            })
+            .collect();
+        self.settings_draft.plugin_shortcuts = rows;
+    }
+
+    pub(in crate::gui) fn commit_plugin_shortcut(&mut self, index: usize) {
+        let Some(row) = self.settings_draft.plugin_shortcuts.get(index).cloned() else {
+            return;
+        };
+        let binding = row.binding.trim().to_string();
+        let current = self
+            .config
+            .shortcuts
+            .plugin_binding(&row.plugin, &row.command)
+            .unwrap_or_default();
+        if binding == current {
+            return;
+        }
+        if !binding.is_empty() && self.config.shortcuts.is_taken(&binding) {
+            self.sync_plugin_shortcut_draft();
+            return;
+        }
+        self.config
+            .shortcuts
+            .set_plugin_binding(&row.plugin, &row.command, binding);
+        self.queue_config_save();
+        self.sync_plugin_shortcut_draft();
+    }
+
+    pub(in crate::gui) fn resolve_plugin_shortcut(
+        &self,
+        physical: &iced::keyboard::key::Physical,
+        modifiers: iced::keyboard::Modifiers,
+    ) -> Option<(String, String)> {
+        self.config
+            .shortcuts
+            .plugin_iter()
+            .find(|(_, binding)| {
+                crate::gui::app::shortcuts::shortcut_matches(binding, physical, modifiers)
+            })
+            .and_then(|(key, _)| crate::config::split_plugin_key(key))
+            .map(|(plugin, command)| (plugin.to_string(), command.to_string()))
+    }
+
     pub(in crate::gui) fn plugin_menu_items(
         &self,
         context: crate::plugin::MenuContext,
@@ -275,6 +372,7 @@ impl App {
             registry.disable(plugin);
         }
         self.persist_plugin_settings();
+        self.adopt_plugin_shortcuts();
         self.sync_output_capture();
         self.refresh_plugin_settings();
     }
@@ -313,6 +411,7 @@ impl App {
             eprintln!("plugin {plugin} failed to start: {reason}");
         }
         self.persist_plugin_settings();
+        self.adopt_plugin_shortcuts();
         self.sync_output_capture();
         self.refresh_plugin_settings();
     }
