@@ -68,6 +68,7 @@ pub(super) enum ShortcutAction {
     NewTab,
     CloseTab,
     OpenSettings,
+    OpenCommandPalette,
     NextTab,
     PrevTab,
     Quit,
@@ -83,12 +84,13 @@ pub(super) enum ShortcutAction {
 }
 
 impl ShortcutAction {
-    fn from_id(id: ShortcutId) -> Self {
+    pub(super) fn from_id(id: ShortcutId) -> Self {
         use crate::gui::pane::Direction;
         match id {
             ShortcutId::NewTab => Self::NewTab,
             ShortcutId::CloseTab => Self::CloseTab,
             ShortcutId::OpenSettings => Self::OpenSettings,
+            ShortcutId::CommandPalette => Self::OpenCommandPalette,
             ShortcutId::NextTab => Self::NextTab,
             ShortcutId::PrevTab => Self::PrevTab,
             ShortcutId::Quit => Self::Quit,

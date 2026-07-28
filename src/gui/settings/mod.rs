@@ -11,6 +11,7 @@ use iced::{Alignment, Background, Border, Color, Element, Length};
 use std::fmt;
 
 pub mod appearance;
+pub mod plugins;
 pub mod shortcuts;
 pub mod ssh;
 pub mod terminal;
@@ -103,10 +104,11 @@ pub enum SettingsCategory {
     Theme,
     Shortcuts,
     Ssh,
+    Plugin(usize),
 }
 
 impl SettingsCategory {
-    pub const ALL: [Self; 5] = [
+    pub const BUILTIN: [Self; 5] = [
         Self::Appearance,
         Self::Terminal,
         Self::Theme,
@@ -121,6 +123,7 @@ impl SettingsCategory {
             Self::Theme => crate::t!("settings.categories.theme"),
             Self::Shortcuts => crate::t!("settings.categories.shortcuts"),
             Self::Ssh => crate::t!("settings.categories.ssh"),
+            Self::Plugin(_) => "",
         }
     }
 
@@ -131,6 +134,7 @@ impl SettingsCategory {
             Self::Theme => "◑",
             Self::Shortcuts => "⌘",
             Self::Ssh => "⇄",
+            Self::Plugin(_) => "◈",
         }
     }
 }
@@ -669,6 +673,7 @@ fn update_profile_draft(draft: &mut ProfileDraft, field: ProfileField, value: St
 #[allow(clippy::too_many_arguments)]
 pub fn view_category<'a>(
     category: SettingsCategory,
+    plugin_state: &'a plugins::PluginSettingsState,
     config: &'a AppConfig,
     draft: &'a SettingsDraft,
     font_combo_state: &'a iced::widget::combo_box::State<TerminalFontOption>,
@@ -695,6 +700,7 @@ pub fn view_category<'a>(
         SettingsCategory::Theme => theme::view(config, draft, palette),
         SettingsCategory::Shortcuts => shortcuts::view(config, draft, palette),
         SettingsCategory::Ssh => ssh::view(draft, palette, animations_enabled),
+        SettingsCategory::Plugin(_) => plugins::view(plugin_state, animations_enabled, palette),
     }
 }
 

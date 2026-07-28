@@ -14,6 +14,7 @@ use iced::keyboard::{Key, Modifiers};
 use iced::widget::combo_box;
 use std::sync::mpsc as std_mpsc;
 
+mod command_palette;
 mod shortcuts;
 mod subscription;
 pub(crate) mod update;
@@ -30,6 +31,10 @@ pub enum Message {
     CloseTab(usize),
     OpenShellPicker,
     CloseShellPicker,
+    OpenCommandPalette,
+    CloseCommandPalette,
+    CommandQueryChanged(String),
+    RunCommandEntry(usize),
     CreateTab(Profile),
     Settings(SettingsMessage),
     LaunchFromHistory(usize),
@@ -140,6 +145,21 @@ pub enum SettingsMessage {
     ProfileTemplateSelected(usize),
     ProfileModalFieldChanged(ProfileField, String),
     ProfileModalTabSelected(ProfileModalTab),
+    PluginSettingChanged {
+        plugin: String,
+        key: String,
+        value: String,
+    },
+    PluginToggled {
+        plugin: String,
+        enabled: bool,
+    },
+    PluginConsentChanged {
+        plugin: String,
+        capability: String,
+        granted: bool,
+    },
+    PluginReloaded(String),
     TestSshConnection,
     SshConnectionTestFinished(Result<(), String>),
     CloseProfileModal,
@@ -261,6 +281,11 @@ pub struct App {
     #[cfg(target_os = "macos")]
     pub(super) pending_save_on_restart: bool,
 
+    // ── Command palette ─────────────────────────────────────────────────
+    pub(super) show_command_palette: bool,
+    pub(super) command_query: String,
+    pub(super) command_selected: usize,
+
     // ── Overlays ────────────────────────────────────────────────────────
     pub(super) modal_anim: Animation<bool>,
     /// Whether the terminal right-click context menu is currently shown.
@@ -282,6 +307,7 @@ pub struct App {
 
     // ── Plugins ─────────────────────────────────────────────────────────
     pub(super) plugins: Option<crate::plugin::PluginRegistry>,
+    pub(super) plugin_settings: crate::gui::settings::plugins::PluginSettingsState,
 }
 
 /// Duration of the visual bell flash overlay.
@@ -315,9 +341,6 @@ fn load_plugins(config: &AppConfig) -> Option<crate::plugin::PluginRegistry> {
         .collect();
     for failure in failures {
         eprintln!("plugin failed to load: {failure}");
-    }
-    for (id, commands) in registry.contributed_commands() {
-        eprintln!("plugin {id} contributes commands: {}", commands.join(", "));
     }
     for (id, missing) in registry.pending_consent() {
         let names: Vec<&str> = missing
@@ -413,6 +436,9 @@ impl App {
             #[cfg(target_os = "macos")]
             pending_save_on_restart: false,
 
+            show_command_palette: false,
+            command_query: String::new(),
+            command_selected: 0,
             modal_anim: Animation::new(false)
                 .duration(std::time::Duration::from_millis(250))
                 .easing(iced::animation::Easing::EaseOutQuint),
@@ -429,6 +455,7 @@ impl App {
             settings_debounce_spawned_seq: 0,
 
             plugins,
+            plugin_settings: Default::default(),
         }
     }
 
@@ -966,5 +993,137 @@ mod plugin_wiring_tests {
 
         app.dispatch_plugin_event(crate::plugin::Event::SessionStart(1));
         app.shutdown_plugins();
+    }
+}
+
+#[cfg(test)]
+mod command_palette_tests {
+    use super::*;
+    use crate::config::ShortcutId;
+    use crate::gui::app::command_palette::CommandTarget;
+
+    #[test]
+    fn every_bindable_action_is_reachable_from_the_palette() {
+        let app = App::new(AppConfig::default());
+        let entries = app.command_entries();
+
+        for id in ShortcutId::ALL {
+            if id == ShortcutId::CommandPalette {
+                continue;
+            }
+            assert!(
+                entries
+                    .iter()
+                    .any(|entry| entry.target == CommandTarget::Builtin(id)),
+                "{:?} has a keybinding but cannot be found by name",
+                id
+            );
+        }
+    }
+
+    #[test]
+    fn the_palette_does_not_offer_to_open_itself() {
+        let app = App::new(AppConfig::default());
+
+        assert!(
+            !app.command_entries()
+                .iter()
+                .any(|entry| entry.target == CommandTarget::Builtin(ShortcutId::CommandPalette)),
+        );
+    }
+
+    #[test]
+    fn an_entry_carries_its_binding_so_users_can_learn_it() {
+        let app = App::new(AppConfig::default());
+        let entry = app
+            .command_entries()
+            .into_iter()
+            .find(|entry| entry.target == CommandTarget::Builtin(ShortcutId::NewTab))
+            .expect("new tab");
+
+        assert_eq!(entry.detail, app.config.shortcuts.get(ShortcutId::NewTab));
+        assert!(!entry.detail.is_empty());
+    }
+
+    #[test]
+    fn running_an_entry_closes_the_palette() {
+        let mut app = App::new(AppConfig::default());
+        let _ = app.open_command_palette();
+        assert!(app.show_command_palette);
+
+        let index = app
+            .visible_command_entries()
+            .iter()
+            .position(|entry| entry.target == CommandTarget::Builtin(ShortcutId::OpenSettings))
+            .expect("open settings");
+        let _ = app.run_command_entry(index);
+
+        assert!(!app.show_command_palette, "the palette must close on run");
+        assert!(app.settings_open, "the action itself must have run");
+    }
+
+    #[test]
+    fn an_out_of_range_index_is_ignored() {
+        let mut app = App::new(AppConfig::default());
+        let _ = app.open_command_palette();
+
+        let _ = app.run_command_entry(9_999);
+
+        assert!(app.show_command_palette, "a stale index must not close it");
+    }
+
+    #[test]
+    fn an_open_palette_owns_the_keyboard() {
+        let mut app = App::new(AppConfig::default());
+        assert!(!app.overlay_owns_keyboard());
+
+        let _ = app.open_command_palette();
+        assert!(app.overlay_owns_keyboard());
+
+        app.close_command_palette();
+        assert!(!app.overlay_owns_keyboard(), "routing must be handed back");
+    }
+
+    #[test]
+    fn typing_into_the_palette_never_reaches_the_terminal() {
+        let mut app = App::new(AppConfig::default());
+        let _ = app.open_command_palette();
+
+        let _ = app.update(Message::ImePreedit("안".to_string(), None));
+        let _ = app.update(Message::ImeCommit("안녕".to_string()));
+
+        assert!(
+            app.ime_preedit.is_none(),
+            "IME text belongs to the palette input, not the shell"
+        );
+    }
+
+    #[test]
+    fn closing_the_palette_gives_ime_back_to_the_terminal() {
+        let mut app = App::new(AppConfig::default());
+        let _ = app.open_command_palette();
+        app.close_command_palette();
+
+        let _ = app.update(Message::ImePreedit("안".to_string(), None));
+
+        assert!(
+            app.ime_preedit.is_some(),
+            "the terminal must resume receiving preedit once the overlay is gone"
+        );
+    }
+
+    #[test]
+    fn filtering_narrows_what_enter_would_run() {
+        let mut app = App::new(AppConfig::default());
+        let _ = app.open_command_palette();
+        app.command_query = ShortcutId::Quit.label().to_string();
+
+        let visible = app.visible_command_entries();
+        assert!(
+            visible
+                .iter()
+                .all(|entry| entry.target == CommandTarget::Builtin(ShortcutId::Quit)),
+            "a full-label query must not leave unrelated entries selectable"
+        );
     }
 }

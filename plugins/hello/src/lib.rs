@@ -8,7 +8,9 @@ wit_bindgen::generate!({
 });
 
 use crate::rabbitty::plugin::host;
-use crate::rabbitty::plugin::types::{Capability, Command, OutputPattern};
+use crate::rabbitty::plugin::types::{
+    Capability, Command, OutputPattern, SettingField, SettingKind,
+};
 
 struct HelloPlugin;
 
@@ -17,7 +19,11 @@ impl Guest for HelloPlugin {
         PluginInfo {
             name: "hello".to_string(),
             version: "0.1.0".to_string(),
-            capabilities: vec![Capability::Notify],
+            capabilities: vec![
+                Capability::Notify,
+                Capability::ReadConfig,
+                Capability::Network,
+            ],
         }
     }
 
@@ -32,14 +38,38 @@ impl Guest for HelloPlugin {
 
     fn contributions() -> Result<Contributions, String> {
         Ok(Contributions {
-            commands: vec![Command {
-                id: "hello.hi".to_string(),
-                title: "Say hi".to_string(),
-            }],
+            commands: vec![
+                Command {
+                    id: "hello.hi".to_string(),
+                    title: "Say hi".to_string(),
+                },
+                Command {
+                    id: "hello.fail".to_string(),
+                    title: "Report a failure".to_string(),
+                },
+                Command {
+                    id: "hello.boom".to_string(),
+                    title: "Crash on purpose".to_string(),
+                },
+            ],
             output_patterns: vec![OutputPattern {
                 id: "hello.greeting".to_string(),
                 regex: "hello".to_string(),
             }],
+            settings: vec![
+                SettingField {
+                    key: "greeting".to_string(),
+                    label: "Greeting".to_string(),
+                    kind: SettingKind::Text,
+                    default_value: "hello".to_string(),
+                },
+                SettingField {
+                    key: "loud".to_string(),
+                    label: "Shout it".to_string(),
+                    kind: SettingKind::Toggle,
+                    default_value: "false".to_string(),
+                },
+            ],
         })
     }
 
@@ -58,6 +88,12 @@ impl Guest for HelloPlugin {
                 ));
             }
             Event::CwdChanged(_) => {}
+            Event::SettingChanged(setting) => {
+                host::notify(&format!(
+                    "hello plugin saw {} change to {}",
+                    setting.key, setting.value
+                ));
+            }
         }
         Ok(())
     }
@@ -66,6 +102,12 @@ impl Guest for HelloPlugin {
         match id.as_str() {
             "hello.hi" => {
                 host::notify("hello from the hello plugin!");
+                Ok(())
+            }
+            "hello.readconfig" => {
+                let greeting =
+                    host::read_config("greeting").unwrap_or_else(|| "<none>".to_string());
+                host::notify(&format!("hello plugin read greeting={greeting}"));
                 Ok(())
             }
             "hello.boom" => panic!("intentional panic, for host failure-isolation tests"),

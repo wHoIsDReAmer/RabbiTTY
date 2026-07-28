@@ -1,3 +1,4 @@
+mod command_palette;
 mod dialog;
 mod password_prompt;
 mod settings;
@@ -149,6 +150,10 @@ impl App {
 
         if let Some(prompt) = self.password_prompt.as_ref() {
             return password_prompt::password_prompt(base_layout, prompt, palette);
+        }
+
+        if self.show_command_palette {
+            return self.view_command_palette(base_layout);
         }
 
         if self.show_shell_picker {
@@ -310,6 +315,10 @@ impl App {
             layout: tab.layout.clone(),
             focused: tab.focused,
         };
+
+        if self.overlay_owns_keyboard() {
+            return with_flash;
+        }
 
         ImeEnabled::new(with_flash)
             .preedit(self.ime_preedit.clone())

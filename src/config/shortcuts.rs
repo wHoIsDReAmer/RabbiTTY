@@ -6,6 +6,7 @@ pub enum ShortcutId {
     NewTab,
     CloseTab,
     OpenSettings,
+    CommandPalette,
     NextTab,
     PrevTab,
     Quit,
@@ -24,7 +25,7 @@ pub enum ShortcutId {
 }
 
 impl ShortcutId {
-    pub const ALL: [Self; 18] = [
+    pub const ALL: [Self; 19] = [
         Self::NewTab,
         Self::CloseTab,
         Self::DuplicateTab,
@@ -41,6 +42,7 @@ impl ShortcutId {
         Self::FontSizeIncrease,
         Self::FontSizeDecrease,
         Self::FontSizeReset,
+        Self::CommandPalette,
         Self::OpenSettings,
         Self::Quit,
     ];
@@ -50,6 +52,7 @@ impl ShortcutId {
             Self::NewTab => "new_tab",
             Self::CloseTab => "close_tab",
             Self::OpenSettings => "open_settings",
+            Self::CommandPalette => "command_palette",
             Self::NextTab => "next_tab",
             Self::PrevTab => "prev_tab",
             Self::Quit => "quit",
@@ -73,6 +76,7 @@ impl ShortcutId {
             Self::NewTab => crate::t!("settings.shortcuts.new_tab"),
             Self::CloseTab => crate::t!("settings.shortcuts.close_tab"),
             Self::OpenSettings => crate::t!("settings.shortcuts.open_settings"),
+            Self::CommandPalette => crate::t!("settings.shortcuts.command_palette"),
             Self::NextTab => crate::t!("settings.shortcuts.next_tab"),
             Self::PrevTab => crate::t!("settings.shortcuts.prev_tab"),
             Self::Quit => crate::t!("settings.shortcuts.quit"),
@@ -96,6 +100,7 @@ impl ShortcutId {
             Self::NewTab => DEFAULT_SHORTCUT_NEW_TAB,
             Self::CloseTab => DEFAULT_SHORTCUT_CLOSE_TAB,
             Self::OpenSettings => DEFAULT_SHORTCUT_OPEN_SETTINGS,
+            Self::CommandPalette => DEFAULT_SHORTCUT_COMMAND_PALETTE,
             Self::NextTab => DEFAULT_SHORTCUT_NEXT_TAB,
             Self::PrevTab => DEFAULT_SHORTCUT_PREV_TAB,
             Self::Quit => DEFAULT_SHORTCUT_QUIT,

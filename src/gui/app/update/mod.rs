@@ -1,3 +1,4 @@
+pub(in crate::gui) mod palette;
 mod plugins;
 mod settings;
 mod sftp;
@@ -99,6 +100,13 @@ impl App {
             Message::CloseShellPicker => {
                 self.modal_anim.go_mut(false, Instant::now());
             }
+            Message::OpenCommandPalette => return self.open_command_palette(),
+            Message::CloseCommandPalette => self.close_command_palette(),
+            Message::CommandQueryChanged(query) => {
+                self.command_query = query;
+                self.command_selected = 0;
+            }
+            Message::RunCommandEntry(index) => return self.run_command_entry(index),
             Message::CreateTab(profile) => return self.launch_profile(profile),
             Message::LaunchFromHistory(index) => {
                 if let Some(entry) = self.session_history.entries.get(index).cloned() {
@@ -282,6 +290,9 @@ impl App {
                 }
             }
             Message::ImeCommit(text) => {
+                if self.overlay_owns_keyboard() {
+                    return Task::none();
+                }
                 if !text.is_empty()
                     && let Some(pane) = self.active_session_mut()
                     && let crate::gui::tab::TerminalSession::Active(session) = &pane.session
@@ -296,6 +307,9 @@ impl App {
                 return Task::none();
             }
             Message::ImePreedit(text, cursor) => {
+                if self.overlay_owns_keyboard() {
+                    return Task::none();
+                }
                 if text.is_empty() {
                     self.ime_preedit = None;
                 } else {
@@ -377,6 +391,7 @@ impl App {
                 }
                 if let Some(cat) = self.settings_category_transition.tick(now) {
                     self.settings_category = cat;
+                    self.refresh_plugin_settings();
                 }
                 if let Some(start) = self.bell_flash_start
                     && start.elapsed() >= super::BELL_FLASH_DURATION
@@ -452,6 +467,20 @@ impl App {
                 Key::Named(Named::Enter) => return self.update(Message::ConfirmMultilinePaste),
                 Key::Named(Named::Escape) => return self.update(Message::CancelMultilinePaste),
                 _ => {}
+            }
+            return Task::none();
+        }
+
+        if self.show_command_palette {
+            match key {
+                Key::Named(Named::Escape) => self.close_command_palette(),
+                Key::Named(Named::ArrowUp) => self.shift_command_selection(-1),
+                Key::Named(Named::ArrowDown) => self.shift_command_selection(1),
+                Key::Named(Named::Enter) => {
+                    let selected = self.command_selected;
+                    return self.run_command_entry(selected);
+                }
+                _ => return Task::none(),
             }
             return Task::none();
         }

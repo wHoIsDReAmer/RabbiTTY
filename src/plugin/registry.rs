@@ -6,9 +6,17 @@ use crate::config::plugins::{PluginSettings, PluginsConfig};
 use super::host::{LoadedPlugin, PluginHost};
 use super::matcher::OutputMatcher;
 use super::policy::{capability_from_name, capability_name, grant_with_consent, requires_consent};
-use super::{Capability, MatchEvent, PluginInfo};
+use super::{Capability, MatchEvent, PluginInfo, SettingEvent, SettingField};
 
 pub const COMPONENT_FILE: &str = "plugin.wasm";
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ContributedCommand {
+    pub plugin: String,
+    pub source: String,
+    pub id: String,
+    pub title: String,
+}
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Status {
@@ -27,6 +35,22 @@ struct Entry {
     id: String,
     path: PathBuf,
     slot: Slot,
+    info: Option<PluginInfo>,
+    fields: Vec<SettingField>,
+}
+
+impl Entry {
+    fn remember(&mut self, host: &PluginHost) {
+        if let Slot::Ready(plugin, _) = &self.slot {
+            self.info = Some(plugin.info().clone());
+            self.fields = plugin.contributions().settings.clone();
+        } else if self.info.is_none()
+            && let Ok((info, fields)) = host.inspect(&self.path)
+        {
+            self.info = Some(info);
+            self.fields = fields;
+        }
+    }
 }
 
 pub struct PluginRegistry {
@@ -72,14 +96,27 @@ impl PluginRegistry {
             } else {
                 Slot::Disabled
             };
-            self.entries.push(Entry { id, path, slot });
+            let mut entry = Entry {
+                id,
+                path,
+                slot,
+                info: None,
+                fields: Vec::new(),
+            };
+            entry.remember(&self.host);
+            self.entries.push(entry);
         }
     }
 
     fn instantiate(host: &PluginHost, id: &str, path: &Path, settings: &PluginSettings) -> Slot {
         let consented = consented_capabilities(settings);
         let policy = |info: &PluginInfo| grant_with_consent(info, &consented);
-        match host.load(id, path, HashMap::new(), &policy) {
+        let values: HashMap<String, String> = settings
+            .settings
+            .iter()
+            .map(|(key, value)| (key.clone(), value.clone()))
+            .collect();
+        match host.load(id, path, values, &policy) {
             Ok(plugin) => Slot::ready(plugin),
             Err(err) => Slot::Retired(err.to_string()),
         }
@@ -144,20 +181,82 @@ impl PluginRegistry {
         })
     }
 
-    pub fn contributed_commands(&self) -> Vec<(String, Vec<String>)> {
+    pub fn setting_fields(&self, id: &str) -> Vec<SettingField> {
+        self.entry(id)
+            .map(|entry| entry.fields.clone())
+            .unwrap_or_default()
+    }
+
+    pub fn info(&self, id: &str) -> Option<&PluginInfo> {
+        self.entry(id)?.info.as_ref()
+    }
+
+    pub fn is_enabled(&self, id: &str) -> bool {
+        self.settings
+            .get(id)
+            .is_none_or(|settings| settings.enabled)
+    }
+
+    pub fn granted(&self, id: &str) -> Vec<Capability> {
+        let Some(info) = self.info(id) else {
+            return Vec::new();
+        };
+        let consented = self
+            .settings
+            .get(id)
+            .map(consented_capabilities)
+            .unwrap_or_default();
+        grant_with_consent(info, &consented)
+    }
+
+    pub fn setting_value(&self, id: &str, key: &str) -> Option<String> {
+        let stored = self
+            .settings
+            .get(id)
+            .and_then(|settings| settings.settings.get(key))
+            .cloned();
+        stored.or_else(|| {
+            self.setting_fields(id)
+                .into_iter()
+                .find(|field| field.key == key)
+                .map(|field| field.default_value)
+        })
+    }
+
+    pub fn set_setting(&mut self, id: &str, key: &str, value: String) -> Option<SettingEvent> {
+        if self.setting_value(id, key).as_deref() == Some(value.as_str()) {
+            return None;
+        }
+        self.settings
+            .entry(id.to_string())
+            .or_default()
+            .settings
+            .insert(key.to_string(), value.clone());
+        Some(SettingEvent {
+            key: key.to_string(),
+            value,
+        })
+    }
+
+    pub fn contributed_commands(&self) -> Vec<ContributedCommand> {
         self.entries
             .iter()
             .filter_map(|entry| match &entry.slot {
-                Slot::Ready(plugin, _) => {
-                    let ids: Vec<String> = plugin
-                        .contributions()
-                        .commands
-                        .iter()
-                        .map(|command| command.id.clone())
-                        .collect();
-                    (!ids.is_empty()).then(|| (entry.id.clone(), ids))
-                }
+                Slot::Ready(plugin, _) if plugin.failure().is_none() => Some((entry, plugin)),
                 _ => None,
+            })
+            .flat_map(|(entry, plugin)| {
+                let source = plugin.info().name.clone();
+                plugin
+                    .contributions()
+                    .commands
+                    .iter()
+                    .map(move |command| ContributedCommand {
+                        plugin: entry.id.clone(),
+                        source: source.clone(),
+                        id: command.id.clone(),
+                        title: command.title.clone(),
+                    })
             })
             .collect()
     }
@@ -242,6 +341,7 @@ impl PluginRegistry {
             _ => Ok(()),
         };
         self.entries[index].slot = slot;
+        self.entries[index].remember(&self.host);
         outcome
     }
 
@@ -250,6 +350,13 @@ impl PluginRegistry {
         let name = capability_name(capability).to_string();
         if !settings.consented.contains(&name) {
             settings.consented.push(name);
+        }
+    }
+
+    pub fn revoke(&mut self, id: &str, capability: Capability) {
+        let name = capability_name(capability);
+        if let Some(settings) = self.settings.get_mut(id) {
+            settings.consented.retain(|granted| granted != name);
         }
     }
 

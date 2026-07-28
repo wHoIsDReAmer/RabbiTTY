@@ -69,12 +69,24 @@ fn manifest_and_contributions_round_trip() {
     };
 
     assert_eq!(plugin.info().name, "hello");
-    assert_eq!(plugin.info().capabilities, vec![Capability::Notify]);
-    assert_eq!(plugin.granted(), &[Capability::Notify]);
+    assert_eq!(
+        plugin.info().capabilities,
+        vec![
+            Capability::Notify,
+            Capability::ReadConfig,
+            Capability::Network
+        ]
+    );
+    assert_eq!(
+        plugin.granted(),
+        &[Capability::Notify, Capability::ReadConfig],
+        "network is requested but not consented to, so it stays ungranted"
+    );
 
     let commands = &plugin.contributions().commands;
-    assert_eq!(commands.len(), 1);
+    assert_eq!(commands.len(), 3);
     assert_eq!(commands[0].id, "hello.hi");
+    assert_eq!(commands[0].title, "Say hi");
 }
 
 #[test]
@@ -456,6 +468,7 @@ fn a_plugin_disabled_in_config_is_not_instantiated() {
         crate::config::plugins::PluginSettings {
             enabled: false,
             consented: Vec::new(),
+            settings: Default::default(),
         },
     );
 
@@ -502,6 +515,7 @@ fn consent_from_config_grants_the_capability() {
         crate::config::plugins::PluginSettings {
             enabled: true,
             consented: vec!["network".to_string()],
+            settings: Default::default(),
         },
     );
 
@@ -510,12 +524,32 @@ fn consent_from_config_grants_the_capability() {
 
     assert_eq!(registry.status("alpha"), Some(Status::Ready));
     assert!(
+        registry
+            .get_mut("alpha")
+            .expect("ready")
+            .granted()
+            .contains(&Capability::Network),
+        "consent recorded in config must reach the instance at startup"
+    );
+}
+
+#[test]
+fn without_recorded_consent_the_capability_stays_ungranted() {
+    let root = TempRoot::new("cfg-no-consent");
+    if !install(&root, "alpha") {
+        return;
+    }
+
+    let mut registry = registry_in(&root);
+    registry.load_all();
+
+    assert!(
         !registry
             .get_mut("alpha")
             .expect("ready")
             .granted()
             .contains(&Capability::Network),
-        "hello never requests network, so consent alone must not grant it"
+        "a requested capability must stay off until the user approves it"
     );
 }
 
@@ -549,6 +583,7 @@ fn plugin_settings_round_trip_through_toml() {
         crate::config::plugins::PluginSettings {
             enabled: false,
             consented: vec!["network".to_string(), "write-pty".to_string()],
+            settings: Default::default(),
         },
     );
 
@@ -702,5 +737,324 @@ fn a_plugin_without_patterns_does_not_switch_capture_on() {
     assert!(
         !registry.watches_output(),
         "with no plugins there is nothing to match, so panes must not buffer output"
+    );
+}
+
+#[test]
+fn a_declared_setting_falls_back_to_its_default() {
+    let root = TempRoot::new("setting-default");
+    if !install(&root, "alpha") {
+        return;
+    }
+
+    let mut registry = registry_in(&root);
+    registry.load_all();
+
+    let fields = registry.setting_fields("alpha");
+    assert_eq!(fields.len(), 2);
+    assert_eq!(
+        registry.setting_value("alpha", "greeting").as_deref(),
+        Some("hello"),
+        "an unset field reads back as its declared default"
+    );
+}
+
+#[test]
+fn a_stored_setting_wins_over_the_default() {
+    let root = TempRoot::new("setting-stored");
+    if !install(&root, "alpha") {
+        return;
+    }
+    let mut settings = crate::config::plugins::PluginsConfig::new();
+    settings.insert(
+        "alpha".to_string(),
+        crate::config::plugins::PluginSettings {
+            enabled: true,
+            consented: Vec::new(),
+            settings: [("greeting".to_string(), "howdy".to_string())]
+                .into_iter()
+                .collect(),
+        },
+    );
+
+    let mut registry = registry_with(&root, settings);
+    registry.load_all();
+
+    assert_eq!(
+        registry.setting_value("alpha", "greeting").as_deref(),
+        Some("howdy")
+    );
+}
+
+#[test]
+fn changing_a_setting_is_recorded_and_announced() {
+    let root = TempRoot::new("setting-change");
+    if !install(&root, "alpha") {
+        return;
+    }
+
+    let mut registry = registry_in(&root);
+    registry.load_all();
+
+    let event = registry
+        .set_setting("alpha", "greeting", "howdy".to_string())
+        .expect("a real change produces an event");
+    assert_eq!(event.key, "greeting");
+    assert_eq!(event.value, "howdy");
+
+    assert_eq!(
+        registry
+            .settings()
+            .get("alpha")
+            .and_then(|s| s.settings.get("greeting"))
+            .map(String::as_str),
+        Some("howdy"),
+        "the value must be written back for persistence"
+    );
+}
+
+#[test]
+fn setting_a_value_to_what_it_already_is_announces_nothing() {
+    let root = TempRoot::new("setting-noop");
+    if !install(&root, "alpha") {
+        return;
+    }
+
+    let mut registry = registry_in(&root);
+    registry.load_all();
+
+    assert!(
+        registry
+            .set_setting("alpha", "greeting", "hello".to_string())
+            .is_none(),
+        "writing the current value must not wake the plugin"
+    );
+}
+
+#[test]
+fn a_setting_change_reaches_the_guest() {
+    let root = TempRoot::new("setting-event");
+    if !install(&root, "alpha") {
+        return;
+    }
+
+    let mut registry = registry_in(&root);
+    registry.load_all();
+    let changed = registry
+        .set_setting("alpha", "greeting", "howdy".to_string())
+        .expect("change");
+
+    let plugin = registry.get_mut("alpha").expect("ready");
+    plugin.drain_requests();
+    plugin
+        .on_event(Event::SettingChanged(changed))
+        .expect("delivered");
+
+    assert_eq!(
+        plugin.drain_requests(),
+        vec![PluginRequest::Notify {
+            message: "hello plugin saw greeting change to howdy".to_string(),
+        }]
+    );
+}
+
+#[test]
+fn a_stored_setting_is_visible_to_read_config() {
+    let root = TempRoot::new("setting-readconfig");
+    if !install(&root, "alpha") {
+        return;
+    }
+    let mut settings = crate::config::plugins::PluginsConfig::new();
+    settings.insert(
+        "alpha".to_string(),
+        crate::config::plugins::PluginSettings {
+            enabled: true,
+            consented: vec!["read-config".to_string()],
+            settings: [("greeting".to_string(), "howdy".to_string())]
+                .into_iter()
+                .collect(),
+        },
+    );
+
+    let mut registry = registry_with(&root, settings);
+    registry.load_all();
+
+    let plugin = registry.get_mut("alpha").expect("ready");
+    plugin.drain_requests();
+    plugin
+        .run_command("hello.readconfig")
+        .expect("command runs");
+
+    assert_eq!(
+        plugin.drain_requests(),
+        vec![PluginRequest::Notify {
+            message: "hello plugin read greeting=howdy".to_string(),
+        }],
+        "the guest must see the stored value through read-config"
+    );
+}
+
+#[test]
+fn a_disabled_plugin_still_reports_what_it_is() {
+    let root = TempRoot::new("disabled-metadata");
+    if !install(&root, "alpha") {
+        return;
+    }
+    let mut settings = crate::config::plugins::PluginsConfig::new();
+    settings.insert(
+        "alpha".to_string(),
+        crate::config::plugins::PluginSettings {
+            enabled: false,
+            consented: Vec::new(),
+            settings: Default::default(),
+        },
+    );
+
+    let mut registry = registry_with(&root, settings);
+    registry.load_all();
+
+    assert_eq!(registry.status("alpha"), Some(Status::Disabled));
+    assert!(!registry.is_enabled("alpha"));
+    assert_eq!(
+        registry.info("alpha").map(|info| info.name.as_str()),
+        Some("hello"),
+        "the panel needs a name and version even while the plugin is off"
+    );
+    assert_eq!(
+        registry.setting_fields("alpha").len(),
+        2,
+        "declared settings stay editable while the plugin is off"
+    );
+}
+
+#[test]
+fn disabling_keeps_the_declared_settings_visible() {
+    let root = TempRoot::new("disable-keeps-fields");
+    if !install(&root, "alpha") {
+        return;
+    }
+
+    let mut registry = registry_in(&root);
+    registry.load_all();
+    let before = registry.setting_fields("alpha").len();
+    registry.disable("alpha");
+
+    assert_eq!(
+        registry.setting_fields("alpha").len(),
+        before,
+        "turning a plugin off must not empty its settings panel"
+    );
+}
+
+#[test]
+fn granted_reflects_consent_without_asking_the_instance() {
+    let root = TempRoot::new("granted-view");
+    if !install(&root, "alpha") {
+        return;
+    }
+
+    let mut registry = registry_in(&root);
+    registry.load_all();
+
+    assert!(
+        !registry.granted("alpha").contains(&Capability::Network),
+        "a consent-gated capability starts ungranted"
+    );
+
+    registry.consent("alpha", Capability::Network);
+    assert!(
+        registry.granted("alpha").contains(&Capability::Network),
+        "consent must show up in the panel before the restart"
+    );
+
+    registry.revoke("alpha", Capability::Network);
+    assert!(!registry.granted("alpha").contains(&Capability::Network));
+    assert!(
+        registry
+            .settings()
+            .get("alpha")
+            .is_some_and(|settings| settings.consented.is_empty()),
+        "revoking must be written back so it survives a restart"
+    );
+}
+
+#[test]
+fn consent_takes_effect_after_the_plugin_restarts() {
+    let root = TempRoot::new("consent-restart");
+    if !install(&root, "alpha") {
+        return;
+    }
+
+    let mut registry = registry_in(&root);
+    registry.load_all();
+    registry.consent("alpha", Capability::Network);
+    registry.enable("alpha").expect("restart");
+
+    let plugin = registry.get_mut("alpha").expect("ready");
+    assert!(
+        plugin.granted().contains(&Capability::Network),
+        "capabilities are fixed at instantiation, so consent needs a restart to reach the guest"
+    );
+}
+
+#[test]
+fn contributed_commands_carry_a_title_and_their_source() {
+    let root = TempRoot::new("contributed");
+    if !install(&root, "alpha") {
+        return;
+    }
+
+    let mut registry = registry_in(&root);
+    registry.load_all();
+
+    let commands = registry.contributed_commands();
+    let hi = commands
+        .iter()
+        .find(|command| command.id == "hello.hi")
+        .expect("hello.hi is declared");
+
+    assert_eq!(hi.plugin, "alpha", "the owning entry, used to dispatch");
+    assert_eq!(hi.source, "hello", "the display name, shown to the user");
+    assert_eq!(
+        hi.title, "Say hi",
+        "the palette shows the title, not the id"
+    );
+}
+
+#[test]
+fn a_disabled_plugin_contributes_no_commands() {
+    let root = TempRoot::new("contributed-disabled");
+    if !install(&root, "alpha") {
+        return;
+    }
+
+    let mut registry = registry_in(&root);
+    registry.load_all();
+    assert!(!registry.contributed_commands().is_empty());
+
+    registry.disable("alpha");
+    assert!(
+        registry.contributed_commands().is_empty(),
+        "a disabled plugin must not be runnable from the palette"
+    );
+}
+
+#[test]
+fn a_retired_plugin_contributes_no_commands() {
+    let root = TempRoot::new("contributed-retired");
+    if !install(&root, "alpha") {
+        return;
+    }
+
+    let mut registry = registry_in(&root);
+    registry.load_all();
+
+    let plugin = registry.get_mut("alpha").expect("ready");
+    let _ = plugin.run_command("hello.boom");
+    registry.retire_failed();
+
+    assert!(
+        registry.contributed_commands().is_empty(),
+        "a trapped plugin must drop out of the palette"
     );
 }
