@@ -131,6 +131,7 @@ impl App {
             tab.split(axis, pane);
         }
         self.resize_panes();
+        self.sync_output_capture();
         self.dispatch_plugin_event(crate::plugin::Event::SessionStart(pane_id));
         Task::none()
     }
@@ -239,6 +240,7 @@ impl App {
             .push(crate::gui::tab::TerminalTab::new(tab_id, pane));
         self.active_tab = self.tabs.len() - 1;
         self.dismiss_shell_picker();
+        self.sync_output_capture();
         self.dispatch_plugin_event(crate::plugin::Event::SessionStart(tab_id));
         Task::none()
     }
