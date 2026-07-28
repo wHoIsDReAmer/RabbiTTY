@@ -4,7 +4,6 @@ mod password_prompt;
 mod settings;
 mod sftp;
 mod shell_picker;
-mod toast;
 
 pub(in crate::gui) use dialog::{DialogButton, confirm_dialog};
 
@@ -25,12 +24,7 @@ static LOGO_HANDLE: LazyLock<image::Handle> =
 
 impl App {
     pub fn view(&self) -> Element<'_, Message> {
-        let content = self.view_main();
-        if self.toasts.is_empty() {
-            content
-        } else {
-            self.with_toasts(content)
-        }
+        self.view_main()
     }
 
     fn view_main(&self) -> Element<'_, Message> {
@@ -321,6 +315,10 @@ impl App {
             layout: tab.layout.clone(),
             focused: tab.focused,
         };
+
+        if self.overlay_owns_keyboard() {
+            return with_flash;
+        }
 
         ImeEnabled::new(with_flash)
             .preedit(self.ime_preedit.clone())

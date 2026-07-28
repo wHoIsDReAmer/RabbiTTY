@@ -1,5 +1,5 @@
 use super::super::command_palette::{CommandEntry, CommandTarget, filter, wrap};
-use super::super::{App, MAX_TOASTS, Message, TOAST_LIFETIME, Toast};
+use super::super::{App, Message};
 use crate::config::ShortcutId;
 use iced::Task;
 
@@ -41,6 +41,10 @@ impl App {
         iced::widget::operation::focus(COMMAND_INPUT_ID.clone())
     }
 
+    pub(in crate::gui) fn overlay_owns_keyboard(&self) -> bool {
+        self.show_command_palette || self.password_prompt.is_some()
+    }
+
     pub(in crate::gui) fn close_command_palette(&mut self) {
         self.show_command_palette = false;
         self.command_query.clear();
@@ -70,21 +74,6 @@ impl App {
     fn run_builtin(&mut self, id: ShortcutId) -> Task<Message> {
         use crate::gui::app::shortcuts::ShortcutAction;
         self.apply_shortcut_action(ShortcutAction::from_id(id))
-    }
-
-    pub(in crate::gui) fn push_toast(&mut self, message: String) {
-        self.toasts.push(Toast {
-            message,
-            born: std::time::Instant::now(),
-        });
-        let overflow = self.toasts.len().saturating_sub(MAX_TOASTS);
-        self.toasts.drain(..overflow);
-    }
-
-    pub(in crate::gui) fn expire_toasts(&mut self) {
-        let now = std::time::Instant::now();
-        self.toasts
-            .retain(|toast| now.duration_since(toast.born) < TOAST_LIFETIME);
     }
 }
 

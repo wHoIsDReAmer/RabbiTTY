@@ -107,12 +107,6 @@ impl App {
                 self.command_selected = 0;
             }
             Message::RunCommandEntry(index) => return self.run_command_entry(index),
-            Message::ToastTick => self.expire_toasts(),
-            Message::DismissToast(index) => {
-                if index < self.toasts.len() {
-                    self.toasts.remove(index);
-                }
-            }
             Message::CreateTab(profile) => return self.launch_profile(profile),
             Message::LaunchFromHistory(index) => {
                 if let Some(entry) = self.session_history.entries.get(index).cloned() {
@@ -296,6 +290,9 @@ impl App {
                 }
             }
             Message::ImeCommit(text) => {
+                if self.overlay_owns_keyboard() {
+                    return Task::none();
+                }
                 if !text.is_empty()
                     && let Some(pane) = self.active_session_mut()
                     && let crate::gui::tab::TerminalSession::Active(session) = &pane.session
@@ -310,6 +307,9 @@ impl App {
                 return Task::none();
             }
             Message::ImePreedit(text, cursor) => {
+                if self.overlay_owns_keyboard() {
+                    return Task::none();
+                }
                 if text.is_empty() {
                     self.ime_preedit = None;
                 } else {

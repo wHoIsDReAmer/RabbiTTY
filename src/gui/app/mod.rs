@@ -22,14 +22,6 @@ mod view;
 
 pub(super) const SETTINGS_TAB_INDEX: usize = usize::MAX;
 
-pub(super) const TOAST_LIFETIME: std::time::Duration = std::time::Duration::from_secs(4);
-pub(super) const MAX_TOASTS: usize = 3;
-
-pub(super) struct Toast {
-    pub message: String,
-    pub born: std::time::Instant,
-}
-
 #[derive(Clone)]
 pub enum Message {
     Noop,
@@ -43,8 +35,6 @@ pub enum Message {
     CloseCommandPalette,
     CommandQueryChanged(String),
     RunCommandEntry(usize),
-    DismissToast(usize),
-    ToastTick,
     CreateTab(Profile),
     Settings(SettingsMessage),
     LaunchFromHistory(usize),
@@ -295,7 +285,6 @@ pub struct App {
     pub(super) show_command_palette: bool,
     pub(super) command_query: String,
     pub(super) command_selected: usize,
-    pub(super) toasts: Vec<Toast>,
 
     // ── Overlays ────────────────────────────────────────────────────────
     pub(super) modal_anim: Animation<bool>,
@@ -450,7 +439,6 @@ impl App {
             show_command_palette: false,
             command_query: String::new(),
             command_selected: 0,
-            toasts: Vec::new(),
             modal_anim: Animation::new(false)
                 .duration(std::time::Duration::from_millis(250))
                 .easing(iced::animation::Easing::EaseOutQuint),
@@ -1085,6 +1073,46 @@ mod command_palette_tests {
     }
 
     #[test]
+    fn an_open_palette_owns_the_keyboard() {
+        let mut app = App::new(AppConfig::default());
+        assert!(!app.overlay_owns_keyboard());
+
+        let _ = app.open_command_palette();
+        assert!(app.overlay_owns_keyboard());
+
+        app.close_command_palette();
+        assert!(!app.overlay_owns_keyboard(), "routing must be handed back");
+    }
+
+    #[test]
+    fn typing_into_the_palette_never_reaches_the_terminal() {
+        let mut app = App::new(AppConfig::default());
+        let _ = app.open_command_palette();
+
+        let _ = app.update(Message::ImePreedit("안".to_string(), None));
+        let _ = app.update(Message::ImeCommit("안녕".to_string()));
+
+        assert!(
+            app.ime_preedit.is_none(),
+            "IME text belongs to the palette input, not the shell"
+        );
+    }
+
+    #[test]
+    fn closing_the_palette_gives_ime_back_to_the_terminal() {
+        let mut app = App::new(AppConfig::default());
+        let _ = app.open_command_palette();
+        app.close_command_palette();
+
+        let _ = app.update(Message::ImePreedit("안".to_string(), None));
+
+        assert!(
+            app.ime_preedit.is_some(),
+            "the terminal must resume receiving preedit once the overlay is gone"
+        );
+    }
+
+    #[test]
     fn filtering_narrows_what_enter_would_run() {
         let mut app = App::new(AppConfig::default());
         let _ = app.open_command_palette();
@@ -1098,35 +1126,4 @@ mod command_palette_tests {
             "a full-label query must not leave unrelated entries selectable"
         );
     }
-
-    #[test]
-    fn a_toast_expires_on_its_own() {
-        let mut app = App::new(AppConfig::default());
-        app.push_toast("done".to_string());
-        assert_eq!(app.toasts.len(), 1);
-
-        app.expire_toasts();
-        assert_eq!(app.toasts.len(), 1, "a fresh toast must survive a tick");
-
-        app.toasts[0].born = std::time::Instant::now() - TOAST_LIFETIME - ONE_SECOND;
-        app.expire_toasts();
-        assert!(app.toasts.is_empty(), "an aged toast must be dropped");
-    }
-
-    #[test]
-    fn toasts_do_not_pile_up_without_bound() {
-        let mut app = App::new(AppConfig::default());
-        for i in 0..MAX_TOASTS + 5 {
-            app.push_toast(format!("toast {i}"));
-        }
-
-        assert_eq!(app.toasts.len(), MAX_TOASTS);
-        assert_eq!(
-            app.toasts.last().map(|toast| toast.message.as_str()),
-            Some(format!("toast {}", MAX_TOASTS + 4).as_str()),
-            "the newest toast must be the one kept"
-        );
-    }
-
-    const ONE_SECOND: std::time::Duration = std::time::Duration::from_secs(1);
 }

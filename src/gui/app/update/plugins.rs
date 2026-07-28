@@ -9,7 +9,7 @@ impl App {
             return;
         };
 
-        let mut requests: Vec<PluginRequest> = Vec::new();
+        let mut requests: Vec<(String, PluginRequest)> = Vec::new();
         let mut reported: Vec<(String, String)> = Vec::new();
         for (id, plugin) in registry.ready_mut() {
             if let Err(crate::plugin::PluginError::Reported(reason)) =
@@ -17,7 +17,12 @@ impl App {
             {
                 reported.push((id.to_string(), reason));
             }
-            requests.append(&mut plugin.drain_requests());
+            requests.extend(
+                plugin
+                    .drain_requests()
+                    .into_iter()
+                    .map(|request| (id.to_string(), request)),
+            );
         }
 
         for (id, reason) in reported {
@@ -28,8 +33,8 @@ impl App {
             eprintln!("plugin {id} retired: {reason}");
         }
 
-        for request in requests {
-            self.apply_plugin_request(request);
+        for (source, request) in requests {
+            self.apply_plugin_request(&source, request);
         }
     }
 
@@ -51,7 +56,7 @@ impl App {
             eprintln!("plugin {id} retired: {reason}");
         }
         for request in requests {
-            self.apply_plugin_request(request);
+            self.apply_plugin_request(id, request);
         }
     }
 
@@ -68,17 +73,27 @@ impl App {
         let retired = registry.retire_failed();
 
         if let Err(crate::plugin::PluginError::Reported(reason)) = outcome {
-            self.push_toast(reason);
+            self.notify_from(plugin, &reason);
         }
         for (id, reason) in retired {
             eprintln!("plugin {id} retired: {reason}");
         }
         for request in requests {
-            self.apply_plugin_request(request);
+            self.apply_plugin_request(plugin, request);
         }
     }
 
-    fn apply_plugin_request(&mut self, request: PluginRequest) {
+    fn notify_from(&self, source: &str, message: &str) {
+        let name = self
+            .plugins
+            .as_ref()
+            .and_then(|registry| registry.info(source))
+            .map(|info| info.name.as_str())
+            .unwrap_or(source);
+        crate::platform::notify(name, message);
+    }
+
+    fn apply_plugin_request(&mut self, source: &str, request: PluginRequest) {
         match request {
             PluginRequest::WritePty { pane, data } => {
                 if let Some(target) = self.pane_mut_by_id(pane)
@@ -88,7 +103,7 @@ impl App {
                 }
             }
             PluginRequest::Notify { message } => {
-                self.push_toast(message);
+                self.notify_from(source, &message);
             }
         }
     }
