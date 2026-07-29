@@ -1308,7 +1308,7 @@ fn a_fetched_profile_list_is_read_back() {
         .into_iter()
         .map(|(_, profile)| profile.name)
         .collect();
-    assert_eq!(names, vec!["Hello echo", "Hello SSH"]);
+    assert_eq!(names, vec!["Hello shell", "Hello SSH"]);
 }
 
 #[test]

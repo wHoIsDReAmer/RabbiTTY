@@ -108,8 +108,6 @@ impl Guest for HelloPlugin {
     }
 
     fn list_profiles() -> Result<Vec<PluginProfile>, String> {
-        // Stands in for a slow inventory source. Sleeping blocks in host I/O, so
-        // it burns no fuel — exactly the case the host's deadline has to cover.
         if host::read_config("slow").as_deref() == Some("true") {
             std::thread::sleep(std::time::Duration::from_secs(3));
         }
@@ -117,12 +115,14 @@ impl Guest for HelloPlugin {
         Ok(vec![
             PluginProfile {
                 id: "hello.local".to_string(),
-                name: "Hello echo".to_string(),
+                name: "Hello shell".to_string(),
                 subtitle: Some("from the hello plugin".to_string()),
                 icon: None,
+                // A one-shot command would exit before the tab is even painted,
+                // so the demo profile opens the user's shell instead.
                 target: ProfileTarget::Local(LocalTarget {
-                    program: Some("echo".to_string()),
-                    args: vec!["hello from a plugin profile".to_string()],
+                    program: None,
+                    args: vec![],
                 }),
             },
             PluginProfile {
