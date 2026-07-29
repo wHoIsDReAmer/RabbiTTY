@@ -1,12 +1,11 @@
 use iced::Size;
-use iced::font;
 
 use rabbitty::config::AppConfig;
 use rabbitty::gui::{self, App};
 use rabbitty::i18n;
 
-// Embed DejaVu Sans font for better Unicode support (Box Drawing characters)
-const DEJAVU_SANS: &[u8] = include_bytes!("../fonts/DejaVuSans.ttf");
+// The chrome follows the platform's sans-serif. Box drawing is a terminal-grid
+// concern, and the grid rasterizes its own bundled DejaVu Sans Mono.
 const APP_ICON_PNG: &[u8] = include_bytes!("../assets/logo.png");
 
 fn main() -> iced::Result {
@@ -35,11 +34,6 @@ fn main() -> iced::Result {
     .theme(iced::Theme::Dark)
     .style(|state, _| state.window_style())
     .subscription(App::subscription)
-    .font(DEJAVU_SANS)
-    .default_font(iced::Font {
-        family: font::Family::Name("DejaVu Sans"),
-        ..iced::Font::DEFAULT
-    })
     .window(iced::window::Settings {
         exit_on_close_request: false,
         size: Size::new(app_config.ui.window_width, app_config.ui.window_height),
