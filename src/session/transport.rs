@@ -10,7 +10,6 @@ use std::collections::HashMap;
 use std::io::ErrorKind;
 use std::io::{Read, Write};
 use std::path::PathBuf;
-#[cfg(windows)]
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, OnceLock};
 use std::thread;
@@ -52,6 +51,14 @@ impl Write for PtyWriter {
         guard.writer().flush()
     }
 }
+/// macOS `openpty` sets `CLOEXEC` after the fact, so a fork from another thread in
+/// that window inherits this pty's fds and it never sees EOF.
+static SPAWN_GUARD: Mutex<()> = Mutex::new(());
+
+fn lock_spawn() -> std::sync::MutexGuard<'static, ()> {
+    SPAWN_GUARD.lock().unwrap_or_else(|err| err.into_inner())
+}
+
 fn child_env(spec_env: Vec<(String, String)>) -> HashMap<String, String> {
     let mut env: HashMap<String, String> = spec_env.into_iter().collect();
     env.entry("TERM".to_string())
@@ -119,6 +126,7 @@ fn terminfo_exists(terminfo: &str) -> bool {
 pub(super) struct LocalPty {
     writer: Arc<Mutex<Box<dyn Write + Send>>>,
     pty: Option<tty::Pty>,
+    shutdown: Arc<AtomicBool>,
     reader: Option<JoinHandle<()>>,
 }
 
@@ -143,8 +151,11 @@ impl LocalPty {
             cell_height: 1,
         };
 
-        let pty = tty::new(&options, window_size, tab_id)
-            .map_err(|err| SessionError::Spawn(format!("pty spawn failed: {err}")))?;
+        let pty = {
+            let _spawn = lock_spawn();
+            tty::new(&options, window_size, tab_id)
+                .map_err(|err| SessionError::Spawn(format!("pty spawn failed: {err}")))?
+        };
 
         let reader_file = pty
             .file()
@@ -157,6 +168,9 @@ impl LocalPty {
             .map_err(|err| SessionError::Spawn(format!("writer clone failed: {err}")))?;
 
         let writer: Arc<Mutex<Box<dyn Write + Send>>> = Arc::new(Mutex::new(Box::new(writer_file)));
+
+        let shutdown = Arc::new(AtomicBool::new(false));
+        let reader_shutdown = Arc::clone(&shutdown);
 
         let reader_handle = thread::spawn(move || {
             let mut reader = reader_file;
@@ -180,6 +194,11 @@ impl LocalPty {
                     }
                     Err(err) if err.kind() == ErrorKind::Interrupted => continue,
                     Err(err) if err.kind() == ErrorKind::WouldBlock => {
+                        // A slave fd leaked into some other child keeps this pty open
+                        // forever, so EOF alone cannot be the only way out.
+                        if reader_shutdown.load(Ordering::Relaxed) {
+                            break;
+                        }
                         thread::sleep(Duration::from_millis(1));
                         continue;
                     }
@@ -194,6 +213,7 @@ impl LocalPty {
         Ok(Self {
             writer,
             pty: Some(pty),
+            shutdown,
             reader: Some(reader_handle),
         })
     }
@@ -229,10 +249,10 @@ impl Transport for LocalPty {
 #[cfg(unix)]
 impl Drop for LocalPty {
     fn drop(&mut self) {
-        // Drop the PTY first — kills the child process, causing
-        // the slave side to close. The reader thread will then get
-        // EIO on its cloned master fd and exit.
+        // Drop the PTY first — kills the child, so the reader drains what is left
+        // and sees EOF. The flag then covers the case where EOF never comes.
         self.pty.take();
+        self.shutdown.store(true, Ordering::Relaxed);
 
         if let Some(handle) = self.reader.take() {
             let _ = handle.join();
