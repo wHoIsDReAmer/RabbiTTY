@@ -14,6 +14,17 @@ const NEEDS_CONSENT: [Capability; 3] = [
     Capability::OpenUrl,
 ];
 
+/// Every capability the host knows about. `capability_from_name` and the
+/// settings UI both rely on this being complete.
+pub const ALL: [Capability; 6] = [
+    Capability::Notify,
+    Capability::ReadConfig,
+    Capability::Filesystem,
+    Capability::WritePty,
+    Capability::Network,
+    Capability::OpenUrl,
+];
+
 pub fn requires_consent(info: &PluginInfo) -> Vec<Capability> {
     info.capabilities
         .iter()

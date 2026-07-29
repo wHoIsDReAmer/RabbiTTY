@@ -214,6 +214,7 @@ capability.read_config = "Read its settings"
 capability.notify = "Send notifications"
 capability.network = "Network access"
 capability.filesystem = "Its own data folder"
+capability.open_url = "Open links in your browser"
 
 [command_palette]
 placeholder = "Type a command…"

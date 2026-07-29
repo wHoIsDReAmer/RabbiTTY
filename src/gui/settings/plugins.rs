@@ -286,14 +286,17 @@ fn permission_row<'a>(
         .into()
 }
 
-fn capability_label(name: &str) -> &'static str {
+/// Falls back to the raw name: an unlabelled capability must still be legible
+/// rather than rendering as an empty row.
+pub(crate) fn capability_label(name: &str) -> &str {
     match name {
         "write-pty" => crate::t!("settings.plugins.capability.write_pty"),
         "read-config" => crate::t!("settings.plugins.capability.read_config"),
         "notify" => crate::t!("settings.plugins.capability.notify"),
         "network" => crate::t!("settings.plugins.capability.network"),
         "filesystem" => crate::t!("settings.plugins.capability.filesystem"),
-        _ => "",
+        "open-url" => crate::t!("settings.plugins.capability.open_url"),
+        other => other,
     }
 }
 
@@ -451,4 +454,28 @@ pub fn system_view<'a>(
         body.into(),
         palette,
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::capability_label;
+    use crate::plugin::{ALL_CAPABILITIES, capability_name};
+
+    #[test]
+    fn every_capability_the_host_knows_has_a_label() {
+        for capability in ALL_CAPABILITIES {
+            let name = capability_name(capability);
+            let label = capability_label(name);
+
+            assert!(!label.is_empty(), "{name} renders an empty row");
+            assert_ne!(
+                label, name,
+                "{name} has no label, so the permission row shows only its consent hint"
+            );
+            assert!(
+                !label.starts_with("settings."),
+                "{name} maps to a translation key that does not exist: {label}"
+            );
+        }
+    }
 }

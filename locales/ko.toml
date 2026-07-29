@@ -214,6 +214,7 @@ capability.read_config = "자체 설정 읽기"
 capability.notify = "알림 보내기"
 capability.network = "네트워크 접근"
 capability.filesystem = "전용 데이터 폴더"
+capability.open_url = "브라우저로 링크 열기"
 
 [command_palette]
 placeholder = "명령을 입력하세요…"
