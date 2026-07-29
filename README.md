@@ -92,4 +92,10 @@ A theme with the same name as a built-in will override it. See `assets/example-t
 
 ## Known Limitations
 
-- **IME preedit font.** The in-progress IME composition text is drawn by the app's default UI font (`DejaVu Sans`), not the monospace terminal font. `iced` 0.14's preedit API exposes only the text size, with no way to override the font, so the composition text may look slightly different from committed terminal input even though both use the same configured `font_size`.
+- **IME preedit font.** The in-progress IME composition text is drawn by the app's UI font — the platform's sans-serif — not the monospace terminal font. `iced` 0.14's preedit API exposes only the text size, with no way to override the font, so the composition text may look slightly different from committed terminal input even though both use the same configured `font_size`.
+
+## Credits
+
+- Interface icons from [Lucide](https://lucide.dev) (ISC). See `assets/icons/LUCIDE_LICENSE.txt`.
+- Bundled terminal font: DejaVu Sans Mono. See `fonts/DEJAVU_LICENSE.txt`.
+- Shell logos in `assets/icons/` are trademarks of their respective projects, included to identify the shell a profile launches.

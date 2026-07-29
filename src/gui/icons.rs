@@ -74,9 +74,163 @@ pub fn view<'a, Message: 'a>(icon: ShellIcon, size: f32, opacity: f32) -> Elemen
         .into()
 }
 
+// ── UI icons ────────────────────────────────────────────────────────────────
+
+macro_rules! lucide {
+    ($konst:ident, $file:literal) => {
+        static $konst: LazyLock<svg::Handle> = LazyLock::new(|| {
+            svg::Handle::from_memory(include_bytes!(concat!("../../assets/icons/", $file)))
+        });
+    };
+}
+
+lucide!(UI_CLOSE, "lucide-x.svg");
+lucide!(UI_MINIMIZE, "lucide-minus.svg");
+lucide!(UI_MAXIMIZE, "lucide-square.svg");
+lucide!(UI_SETTINGS, "lucide-settings.svg");
+lucide!(UI_CHECK, "lucide-check.svg");
+lucide!(UI_BACK, "lucide-arrow-left.svg");
+lucide!(UI_TRANSFER, "lucide-arrow-left-right.svg");
+lucide!(UI_TERMINAL, "lucide-terminal.svg");
+lucide!(UI_FOLDER_OPEN, "lucide-folder-open.svg");
+lucide!(UI_PLUGIN, "lucide-puzzle.svg");
+lucide!(UI_REFRESH, "lucide-refresh-cw.svg");
+lucide!(UI_PLUG, "lucide-plug.svg");
+lucide!(UI_PALETTE, "lucide-palette.svg");
+lucide!(UI_THEME, "lucide-sun-moon.svg");
+lucide!(UI_KEYBOARD, "lucide-keyboard.svg");
+lucide!(UI_SERVER, "lucide-server.svg");
+lucide!(UI_ADD, "lucide-plus.svg");
+lucide!(UI_UPLOAD, "lucide-upload.svg");
+lucide!(UI_SFTP, "lucide-arrow-down-up.svg");
+lucide!(UI_LAUNCH, "lucide-play.svg");
+lucide!(UI_EDIT, "lucide-pencil.svg");
+lucide!(UI_DIRECTORY, "lucide-chevron-right.svg");
+lucide!(UI_SYMLINK, "lucide-link.svg");
+
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum Ui {
+    Close,
+    Minimize,
+    Maximize,
+    Settings,
+    Check,
+    Back,
+    Transfer,
+    Terminal,
+    FolderOpen,
+    Plugin,
+    Refresh,
+    Plug,
+    Palette,
+    Theme,
+    Keyboard,
+    Server,
+    Add,
+    Upload,
+    Sftp,
+    Launch,
+    Edit,
+    Directory,
+    Symlink,
+}
+
+/// Every variant, so tests can prove each one resolves to embedded bytes.
+pub const ALL_UI: [Ui; 23] = [
+    Ui::Close,
+    Ui::Minimize,
+    Ui::Maximize,
+    Ui::Settings,
+    Ui::Check,
+    Ui::Back,
+    Ui::Transfer,
+    Ui::Terminal,
+    Ui::FolderOpen,
+    Ui::Plugin,
+    Ui::Refresh,
+    Ui::Plug,
+    Ui::Palette,
+    Ui::Theme,
+    Ui::Keyboard,
+    Ui::Server,
+    Ui::Add,
+    Ui::Upload,
+    Ui::Sftp,
+    Ui::Launch,
+    Ui::Edit,
+    Ui::Directory,
+    Ui::Symlink,
+];
+
+impl Ui {
+    fn handle(self) -> svg::Handle {
+        match self {
+            Self::Close => UI_CLOSE.clone(),
+            Self::Minimize => UI_MINIMIZE.clone(),
+            Self::Maximize => UI_MAXIMIZE.clone(),
+            Self::Settings => UI_SETTINGS.clone(),
+            Self::Check => UI_CHECK.clone(),
+            Self::Back => UI_BACK.clone(),
+            Self::Transfer => UI_TRANSFER.clone(),
+            Self::Terminal => UI_TERMINAL.clone(),
+            Self::FolderOpen => UI_FOLDER_OPEN.clone(),
+            Self::Plugin => UI_PLUGIN.clone(),
+            Self::Refresh => UI_REFRESH.clone(),
+            Self::Plug => UI_PLUG.clone(),
+            Self::Palette => UI_PALETTE.clone(),
+            Self::Theme => UI_THEME.clone(),
+            Self::Keyboard => UI_KEYBOARD.clone(),
+            Self::Server => UI_SERVER.clone(),
+            Self::Add => UI_ADD.clone(),
+            Self::Upload => UI_UPLOAD.clone(),
+            Self::Sftp => UI_SFTP.clone(),
+            Self::Launch => UI_LAUNCH.clone(),
+            Self::Edit => UI_EDIT.clone(),
+            Self::Directory => UI_DIRECTORY.clone(),
+            Self::Symlink => UI_SYMLINK.clone(),
+        }
+    }
+}
+
+pub fn ui<'a, Message: 'a>(icon: Ui, size: f32, color: Color) -> Element<'a, Message> {
+    svg(icon.handle())
+        .width(Length::Fixed(size))
+        .height(Length::Fixed(size))
+        .style(move |_theme: &iced::Theme, _status| svg::Style { color: Some(color) })
+        .into()
+}
+
+/// An icon that brightens under the cursor. A button's `text_color` cannot reach
+/// an svg, so the hover response has to live on the icon itself.
+pub fn ui_hover<'a, Message: 'a>(
+    icon: Ui,
+    size: f32,
+    idle: Color,
+    hovered: Color,
+) -> Element<'a, Message> {
+    svg(icon.handle())
+        .width(Length::Fixed(size))
+        .height(Length::Fixed(size))
+        .style(move |_theme: &iced::Theme, status| svg::Style {
+            color: Some(match status {
+                svg::Status::Hovered => hovered,
+                _ => idle,
+            }),
+        })
+        .into()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn every_ui_icon_has_an_asset() {
+        for icon in ALL_UI {
+            // lazy prased
+            let _ = icon.handle();
+        }
+    }
 
     #[test]
     fn every_picker_name_resolves_to_a_distinct_icon() {

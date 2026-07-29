@@ -267,7 +267,7 @@ fn permission_row<'a>(
             .style(accent_toggler_style(palette))
             .into()
     } else {
-        text("\u{2713}").size(14).color(palette.success).into()
+        crate::gui::icons::ui(crate::gui::icons::Ui::Check, 14.0, palette.success)
     };
 
     row![label, Space::new().width(Length::Fill), control]

@@ -136,14 +136,15 @@ impl SettingsCategory {
         }
     }
 
-    pub fn icon(self) -> &'static str {
+    pub fn icon(self) -> crate::gui::icons::Ui {
+        use crate::gui::icons::Ui;
         match self {
-            Self::Appearance => "◫",
-            Self::Terminal => "▣",
-            Self::Theme => "◑",
-            Self::Shortcuts => "⌘",
-            Self::Ssh => "⇄",
-            Self::Plugin(_) => "◈",
+            Self::Appearance => Ui::Palette,
+            Self::Terminal => Ui::Terminal,
+            Self::Theme => Ui::Theme,
+            Self::Shortcuts => Ui::Keyboard,
+            Self::Ssh => Ui::Server,
+            Self::Plugin(_) => Ui::Plugin,
         }
     }
 }
