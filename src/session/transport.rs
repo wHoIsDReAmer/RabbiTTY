@@ -5,19 +5,19 @@ use alacritty_terminal::tty::{self, Options, Shell};
 #[cfg(windows)]
 use alacritty_terminal::tty::{ChildEvent, EventedPty, EventedReadWrite};
 use iced::futures::channel::mpsc;
+use std::collections::HashMap;
 #[cfg(unix)]
 use std::io::ErrorKind;
 use std::io::{Read, Write};
 use std::path::PathBuf;
 #[cfg(windows)]
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, OnceLock};
 use std::thread;
 use std::thread::JoinHandle;
 use std::time::Duration;
 
-/// A connection backend behind a [`Session`](super::Session): a local PTY or an
-/// SSH channel. Native only (Tier 1) — never crosses the plugin/WASM boundary.
+/// A connection backend behind a [`Session`](super::Session)
 pub(super) trait Transport: Send {
     fn writer(&self) -> Arc<Mutex<Box<dyn Write + Send>>>;
     fn resize(&mut self, rows: u16, cols: u16) -> Result<(), SessionError>;
@@ -52,6 +52,67 @@ impl Write for PtyWriter {
         guard.writer().flush()
     }
 }
+fn child_env(spec_env: Vec<(String, String)>) -> HashMap<String, String> {
+    let mut env: HashMap<String, String> = spec_env.into_iter().collect();
+    env.entry("TERM".to_string())
+        .or_insert_with(|| default_term().to_string());
+    env.entry("COLORTERM".to_string())
+        .or_insert_with(|| "truecolor".to_string());
+    env
+}
+
+fn default_term() -> &'static str {
+    static TERM: OnceLock<&'static str> = OnceLock::new();
+    TERM.get_or_init(|| {
+        if terminfo_exists("alacritty") {
+            "alacritty"
+        } else {
+            "xterm-256color"
+        }
+    })
+}
+
+/// Mirrors alacritty's private `terminfo_exists`.
+fn terminfo_exists(terminfo: &str) -> bool {
+    let first = terminfo.get(..1).unwrap_or_default();
+    let first_hex = format!("{:x}", first.chars().next().unwrap_or_default() as usize);
+
+    macro_rules! check_path {
+        ($path:expr) => {
+            if $path.join(first).join(terminfo).exists()
+                || $path.join(&first_hex).join(terminfo).exists()
+            {
+                return true;
+            }
+        };
+    }
+
+    if let Some(dir) = std::env::var_os("TERMINFO") {
+        check_path!(PathBuf::from(&dir));
+    } else if let Some(home) = dirs::home_dir() {
+        check_path!(home.join(".terminfo"));
+    }
+
+    if let Ok(dirs) = std::env::var("TERMINFO_DIRS") {
+        for dir in dirs.split(':') {
+            check_path!(PathBuf::from(dir));
+        }
+    }
+
+    if let Ok(prefix) = std::env::var("PREFIX") {
+        let path = PathBuf::from(prefix);
+        check_path!(path.join("etc/terminfo"));
+        check_path!(path.join("lib/terminfo"));
+        check_path!(path.join("share/terminfo"));
+    }
+
+    check_path!(PathBuf::from("/etc/terminfo"));
+    check_path!(PathBuf::from("/lib/terminfo"));
+    check_path!(PathBuf::from("/usr/share/terminfo"));
+    check_path!(PathBuf::from("/boot/system/data/terminfo"));
+
+    false
+}
 
 // ── Local PTY (unix) ────────────────────────────────────────────────────────
 #[cfg(unix)]
@@ -68,19 +129,9 @@ impl LocalPty {
         tab_id: u64,
         mut output_tx: mpsc::UnboundedSender<OutputEvent>,
     ) -> Result<Self, SessionError> {
-        tty::setup_env();
-
-        // Override process env for keys specified by the launch spec.
-        // This ensures the forked child inherits the correct value
-        // even if setup_env set something else.
-        for (key, value) in &spec.env {
-            // SAFETY: no other threads mutate env concurrently on the main thread.
-            unsafe { std::env::set_var(key, value) };
-        }
-
         let options = Options {
             shell: Some(Shell::new(spec.program, spec.args)),
-            env: spec.env.into_iter().collect(),
+            env: child_env(spec.env),
             working_directory: spec.cwd.or_else(default_working_directory),
             ..Default::default()
         };
@@ -205,11 +256,9 @@ impl LocalPty {
         tab_id: u64,
         mut output_tx: mpsc::UnboundedSender<OutputEvent>,
     ) -> Result<Self, SessionError> {
-        tty::setup_env();
-
         let options = Options {
             shell: Some(Shell::new(spec.program, spec.args)),
-            env: spec.env.into_iter().collect(),
+            env: child_env(spec.env),
             working_directory: spec.cwd.or_else(default_working_directory),
             ..Default::default()
         };
@@ -376,4 +425,29 @@ fn process_cwd(pid: u32) -> Option<PathBuf> {
 #[cfg(all(unix, not(target_os = "linux"), not(target_os = "macos")))]
 fn process_cwd(_pid: u32) -> Option<PathBuf> {
     None
+}
+
+#[cfg(test)]
+mod tests {
+    use super::child_env;
+
+    #[test]
+    fn child_env_supplies_term_without_touching_the_process() {
+        let env = child_env(Vec::new());
+        assert!(matches!(
+            env.get("TERM").map(String::as_str),
+            Some("alacritty") | Some("xterm-256color")
+        ));
+        assert_eq!(env.get("COLORTERM").map(String::as_str), Some("truecolor"));
+    }
+
+    #[test]
+    fn child_env_keeps_launch_spec_entries_and_lets_them_override() {
+        let env = child_env(vec![
+            ("TERM".to_string(), "dumb".to_string()),
+            ("PROMPT_COMMAND".to_string(), "true".to_string()),
+        ]);
+        assert_eq!(env.get("TERM").map(String::as_str), Some("dumb"));
+        assert_eq!(env.get("PROMPT_COMMAND").map(String::as_str), Some("true"));
+    }
 }
