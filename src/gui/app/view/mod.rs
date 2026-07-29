@@ -159,6 +159,52 @@ impl App {
             return password_prompt::password_prompt(base_layout, prompt, palette);
         }
 
+        if let Some(pending) = self.plugin_pending_install.as_ref() {
+            return confirm_dialog(
+                base_layout,
+                t!("settings.plugins.install_title"),
+                &pending.summary,
+                vec![
+                    DialogButton {
+                        label: t!("dialog.cancel").into(),
+                        message: Message::Settings(SettingsMessage::CancelInstallPlugin),
+                        primary: false,
+                    },
+                    DialogButton {
+                        label: t!("settings.plugins.install_confirm").into(),
+                        message: Message::Settings(SettingsMessage::ConfirmInstallPlugin),
+                        primary: true,
+                    },
+                ],
+                Message::Settings(SettingsMessage::CancelInstallPlugin),
+                palette,
+                self.config.ui.animations_enabled,
+            );
+        }
+
+        if let Some(id) = self.plugin_pending_removal.as_deref() {
+            return confirm_dialog(
+                base_layout,
+                t!("settings.plugins.remove_title"),
+                &t!("settings.plugins.remove_body").replace("{name}", id),
+                vec![
+                    DialogButton {
+                        label: t!("dialog.cancel").into(),
+                        message: Message::Settings(SettingsMessage::CancelRemovePlugin),
+                        primary: false,
+                    },
+                    DialogButton {
+                        label: t!("settings.plugins.remove").into(),
+                        message: Message::Settings(SettingsMessage::ConfirmRemovePlugin),
+                        primary: true,
+                    },
+                ],
+                Message::Settings(SettingsMessage::CancelRemovePlugin),
+                palette,
+                self.config.ui.animations_enabled,
+            );
+        }
+
         if self.show_command_palette {
             return self.view_command_palette(base_layout);
         }

@@ -40,6 +40,13 @@ ssh = "프로필"
 plugins = "플러그인"
 
 [settings.plugins]
+install_title = "이 플러그인을 설치할까요?"
+install_confirm = "설치"
+install = "파일에서 설치…"
+installed_notice = "{name} 설치됨."
+remove = "제거"
+remove_title = "이 플러그인을 제거할까요?"
+remove_body = "{name} 및 해당 설정이 디스크에서 삭제됩니다."
 section_title = "플러그인 폴더"
 folder_hint = "시작할 때 이 디렉터리에서 컴포넌트를 읽습니다."
 open_folder = "폴더 열기"
@@ -209,6 +216,7 @@ capability.read_config = "자체 설정 읽기"
 capability.notify = "알림 보내기"
 capability.network = "네트워크 접근"
 capability.filesystem = "전용 데이터 폴더"
+capability.open_url = "브라우저로 링크 열기"
 
 [command_palette]
 placeholder = "명령을 입력하세요…"

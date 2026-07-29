@@ -40,6 +40,13 @@ ssh = "Profiles"
 plugins = "Plugins"
 
 [settings.plugins]
+install_title = "Install this plugin?"
+install_confirm = "Install"
+install = "Install from file…"
+installed_notice = "Installed {name}."
+remove = "Remove"
+remove_title = "Remove this plugin?"
+remove_body = "{name} and its settings will be deleted from disk."
 section_title = "Plugin folder"
 folder_hint = "Components are loaded from this directory on startup."
 open_folder = "Open folder"
@@ -209,6 +216,7 @@ capability.read_config = "Read its settings"
 capability.notify = "Send notifications"
 capability.network = "Network access"
 capability.filesystem = "Its own data folder"
+capability.open_url = "Open links in your browser"
 
 [command_palette]
 placeholder = "Type a command…"

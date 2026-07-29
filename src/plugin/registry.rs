@@ -258,6 +258,47 @@ impl PluginRegistry {
             .collect()
     }
 
+    /// Validates the file first: an unreadable or wrong-ABI component is
+    /// rejected before anything lands in the plugin directory.
+    pub fn preview(&self, source: &Path) -> Result<PluginInfo, String> {
+        self.host
+            .inspect(source)
+            .map(|(info, _)| info)
+            .map_err(|err| err.to_string())
+    }
+
+    pub fn install(&mut self, source: &Path) -> Result<String, String> {
+        let (info, _) = self.host.inspect(source).map_err(|err| err.to_string())?;
+        let dir = super::host::dir_name(&info.name)
+            .ok_or_else(|| format!("{} is not a usable plugin name", info.name))?;
+
+        let target = self.host.root().join(&dir);
+        std::fs::create_dir_all(&target).map_err(|err| err.to_string())?;
+        std::fs::copy(source, target.join(COMPONENT_FILE)).map_err(|err| err.to_string())?;
+
+        self.load_all();
+        Ok(info.name)
+    }
+
+    pub fn uninstall(&mut self, id: &str) -> Result<(), String> {
+        let Some(entry) = self.entry(id) else {
+            return Err(format!("no plugin named {id}"));
+        };
+        let dir = entry
+            .path
+            .parent()
+            .ok_or_else(|| format!("{id} has no install directory"))?
+            .to_path_buf();
+
+        if !dir.starts_with(self.host.root()) {
+            return Err(format!("{id} lives outside the plugin directory"));
+        }
+        std::fs::remove_dir_all(&dir).map_err(|err| err.to_string())?;
+        self.settings.remove(id);
+        self.load_all();
+        Ok(())
+    }
+
     pub fn host(&self) -> std::sync::Arc<PluginHost> {
         std::sync::Arc::clone(&self.host)
     }

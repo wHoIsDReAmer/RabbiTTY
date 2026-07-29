@@ -326,6 +326,7 @@ impl App {
             root: registry.root().to_path_buf(),
             installed: ids.len(),
             disabled,
+            notice: self.plugin_notice.clone(),
         }
     }
 
@@ -507,6 +508,71 @@ impl App {
         }
     }
 
+    /// Reads the manifest before anything is copied, so the user sees what the
+    /// plugin is and what it asks for while they can still decline.
+    pub(in crate::gui) fn preview_plugin_install(&mut self, source: &std::path::Path) {
+        let Some(registry) = self.plugins.as_ref() else {
+            return;
+        };
+        match registry.preview(source) {
+            Ok(info) => {
+                self.plugin_notice = None;
+                self.plugin_pending_install = Some(crate::gui::app::PendingInstall {
+                    path: source.to_path_buf(),
+                    summary: install_summary(&info),
+                });
+            }
+            Err(reason) => {
+                self.plugin_pending_install = None;
+                self.plugin_notice = Some(reason);
+            }
+        }
+    }
+
+    pub(in crate::gui) fn install_pending_plugin(&mut self) {
+        let Some(pending) = self.plugin_pending_install.take() else {
+            return;
+        };
+        self.install_plugin(&pending.path);
+    }
+
+    pub(in crate::gui) fn install_plugin(&mut self, source: &std::path::Path) {
+        let Some(registry) = self.plugins.as_mut() else {
+            return;
+        };
+        self.plugin_notice = match registry.install(source) {
+            Ok(name) => {
+                Some(crate::t!("settings.plugins.installed_notice").replace("{name}", &name))
+            }
+            Err(reason) => Some(reason),
+        };
+        self.after_registry_change();
+    }
+
+    pub(in crate::gui) fn remove_pending_plugin(&mut self) {
+        let Some(id) = self.plugin_pending_removal.take() else {
+            return;
+        };
+        let Some(registry) = self.plugins.as_mut() else {
+            return;
+        };
+        if let Err(reason) = registry.uninstall(&id) {
+            self.plugin_notice = Some(reason);
+        } else {
+            self.plugin_notice = None;
+            self.settings_category = SettingsCategory::Plugins;
+        }
+        self.after_registry_change();
+    }
+
+    fn after_registry_change(&mut self) {
+        self.persist_plugin_settings();
+        self.adopt_plugin_shortcuts();
+        self.sync_output_capture();
+        self.sync_plugin_shortcut_draft();
+        self.refresh_plugin_settings();
+    }
+
     pub(in crate::gui) fn rescan_plugins(&mut self) {
         let Some(registry) = self.plugins.as_mut() else {
             return;
@@ -588,4 +654,30 @@ fn into_profile(declared: crate::plugin::PluginProfile) -> crate::gui::tab::Prof
         icon: declared.icon,
         kind,
     }
+}
+
+fn install_summary(info: &crate::plugin::PluginInfo) -> String {
+    let mut lines = vec![format!("{} {}", info.name, info.version)];
+    if let Some(author) = &info.author {
+        lines.push(author.clone());
+    }
+    if let Some(description) = &info.description {
+        lines.push(description.clone());
+    }
+
+    let wanted: Vec<&str> = info
+        .capabilities
+        .iter()
+        .map(|cap| {
+            crate::gui::settings::plugins::capability_label(crate::plugin::capability_name(*cap))
+        })
+        .collect();
+    if !wanted.is_empty() {
+        lines.push(format!(
+            "{}: {}",
+            crate::t!("settings.plugins.permissions"),
+            wanted.join(", ")
+        ));
+    }
+    lines.join("\n")
 }

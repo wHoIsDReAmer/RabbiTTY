@@ -231,6 +231,38 @@ impl App {
             SettingsMessage::RescanPlugins => {
                 self.rescan_plugins();
             }
+            SettingsMessage::InstallPlugin => {
+                return Task::perform(
+                    async {
+                        rfd::AsyncFileDialog::new()
+                            .add_filter("Rabbitty plugin", &["wasm"])
+                            .pick_file()
+                            .await
+                            .map(|file| file.path().to_path_buf())
+                    },
+                    |picked| Message::Settings(SettingsMessage::PluginFilePicked(picked)),
+                );
+            }
+            SettingsMessage::PluginFilePicked(picked) => {
+                if let Some(path) = picked {
+                    self.preview_plugin_install(&path);
+                }
+            }
+            SettingsMessage::CancelInstallPlugin => {
+                self.plugin_pending_install = None;
+            }
+            SettingsMessage::ConfirmInstallPlugin => {
+                self.install_pending_plugin();
+            }
+            SettingsMessage::RequestRemovePlugin(id) => {
+                self.plugin_pending_removal = Some(id);
+            }
+            SettingsMessage::CancelRemovePlugin => {
+                self.plugin_pending_removal = None;
+            }
+            SettingsMessage::ConfirmRemovePlugin => {
+                self.remove_pending_plugin();
+            }
             SettingsMessage::ProfileModalTabSelected(tab) => {
                 self.settings_draft.set_profile_modal_tab(tab);
             }

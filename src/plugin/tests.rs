@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
-use super::host::{LoadedPlugin, dir_name};
+use super::host::{LoadedPlugin, abi_verdict, abi_version_of, dir_name};
 use super::policy::{
     CapabilityPolicy, capability_from_name, capability_name, grant_with_consent, requires_consent,
 };
@@ -1536,4 +1536,191 @@ fn a_stalled_source_is_abandoned_at_the_deadline() {
         waited < std::time::Duration::from_secs(2),
         "the caller returned after {waited:?}, so it was still blocked on the guest"
     );
+}
+
+#[test]
+fn the_declared_abi_version_matches_the_wit_package() {
+    let wit = std::fs::read_to_string(Path::new(env!("CARGO_MANIFEST_DIR")).join("wit/world.wit"))
+        .expect("wit/world.wit");
+    let line = wit
+        .lines()
+        .find(|line| line.starts_with("package rabbitty:plugin@"))
+        .expect("a package line");
+    let declared = line
+        .trim_start_matches("package rabbitty:plugin@")
+        .trim_end_matches(';');
+
+    assert_eq!(
+        declared, PLUGIN_ABI_VERSION,
+        "the constant drifted from wit/world.wit"
+    );
+}
+
+#[test]
+fn the_abi_version_is_read_out_of_the_interface_name() {
+    assert_eq!(
+        abi_version_of("rabbitty:plugin/host@0.4.0"),
+        Some("0.4.0"),
+        "the version the guest was built against"
+    );
+    assert_eq!(abi_version_of("rabbitty:plugin/types@0.3.0"), Some("0.3.0"));
+    assert_eq!(abi_version_of("wasi:io/poll@0.2.6"), None, "not ours");
+    assert_eq!(abi_version_of("rabbitty:plugin/host"), None, "no version");
+}
+
+#[test]
+fn a_mismatched_abi_is_named_instead_of_leaking_a_wasmtime_error() {
+    let err = abi_verdict(Some("0.3.0")).expect_err("must be rejected");
+
+    assert!(err.contains("0.3.0"), "says what the plugin targets: {err}");
+    assert!(
+        err.contains(PLUGIN_ABI_VERSION),
+        "and what this build provides: {err}"
+    );
+    assert!(
+        !err.contains("type-checking"),
+        "the raw wasmtime wording must not reach the user: {err}"
+    );
+}
+
+#[test]
+fn a_component_with_no_rabbitty_interface_is_not_a_plugin() {
+    let err = abi_verdict(None).expect_err("must be rejected");
+    assert!(err.contains("not a Rabbitty plugin"), "{err}");
+}
+
+#[test]
+fn the_current_abi_is_accepted() {
+    assert!(abi_verdict(Some(PLUGIN_ABI_VERSION)).is_ok());
+}
+
+#[test]
+fn the_fixture_loads_under_the_current_abi() {
+    let Some(path) = hello_component() else {
+        return;
+    };
+    let root = TempRoot::new("abi-current");
+    let host = PluginHost::with_root(root.0.clone()).expect("engine");
+
+    host.inspect(&path)
+        .expect("the fixture is built for the current ABI");
+}
+
+#[test]
+fn installing_a_component_makes_it_discoverable() {
+    let Some(source) = hello_component() else {
+        return;
+    };
+    let root = TempRoot::new("install");
+    std::fs::create_dir_all(&root.0).expect("root");
+    let mut registry = registry_in(&root);
+    registry.load_all();
+    assert_eq!(registry.ids().count(), 0);
+
+    let name = registry.install(&source).expect("installed");
+
+    assert_eq!(name, "hello", "the directory is named from the manifest");
+    assert_eq!(registry.ids().collect::<Vec<_>>(), vec!["hello"]);
+    assert!(
+        root.0
+            .join("hello")
+            .join(registry::COMPONENT_FILE)
+            .is_file()
+    );
+}
+
+#[test]
+fn a_file_that_is_not_a_plugin_is_never_copied_in() {
+    let root = TempRoot::new("install-reject");
+    std::fs::create_dir_all(&root.0).expect("root");
+    let bogus = root.0.join("bogus.wasm");
+    std::fs::write(&bogus, b"not a component").expect("write");
+
+    let mut registry = registry_in(&root);
+    registry.load_all();
+    let err = registry.install(&bogus).expect_err("must be rejected");
+
+    assert!(!err.is_empty(), "the reason is reported");
+    assert_eq!(
+        registry.ids().count(),
+        0,
+        "nothing may land in the plugin directory when validation fails"
+    );
+}
+
+#[test]
+fn removing_a_plugin_deletes_it_and_forgets_its_settings() {
+    let root = TempRoot::new("uninstall");
+    if !install(&root, "alpha") {
+        return;
+    }
+    let mut settings = crate::config::plugins::PluginsConfig::new();
+    settings.insert(
+        "alpha".to_string(),
+        crate::config::plugins::PluginSettings {
+            enabled: false,
+            consented: vec!["network".to_string()],
+            settings: Default::default(),
+        },
+    );
+
+    let mut registry = registry_with(&root, settings);
+    registry.load_all();
+    assert_eq!(registry.ids().count(), 1);
+
+    registry.uninstall("alpha").expect("removed");
+
+    assert_eq!(registry.ids().count(), 0);
+    assert!(!root.0.join("alpha").exists(), "the directory is gone");
+    assert!(
+        registry.settings().get("alpha").is_none(),
+        "stale consent must not be reused if it is installed again"
+    );
+}
+
+#[test]
+fn removing_an_unknown_plugin_is_reported_not_ignored() {
+    let root = TempRoot::new("uninstall-missing");
+    std::fs::create_dir_all(&root.0).expect("root");
+    let mut registry = registry_in(&root);
+    registry.load_all();
+
+    assert!(registry.uninstall("nope").is_err());
+}
+
+#[test]
+fn previewing_a_candidate_reads_it_without_installing() {
+    let Some(source) = hello_component() else {
+        return;
+    };
+    let root = TempRoot::new("preview");
+    std::fs::create_dir_all(&root.0).expect("root");
+    let mut registry = registry_in(&root);
+    registry.load_all();
+
+    let info = registry.preview(&source).expect("readable");
+
+    assert_eq!(info.name, "hello");
+    assert!(
+        info.capabilities.contains(&Capability::OpenUrl),
+        "the user must see every capability before deciding"
+    );
+    assert_eq!(
+        registry.ids().count(),
+        0,
+        "previewing must not copy anything in"
+    );
+}
+
+#[test]
+fn previewing_a_file_that_is_not_a_plugin_reports_why() {
+    let root = TempRoot::new("preview-bad");
+    std::fs::create_dir_all(&root.0).expect("root");
+    let bogus = root.0.join("bogus.wasm");
+    std::fs::write(&bogus, b"not a component").expect("write");
+
+    let mut registry = registry_in(&root);
+    registry.load_all();
+
+    assert!(registry.preview(&bogus).is_err());
 }

@@ -9,6 +9,10 @@ use super::policy::CapabilityPolicy;
 use super::state::{PluginRequest, PluginState};
 use super::{Capability, Contributions, Event, Plugin, PluginInfo, PluginProfile, SettingField};
 
+/// Kept in step with the package line in `wit/world.wit`; a test enforces it.
+pub const PLUGIN_ABI_VERSION: &str = "0.4.0";
+const ABI_PACKAGE: &str = "rabbitty:plugin/";
+
 const CALL_FUEL: u64 = 10_000_000;
 const MAX_MEMORY: usize = 64 * 1024 * 1024;
 const MAX_TABLE_ELEMENTS: usize = 100_000;
@@ -76,6 +80,7 @@ impl PluginHost {
             return Ok(found.clone());
         }
         let compiled = Component::from_file(&self.engine, path)?;
+        self.check_abi(&compiled)?;
         if let Ok(mut cache) = self.components.write() {
             cache.insert(path.to_path_buf(), compiled.clone());
         }
@@ -125,6 +130,18 @@ impl PluginHost {
             .map_err(|err| wasmtime::Error::msg(err.to_string()))?;
         let _ = plugin.shutdown();
         Ok(profiles)
+    }
+
+    /// The guest's import names carry the WIT package version it was built
+    /// against, so a mismatch is reported precisely instead of surfacing as a
+    /// wasmtime type-checking error.
+    fn check_abi(&self, component: &Component) -> wasmtime::Result<()> {
+        let ty = component.component_type();
+        let found = ty
+            .imports(&self.engine)
+            .find_map(|(name, _)| abi_version_of(name));
+
+        abi_verdict(found).map_err(wasmtime::Error::msg)
     }
 
     fn read_manifest(&self, component: &Component) -> wasmtime::Result<PluginInfo> {
@@ -213,10 +230,30 @@ impl PluginHost {
     }
 }
 
+pub(super) fn abi_verdict(found: Option<&str>) -> Result<(), String> {
+    match found {
+        Some(version) if version == PLUGIN_ABI_VERSION => Ok(()),
+        Some(version) => Err(format!(
+            "built for plugin API {version}, but this build provides {PLUGIN_ABI_VERSION}"
+        )),
+        None => Err("not a Rabbitty plugin: it imports no rabbitty:plugin interface".to_string()),
+    }
+}
+
+pub(super) fn abi_version_of(interface: &str) -> Option<&str> {
+    interface
+        .strip_prefix(ABI_PACKAGE)?
+        .split_once('@')
+        .map(|(_, version)| version)
+}
+
+/// Components are binaries, so they live under the data directory rather than
+/// beside `config.toml`. Only Linux differs — on macOS and Windows both paths
+/// resolve to the same directory.
 fn default_root() -> wasmtime::Result<PathBuf> {
-    dirs::config_dir()
+    dirs::data_dir()
         .map(|dir| dir.join("rabbitty").join("plugins"))
-        .ok_or_else(|| wasmtime::Error::msg("no config directory"))
+        .ok_or_else(|| wasmtime::Error::msg("no data directory"))
 }
 
 pub(super) fn dir_name(plugin_name: &str) -> Option<String> {
