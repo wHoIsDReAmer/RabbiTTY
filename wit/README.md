@@ -56,8 +56,3 @@ further calls, and skips `shutdown`. Recovery means a fresh instantiation.
 Pre-1.0, breaking changes bump the minor and the host supports exactly one
 version — recompile against the new world. From 1.0, breaking changes bump the
 major and the previous major is supported for a transition period.
-
-"Additive" is misleading here: adding a `variant` case or a world export is
-**breaking**. The Component Model type-checks the world, so a guest built against
-the old shape is rejected at instantiation with `type-checking export func …`. A
-wildcard `match` arm in the guest does not help — the mismatch is in the type.
