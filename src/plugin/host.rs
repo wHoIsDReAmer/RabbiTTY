@@ -46,6 +46,12 @@ impl PluginHost {
         let mut config = Config::new();
         config.wasm_component_model(true);
         config.consume_fuel(true);
+
+        // The mach port handler thread aborts on any interrupted receive, and every
+        // PTY registers a SIGCHLD handler. Signals have no such thread.
+        if cfg!(target_os = "macos") {
+            config.macos_use_mach_ports(false);
+        }
         let engine = Engine::new(&config)?;
 
         let mut linker = Linker::new(&engine);
