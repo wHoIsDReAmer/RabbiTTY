@@ -6,9 +6,19 @@ use crate::config::plugins::{PluginSettings, PluginsConfig};
 use super::host::{LoadedPlugin, PluginHost};
 use super::matcher::OutputMatcher;
 use super::policy::{capability_from_name, capability_name, grant_with_consent, requires_consent};
-use super::{Capability, MatchEvent, PluginInfo, SettingEvent, SettingField};
+use super::{
+    Capability, MatchEvent, MenuContext, MenuItem, PluginInfo, PluginProfile, SettingEvent,
+    SettingField, StatusItem,
+};
 
 pub const COMPONENT_FILE: &str = "plugin.wasm";
+
+#[derive(Clone)]
+pub struct ClickablePattern {
+    pub plugin: String,
+    pub pattern: String,
+    pub regex: std::sync::Arc<regex::Regex>,
+}
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ContributedCommand {
@@ -16,6 +26,7 @@ pub struct ContributedCommand {
     pub source: String,
     pub id: String,
     pub title: String,
+    pub default_key: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -37,13 +48,19 @@ struct Entry {
     slot: Slot,
     info: Option<PluginInfo>,
     fields: Vec<SettingField>,
+    status: Vec<StatusItem>,
+    menu: Vec<MenuItem>,
+    profiles: Vec<PluginProfile>,
 }
 
 impl Entry {
     fn remember(&mut self, host: &PluginHost) {
-        if let Slot::Ready(plugin, _) = &self.slot {
+        if let Slot::Ready(plugin, _) = &mut self.slot {
             self.info = Some(plugin.info().clone());
             self.fields = plugin.contributions().settings.clone();
+            self.status = plugin.contributions().status_items.clone();
+            self.menu = plugin.contributions().menu_items.clone();
+            self.profiles = plugin.list_profiles().unwrap_or_default();
         } else if self.info.is_none()
             && let Ok((info, fields)) = host.inspect(&self.path)
         {
@@ -102,6 +119,9 @@ impl PluginRegistry {
                 slot,
                 info: None,
                 fields: Vec::new(),
+                status: Vec::new(),
+                menu: Vec::new(),
+                profiles: Vec::new(),
             };
             entry.remember(&self.host);
             self.entries.push(entry);
@@ -174,6 +194,12 @@ impl PluginRegistry {
         events
     }
 
+    pub fn has_ready(&self) -> bool {
+        self.entries.iter().any(
+            |entry| matches!(&entry.slot, Slot::Ready(plugin, _) if plugin.failure().is_none()),
+        )
+    }
+
     pub fn watches_output(&self) -> bool {
         self.entries.iter().any(|entry| {
             matches!(&entry.slot, Slot::Ready(plugin, matcher)
@@ -185,6 +211,87 @@ impl PluginRegistry {
         self.entry(id)
             .map(|entry| entry.fields.clone())
             .unwrap_or_default()
+    }
+
+    pub fn status_items(&self) -> Vec<(String, StatusItem)> {
+        self.entries
+            .iter()
+            .filter(
+                |entry| matches!(&entry.slot, Slot::Ready(plugin, _) if plugin.failure().is_none()),
+            )
+            .flat_map(|entry| {
+                entry
+                    .status
+                    .iter()
+                    .map(move |item| (entry.id.clone(), item.clone()))
+            })
+            .collect()
+    }
+
+    pub fn clickable_patterns(&self) -> Vec<ClickablePattern> {
+        self.entries
+            .iter()
+            .filter_map(|entry| match &entry.slot {
+                Slot::Ready(plugin, matcher) if plugin.failure().is_none() => {
+                    Some((entry, matcher))
+                }
+                _ => None,
+            })
+            .flat_map(|(entry, matcher)| {
+                matcher
+                    .clickable()
+                    .map(|(id, regex)| ClickablePattern {
+                        plugin: entry.id.clone(),
+                        pattern: id.to_string(),
+                        regex,
+                    })
+                    .collect::<Vec<_>>()
+            })
+            .collect()
+    }
+
+    pub fn profiles(&self) -> Vec<(String, PluginProfile)> {
+        self.entries
+            .iter()
+            .filter(
+                |entry| matches!(&entry.slot, Slot::Ready(plugin, _) if plugin.failure().is_none()),
+            )
+            .flat_map(|entry| {
+                entry
+                    .profiles
+                    .iter()
+                    .map(move |profile| (entry.id.clone(), profile.clone()))
+            })
+            .collect()
+    }
+
+    pub fn menu_items(&self, context: MenuContext) -> Vec<(String, MenuItem)> {
+        self.entries
+            .iter()
+            .filter(
+                |entry| matches!(&entry.slot, Slot::Ready(plugin, _) if plugin.failure().is_none()),
+            )
+            .flat_map(|entry| {
+                entry
+                    .menu
+                    .iter()
+                    .filter(move |item| item.context == context)
+                    .map(move |item| (entry.id.clone(), item.clone()))
+            })
+            .collect()
+    }
+
+    pub fn set_status(&mut self, id: &str, item: &str, text: String) -> bool {
+        let Some(entry) = self.entry_mut(id) else {
+            return false;
+        };
+        match entry.status.iter_mut().find(|slot| slot.id == item) {
+            Some(slot) => {
+                slot.text = text;
+                true
+            }
+            None => false,
+        }
     }
 
     pub fn info(&self, id: &str) -> Option<&PluginInfo> {
@@ -256,6 +363,7 @@ impl PluginRegistry {
                         source: source.clone(),
                         id: command.id.clone(),
                         title: command.title.clone(),
+                        default_key: command.default_key.clone(),
                     })
             })
             .collect()

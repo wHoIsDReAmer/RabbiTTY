@@ -30,6 +30,14 @@ impl fmt::Display for TerminalFontOption {
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PluginShortcutDraft {
+    pub plugin: String,
+    pub command: String,
+    pub label: String,
+    pub binding: String,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SettingsField {
     AppearanceLanguage,
@@ -47,6 +55,7 @@ pub enum SettingsField {
     #[allow(dead_code)]
     ThemeMacosBlurRadius,
     Shortcut(crate::config::ShortcutId),
+    PluginShortcut(usize),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -366,6 +375,7 @@ pub struct SettingsDraft {
     pub tab_bar_position: TabBarPosition,
     pub macos_blur_radius: String,
     pub shortcuts: std::collections::BTreeMap<crate::config::ShortcutId, String>,
+    pub plugin_shortcuts: Vec<PluginShortcutDraft>,
     pub profiles: Vec<ProfileDraft>,
     pub profiles_error: Option<String>,
     pub profile_modal_mode: Option<ProfileModalMode>,
@@ -378,6 +388,7 @@ pub struct SettingsDraft {
 impl SettingsDraft {
     pub fn from_config(config: &AppConfig) -> Self {
         Self {
+            plugin_shortcuts: Vec::new(),
             language: config
                 .ui
                 .language
@@ -594,6 +605,11 @@ impl SettingsDraft {
             SettingsField::ThemeBackgroundOpacity => self.background_opacity = value,
             SettingsField::Shortcut(id) => {
                 self.shortcuts.insert(id, value);
+            }
+            SettingsField::PluginShortcut(index) => {
+                if let Some(slot) = self.plugin_shortcuts.get_mut(index) {
+                    slot.binding = value;
+                }
             }
             SettingsField::ThemeMacosBlurRadius => self.macos_blur_radius = value,
         }

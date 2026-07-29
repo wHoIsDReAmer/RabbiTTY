@@ -4,6 +4,7 @@ mod password_prompt;
 mod settings;
 mod sftp;
 mod shell_picker;
+mod status_bar;
 
 pub(in crate::gui) use dialog::{DialogButton, confirm_dialog};
 
@@ -79,13 +80,19 @@ impl App {
             self.view_lobby(palette)
         };
 
-        let layout = match self.config.ui.tab_bar_position {
-            TabBarPosition::Top => column(vec![tab_row, main_content]),
-            TabBarPosition::Bottom => column(vec![
-                crate::gui::components::tab_bar::window_chrome(palette, bar_alpha),
-                main_content,
-                tab_row,
-            ]),
+        let status_bar = self.view_status_bar();
+        let layout = match (self.config.ui.tab_bar_position, status_bar) {
+            (TabBarPosition::Top, None) => column(vec![tab_row, main_content]),
+            (TabBarPosition::Top, Some(status)) => column(vec![tab_row, main_content, status]),
+            (TabBarPosition::Bottom, status) => {
+                let mut rows = vec![
+                    crate::gui::components::tab_bar::window_chrome(palette, bar_alpha),
+                    main_content,
+                ];
+                rows.extend(status);
+                rows.push(tab_row);
+                column(rows)
+            }
         };
 
         // `window_style` already clears the window to `background @ opacity`.
@@ -177,7 +184,13 @@ impl App {
         // identical to other panes (e.g. Settings) and avoids double blending.
         let clear_color = [0.0, 0.0, 0.0, 0.0];
         let cursor_visible = !self.config.terminal.cursor_blink || self.cursor_blink_on;
+        let decorations = self
+            .plugins
+            .as_ref()
+            .map(|registry| registry.clickable_patterns())
+            .unwrap_or_default();
         let terminal_widget = TerminalProgram {
+            decorations,
             panes: tab
                 .panes
                 .iter()
@@ -460,18 +473,21 @@ impl App {
         base_layout: impl Into<Element<'a, Message>>,
         tab_index: usize,
     ) -> Element<'a, Message> {
+        let mut items = vec![
+            ContextMenuItem {
+                label: t!("context_menu.duplicate").to_string(),
+                message: Message::DuplicateTab,
+            },
+            ContextMenuItem {
+                label: t!("context_menu.close").to_string(),
+                message: Message::CloseTab(tab_index),
+            },
+        ];
+        items.extend(self.plugin_menu_items(crate::plugin::MenuContext::Tab));
+
         context_menu(
             base_layout,
-            vec![
-                ContextMenuItem {
-                    label: t!("context_menu.duplicate"),
-                    message: Message::DuplicateTab,
-                },
-                ContextMenuItem {
-                    label: t!("context_menu.close"),
-                    message: Message::CloseTab(tab_index),
-                },
-            ],
+            items,
             self.cursor_position,
             Message::CloseTabContextMenu,
             self.palette,
@@ -491,14 +507,15 @@ impl App {
         let mut items = Vec::new();
         if has_selection {
             items.push(ContextMenuItem {
-                label: t!("context_menu.copy"),
+                label: t!("context_menu.copy").to_string(),
                 message: Message::TerminalContextCopy,
             });
         }
         items.push(ContextMenuItem {
-            label: t!("context_menu.paste"),
+            label: t!("context_menu.paste").to_string(),
             message: Message::TerminalContextPaste,
         });
+        items.extend(self.plugin_menu_items(crate::plugin::MenuContext::Terminal));
 
         context_menu(
             base_layout,

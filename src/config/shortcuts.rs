@@ -124,9 +124,12 @@ impl ShortcutId {
     }
 }
 
+pub const PLUGIN_PREFIX: &str = "plugin:";
+
 #[derive(Debug, Clone)]
 pub struct ShortcutsConfig {
     bindings: BTreeMap<ShortcutId, String>,
+    plugin_bindings: BTreeMap<String, String>,
 }
 
 impl Default for ShortcutsConfig {
@@ -136,8 +139,17 @@ impl Default for ShortcutsConfig {
                 .into_iter()
                 .map(|id| (id, id.default_binding().to_string()))
                 .collect(),
+            plugin_bindings: BTreeMap::new(),
         }
     }
+}
+
+pub fn plugin_key(plugin: &str, command: &str) -> String {
+    format!("{PLUGIN_PREFIX}{plugin}/{command}")
+}
+
+pub fn split_plugin_key(key: &str) -> Option<(&str, &str)> {
+    key.strip_prefix(PLUGIN_PREFIX)?.split_once('/')
 }
 
 impl ShortcutsConfig {
@@ -155,11 +167,105 @@ impl ShortcutsConfig {
     pub fn iter(&self) -> impl Iterator<Item = (ShortcutId, &str)> {
         ShortcutId::ALL.into_iter().map(|id| (id, self.get(id)))
     }
+
+    pub fn plugin_binding(&self, plugin: &str, command: &str) -> Option<&str> {
+        self.plugin_bindings
+            .get(&plugin_key(plugin, command))
+            .map(String::as_str)
+    }
+
+    pub fn set_plugin_binding(&mut self, plugin: &str, command: &str, binding: String) {
+        let key = plugin_key(plugin, command);
+        if binding.trim().is_empty() {
+            self.plugin_bindings.remove(&key);
+        } else {
+            self.plugin_bindings.insert(key, binding);
+        }
+    }
+
+    pub fn plugin_iter(&self) -> impl Iterator<Item = (&str, &str)> {
+        self.plugin_bindings
+            .iter()
+            .map(|(key, binding)| (key.as_str(), binding.as_str()))
+    }
+
+    pub fn is_taken(&self, binding: &str) -> bool {
+        let binding = binding.trim();
+        if binding.is_empty() {
+            return false;
+        }
+        self.bindings
+            .values()
+            .chain(self.plugin_bindings.values())
+            .any(|existing| existing.eq_ignore_ascii_case(binding))
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_plugin_binding_round_trips_through_its_key() {
+        let mut config = ShortcutsConfig::default();
+        config.set_plugin_binding("hello", "hello.hi", "Ctrl+Shift+H".to_string());
+
+        assert_eq!(
+            config.plugin_binding("hello", "hello.hi"),
+            Some("Ctrl+Shift+H")
+        );
+        let (plugin, command) = config
+            .plugin_iter()
+            .next()
+            .and_then(|(key, _)| split_plugin_key(key))
+            .expect("a plugin key");
+        assert_eq!((plugin, command), ("hello", "hello.hi"));
+    }
+
+    #[test]
+    fn a_plugin_key_never_collides_with_a_builtin_key() {
+        for id in ShortcutId::ALL {
+            assert!(
+                split_plugin_key(id.key()).is_none(),
+                "{} would be read back as a plugin binding",
+                id.key()
+            );
+        }
+    }
+
+    #[test]
+    fn clearing_a_plugin_binding_removes_it() {
+        let mut config = ShortcutsConfig::default();
+        config.set_plugin_binding("hello", "hello.hi", "Ctrl+Shift+H".to_string());
+        config.set_plugin_binding("hello", "hello.hi", "  ".to_string());
+
+        assert_eq!(config.plugin_binding("hello", "hello.hi"), None);
+        assert_eq!(config.plugin_iter().count(), 0);
+    }
+
+    #[test]
+    fn a_builtin_binding_counts_as_taken() {
+        let config = ShortcutsConfig::default();
+
+        assert!(
+            config.is_taken(ShortcutId::Quit.default_binding()),
+            "a plugin must not be able to claim the quit key"
+        );
+        assert!(config.is_taken(&ShortcutId::Quit.default_binding().to_lowercase()));
+        assert!(!config.is_taken("Ctrl+Shift+F19"));
+        assert!(!config.is_taken("   "));
+    }
+
+    #[test]
+    fn a_plugin_binding_also_counts_as_taken() {
+        let mut config = ShortcutsConfig::default();
+        config.set_plugin_binding("hello", "hello.hi", "Ctrl+Shift+H".to_string());
+
+        assert!(
+            config.is_taken("Ctrl+Shift+H"),
+            "two plugins must not share a key"
+        );
+    }
 
     #[test]
     fn every_id_has_a_unique_toml_key() {

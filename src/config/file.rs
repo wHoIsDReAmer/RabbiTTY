@@ -128,6 +128,12 @@ impl From<&AppConfig> for FileConfig {
                     .shortcuts
                     .iter()
                     .map(|(id, binding)| (id.key().to_string(), binding.to_string()))
+                    .chain(
+                        config
+                            .shortcuts
+                            .plugin_iter()
+                            .map(|(key, binding)| (key.to_string(), binding.to_string())),
+                    )
                     .collect(),
             ),
             profiles: if config.profiles.is_empty() {

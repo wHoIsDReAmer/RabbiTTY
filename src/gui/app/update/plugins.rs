@@ -1,4 +1,4 @@
-use super::super::App;
+use super::super::{App, Message};
 use crate::gui::settings::SettingsCategory;
 use crate::gui::settings::plugins::{PluginPermission, PluginState};
 use crate::plugin::{Event, PluginRequest};
@@ -38,7 +38,7 @@ impl App {
         }
     }
 
-    fn dispatch_to_plugin(&mut self, id: &str, event: Event) {
+    pub(in crate::gui) fn dispatch_to_plugin(&mut self, id: &str, event: Event) {
         let Some(registry) = self.plugins.as_mut() else {
             return;
         };
@@ -58,6 +58,154 @@ impl App {
         for request in requests {
             self.apply_plugin_request(id, request);
         }
+    }
+
+    pub(in crate::gui) fn adopt_plugin_shortcuts(&mut self) {
+        let Some(registry) = self.plugins.as_ref() else {
+            return;
+        };
+        let wanted: Vec<(String, String, String)> = registry
+            .contributed_commands()
+            .into_iter()
+            .filter_map(|command| {
+                let key = command.default_key?;
+                Some((command.plugin, command.id, key))
+            })
+            .collect();
+
+        for (plugin, command, key) in wanted {
+            if self
+                .config
+                .shortcuts
+                .plugin_binding(&plugin, &command)
+                .is_some()
+            {
+                continue;
+            }
+            if self.config.shortcuts.is_taken(&key) {
+                eprintln!(
+                    "plugin {plugin} wanted {key} for {command}, but it is already bound; \
+                     leaving the command unbound"
+                );
+                continue;
+            }
+            self.config
+                .shortcuts
+                .set_plugin_binding(&plugin, &command, key);
+        }
+    }
+
+    pub(in crate::gui) fn sync_plugin_shortcut_draft(&mut self) {
+        let Some(registry) = self.plugins.as_ref() else {
+            self.settings_draft.plugin_shortcuts.clear();
+            return;
+        };
+        let rows: Vec<crate::gui::settings::PluginShortcutDraft> = registry
+            .contributed_commands()
+            .into_iter()
+            .map(|command| crate::gui::settings::PluginShortcutDraft {
+                binding: self
+                    .config
+                    .shortcuts
+                    .plugin_binding(&command.plugin, &command.id)
+                    .unwrap_or_default()
+                    .to_string(),
+                label: format!("{} — {}", command.source, command.title),
+                plugin: command.plugin,
+                command: command.id,
+            })
+            .collect();
+        self.settings_draft.plugin_shortcuts = rows;
+    }
+
+    pub(in crate::gui) fn commit_plugin_shortcut(&mut self, index: usize) {
+        let Some(row) = self.settings_draft.plugin_shortcuts.get(index).cloned() else {
+            return;
+        };
+        let binding = row.binding.trim().to_string();
+        let current = self
+            .config
+            .shortcuts
+            .plugin_binding(&row.plugin, &row.command)
+            .unwrap_or_default();
+        if binding == current {
+            return;
+        }
+        if !binding.is_empty() && self.config.shortcuts.is_taken(&binding) {
+            self.sync_plugin_shortcut_draft();
+            return;
+        }
+        self.config
+            .shortcuts
+            .set_plugin_binding(&row.plugin, &row.command, binding);
+        self.queue_config_save();
+        self.sync_plugin_shortcut_draft();
+    }
+
+    pub(in crate::gui) fn resolve_plugin_shortcut(
+        &self,
+        physical: &iced::keyboard::key::Physical,
+        modifiers: iced::keyboard::Modifiers,
+    ) -> Option<(String, String)> {
+        self.config
+            .shortcuts
+            .plugin_iter()
+            .find(|(_, binding)| {
+                crate::gui::app::shortcuts::shortcut_matches(binding, physical, modifiers)
+            })
+            .and_then(|(key, _)| crate::config::split_plugin_key(key))
+            .map(|(plugin, command)| (plugin.to_string(), command.to_string()))
+    }
+
+    pub(in crate::gui) fn plugin_picker_profiles(
+        &self,
+    ) -> Vec<(String, Option<String>, crate::gui::tab::Profile)> {
+        let Some(registry) = self.plugins.as_ref() else {
+            return Vec::new();
+        };
+        registry
+            .profiles()
+            .into_iter()
+            .map(|(_, declared)| {
+                let subtitle = declared.subtitle.clone();
+                (declared.name.clone(), subtitle, into_profile(declared))
+            })
+            .collect()
+    }
+
+    pub(in crate::gui) fn plugin_menu_items(
+        &self,
+        context: crate::plugin::MenuContext,
+    ) -> Vec<crate::gui::components::context_menu::ContextMenuItem> {
+        let Some(registry) = self.plugins.as_ref() else {
+            return Vec::new();
+        };
+        registry
+            .menu_items(context)
+            .into_iter()
+            .map(
+                |(plugin, item)| crate::gui::components::context_menu::ContextMenuItem {
+                    label: item.title,
+                    message: Message::RunPluginMenuItem {
+                        plugin,
+                        item: item.id,
+                    },
+                },
+            )
+            .collect()
+    }
+
+    pub(in crate::gui) fn activate_plugin_menu_item(&mut self, plugin: &str, item: &str) {
+        let pane = self.focused_pane().map(|pane| pane.id).unwrap_or_default();
+        let selection = self.focused_pane().and_then(|pane| pane.selected_text());
+        self.dispatch_to_plugin(
+            plugin,
+            Event::MenuActivated(crate::plugin::MenuEvent {
+                item: item.to_string(),
+                pane,
+                selection,
+            }),
+        );
     }
 
     pub(in crate::gui) fn run_plugin_command(&mut self, plugin: &str, command: &str) {
@@ -105,6 +253,14 @@ impl App {
             PluginRequest::Notify { message } => {
                 self.notify_from(source, &message);
             }
+            PluginRequest::OpenUrl { url } => crate::platform::open_url(&url),
+            PluginRequest::SetStatus { id, text } => {
+                if let Some(registry) = self.plugins.as_mut()
+                    && !registry.set_status(source, &id, text)
+                {
+                    eprintln!("plugin {source} set an undeclared status item: {id}");
+                }
+            }
         }
     }
 
@@ -129,8 +285,13 @@ impl App {
             .plugins
             .as_ref()
             .is_some_and(|registry| registry.watches_output());
+        let listening = self
+            .plugins
+            .as_ref()
+            .is_some_and(|registry| registry.has_ready());
         for pane in self.panes_mut() {
             pane.capture_output = watching;
+            pane.track_cwd = listening;
         }
     }
 
@@ -211,6 +372,11 @@ impl App {
                 .map(|info| info.name.clone())
                 .unwrap_or_else(|| id.clone()),
             version: info.map(|info| info.version.clone()).unwrap_or_default(),
+            description: info.and_then(|info| info.description.clone()),
+            author: info.and_then(|info| info.author.clone()),
+            homepage: info
+                .and_then(|info| info.homepage.clone())
+                .filter(|url| crate::terminal::url::is_openable(url)),
             enabled: registry.is_enabled(&id),
             state,
             failure,
@@ -232,6 +398,7 @@ impl App {
             registry.disable(plugin);
         }
         self.persist_plugin_settings();
+        self.adopt_plugin_shortcuts();
         self.sync_output_capture();
         self.refresh_plugin_settings();
     }
@@ -270,6 +437,7 @@ impl App {
             eprintln!("plugin {plugin} failed to start: {reason}");
         }
         self.persist_plugin_settings();
+        self.adopt_plugin_shortcuts();
         self.sync_output_capture();
         self.refresh_plugin_settings();
     }
@@ -307,5 +475,35 @@ impl App {
                 eprintln!("failed to persist plugin settings: {err}");
             }
         }
+    }
+}
+
+fn into_profile(declared: crate::plugin::PluginProfile) -> crate::gui::tab::Profile {
+    use crate::gui::tab::{Profile, ProfileKind};
+
+    let kind = match declared.target {
+        crate::plugin::ProfileTarget::Local(local) => ProfileKind::Local {
+            program: local.program.filter(|program| !program.trim().is_empty()),
+            args: local.args,
+        },
+        crate::plugin::ProfileTarget::Ssh(ssh) => ProfileKind::Ssh(crate::config::SshProfile {
+            name: declared.name.clone(),
+            host: ssh.host,
+            port: ssh.port,
+            user: ssh.user,
+            auth_method: match ssh.identity_file {
+                Some(_) => crate::config::SshAuthMethod::KeyFile,
+                None => crate::config::SshAuthMethod::Password,
+            },
+            identity_file: ssh.identity_file,
+            password: None,
+            proxy_command: None,
+        }),
+    };
+
+    Profile {
+        name: declared.name,
+        icon: declared.icon,
+        kind,
     }
 }

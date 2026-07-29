@@ -305,6 +305,10 @@ impl App {
             }
             SettingsMessage::InputCommitted(field, value) => {
                 self.settings_draft.update(field, value);
+                if let SettingsField::PluginShortcut(index) = field {
+                    self.commit_plugin_shortcut(index);
+                    return Task::none();
+                }
                 self.settings_debounce_spawned_seq = self.settings_debounce_seq;
                 return self.apply_settings(true);
             }

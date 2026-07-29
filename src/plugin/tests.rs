@@ -13,7 +13,7 @@ fn auto(info: &PluginInfo) -> Vec<Capability> {
 fn nothing(_info: &PluginInfo) -> Vec<Capability> {
     Vec::new()
 }
-use super::rabbitty::plugin::types::{CwdEvent, MatchEvent};
+use super::rabbitty::plugin::types::{CwdEvent, MatchEvent, MenuEvent, ProfileTarget};
 use super::registry;
 use super::*;
 
@@ -74,13 +74,14 @@ fn manifest_and_contributions_round_trip() {
         vec![
             Capability::Notify,
             Capability::ReadConfig,
-            Capability::Network
+            Capability::Network,
+            Capability::OpenUrl
         ]
     );
     assert_eq!(
         plugin.granted(),
         &[Capability::Notify, Capability::ReadConfig],
-        "network is requested but not consented to, so it stays ungranted"
+        "network and open-url are requested but not consented to, so they stay ungranted"
     );
 
     let commands = &plugin.contributions().commands;
@@ -131,9 +132,16 @@ fn session_events_reach_the_guest() {
 
     assert_eq!(
         plugin.drain_requests(),
-        vec![PluginRequest::Notify {
-            message: "hello plugin saw pane 7 open".to_string(),
-        }]
+        vec![
+            PluginRequest::Notify {
+                message: "hello plugin saw pane 7 open".to_string(),
+            },
+            PluginRequest::SetStatus {
+                id: "hello.counter".to_string(),
+                text: "hello: pane 7".to_string(),
+            },
+        ],
+        "every host call the guest makes is queued, in order"
     );
 }
 
@@ -162,7 +170,7 @@ fn events_reach_the_guest() {
 }
 
 #[test]
-fn unmatched_events_produce_no_requests() {
+fn the_host_queues_only_what_the_guest_actually_asked_for() {
     let Some(mut plugin) = load(&auto) else {
         return;
     };
@@ -174,13 +182,72 @@ fn unmatched_events_produce_no_requests() {
         }))
         .expect("delivered");
 
-    assert!(plugin.drain_requests().is_empty());
+    assert_eq!(
+        plugin.drain_requests(),
+        vec![PluginRequest::SetStatus {
+            id: "hello.counter".to_string(),
+            text: "cwd: /tmp".to_string(),
+        }],
+        "this event only sets status, so no notification may appear"
+    );
+}
+
+#[test]
+fn an_ungranted_capability_drops_the_request_it_would_have_made() {
+    let Some(mut plugin) = load(&auto) else {
+        return;
+    };
+
+    plugin
+        .on_event(Event::MatchActivated(MatchEvent {
+            pane: 1,
+            pattern: "hello.issue".to_string(),
+            line: "see #42 for details".to_string(),
+            start: 4,
+            end: 7,
+        }))
+        .expect("delivered");
+
+    assert!(
+        plugin.drain_requests().is_empty(),
+        "open-url needs consent, so the guest's call must be dropped"
+    );
+}
+
+#[test]
+fn a_consented_capability_lets_the_request_through() {
+    let Some(mut plugin) =
+        load(&|info: &PluginInfo| grant_with_consent(info, &[Capability::OpenUrl]))
+    else {
+        return;
+    };
+
+    plugin
+        .on_event(Event::MatchActivated(MatchEvent {
+            pane: 1,
+            pattern: "hello.issue".to_string(),
+            line: "see #42 for details".to_string(),
+            start: 4,
+            end: 7,
+        }))
+        .expect("delivered");
+
+    assert_eq!(
+        plugin.drain_requests(),
+        vec![PluginRequest::OpenUrl {
+            url: "https://example.com/issues/42".to_string(),
+        }],
+        "the guest receives the clicked span, not just the pattern id"
+    );
 }
 
 fn greedy() -> PluginInfo {
     PluginInfo {
         name: "greedy".to_string(),
         version: "0.1.0".to_string(),
+        description: None,
+        author: None,
+        homepage: None,
         capabilities: vec![
             Capability::Notify,
             Capability::ReadConfig,
@@ -229,6 +296,9 @@ fn consent_cannot_grant_what_was_never_requested() {
     let modest = PluginInfo {
         name: "modest".to_string(),
         version: "0.1.0".to_string(),
+        description: None,
+        author: None,
+        homepage: None,
         capabilities: vec![Capability::Notify],
     };
 
@@ -1056,5 +1126,314 @@ fn a_retired_plugin_contributes_no_commands() {
     assert!(
         registry.contributed_commands().is_empty(),
         "a trapped plugin must drop out of the palette"
+    );
+}
+
+#[test]
+fn contributed_menu_items_are_split_by_context() {
+    let root = TempRoot::new("menu-context");
+    if !install(&root, "alpha") {
+        return;
+    }
+
+    let mut registry = registry_in(&root);
+    registry.load_all();
+
+    let terminal = registry.menu_items(MenuContext::Terminal);
+    let tab = registry.menu_items(MenuContext::Tab);
+
+    assert_eq!(terminal.len(), 1);
+    assert_eq!(terminal[0].1.id, "hello.hi");
+    assert_eq!(tab.len(), 1);
+    assert_eq!(tab[0].1.id, "hello.readconfig");
+}
+
+#[test]
+fn a_disabled_plugin_contributes_no_menu_items() {
+    let root = TempRoot::new("menu-disabled");
+    if !install(&root, "alpha") {
+        return;
+    }
+
+    let mut registry = registry_in(&root);
+    registry.load_all();
+    registry.disable("alpha");
+
+    assert!(registry.menu_items(MenuContext::Terminal).is_empty());
+}
+
+#[test]
+fn an_activated_menu_item_carries_the_selection() {
+    let Some(mut plugin) = load(&auto) else {
+        return;
+    };
+
+    plugin
+        .on_event(Event::MenuActivated(MenuEvent {
+            item: "hello.hi".to_string(),
+            pane: 3,
+            selection: Some("selected text".to_string()),
+        }))
+        .expect("delivered");
+
+    assert_eq!(
+        plugin.drain_requests(),
+        vec![PluginRequest::Notify {
+            message: "hello plugin menu hello.hi in pane 3 over selected text".to_string(),
+        }]
+    );
+}
+
+#[test]
+fn a_declared_status_slot_can_be_updated_but_an_undeclared_one_cannot() {
+    let root = TempRoot::new("status-slot");
+    if !install(&root, "alpha") {
+        return;
+    }
+
+    let mut registry = registry_in(&root);
+    registry.load_all();
+
+    assert!(
+        registry.set_status("alpha", "hello.counter", "changed".to_string()),
+        "a declared slot accepts updates"
+    );
+    assert!(
+        !registry.set_status("alpha", "hello.nope", "changed".to_string()),
+        "an undeclared slot must be refused, not silently created"
+    );
+    assert_eq!(
+        registry
+            .status_items()
+            .iter()
+            .find(|(_, item)| item.id == "hello.counter")
+            .map(|(_, item)| item.text.as_str()),
+        Some("changed")
+    );
+}
+
+#[test]
+fn a_command_can_declare_a_default_key() {
+    let root = TempRoot::new("default-key");
+    if !install(&root, "alpha") {
+        return;
+    }
+
+    let mut registry = registry_in(&root);
+    registry.load_all();
+
+    let commands = registry.contributed_commands();
+    let hi = commands
+        .iter()
+        .find(|command| command.id == "hello.hi")
+        .expect("hello.hi");
+
+    assert_eq!(hi.default_key.as_deref(), Some("Ctrl+Shift+H"));
+    assert!(
+        commands
+            .iter()
+            .find(|command| command.id == "hello.fail")
+            .is_some_and(|command| command.default_key.is_none()),
+        "a command without a key must stay unbound"
+    );
+}
+
+#[test]
+fn a_plugin_can_supply_profiles() {
+    let root = TempRoot::new("profiles");
+    if !install(&root, "alpha") {
+        return;
+    }
+
+    let mut registry = registry_in(&root);
+    registry.load_all();
+
+    let profiles = registry
+        .get_mut("alpha")
+        .expect("ready")
+        .list_profiles()
+        .expect("listed");
+
+    assert_eq!(profiles.len(), 2);
+    assert!(matches!(profiles[0].target, ProfileTarget::Local(_)));
+    match &profiles[1].target {
+        ProfileTarget::Ssh(target) => {
+            assert_eq!(target.host, "example.invalid");
+            assert_eq!(target.port, 22);
+        }
+        other => panic!("expected an ssh target, got {other:?}"),
+    }
+}
+
+#[test]
+fn declared_profiles_are_read_back_from_the_cache() {
+    let root = TempRoot::new("profile-cache");
+    if !install(&root, "alpha") {
+        return;
+    }
+
+    let mut registry = registry_in(&root);
+    registry.load_all();
+
+    let profiles = registry.profiles();
+    assert_eq!(profiles.len(), 2);
+    assert_eq!(profiles[0].0, "alpha", "each profile carries its owner");
+    assert_eq!(profiles[0].1.name, "Hello echo");
+
+    let names: Vec<String> = registry
+        .profiles()
+        .into_iter()
+        .map(|(_, profile)| profile.name)
+        .collect();
+    assert_eq!(names, vec!["Hello echo", "Hello SSH"]);
+}
+
+#[test]
+fn a_disabled_plugin_supplies_no_profiles() {
+    let root = TempRoot::new("profile-disabled");
+    if !install(&root, "alpha") {
+        return;
+    }
+
+    let mut registry = registry_in(&root);
+    registry.load_all();
+    assert!(!registry.profiles().is_empty());
+
+    registry.disable("alpha");
+    assert!(
+        registry.profiles().is_empty(),
+        "a disabled plugin must not keep offering profiles"
+    );
+}
+
+#[test]
+fn a_retired_plugin_supplies_no_profiles() {
+    let root = TempRoot::new("profile-retired");
+    if !install(&root, "alpha") {
+        return;
+    }
+
+    let mut registry = registry_in(&root);
+    registry.load_all();
+
+    let plugin = registry.get_mut("alpha").expect("ready");
+    let _ = plugin.run_command("hello.boom");
+    registry.retire_failed();
+
+    assert!(registry.profiles().is_empty());
+}
+
+#[test]
+fn the_manifest_carries_authorship() {
+    let Some(plugin) = load(&auto) else {
+        return;
+    };
+
+    let info = plugin.info();
+    assert_eq!(info.author.as_deref(), Some("Rabbitty"));
+    assert_eq!(
+        info.homepage.as_deref(),
+        Some("https://github.com/wHoIsDReAmer/RabbiTTY")
+    );
+    assert!(info.description.is_some());
+}
+
+#[test]
+fn a_disabled_plugin_leaves_no_status_behind() {
+    let root = TempRoot::new("status-disabled");
+    if !install(&root, "alpha") {
+        return;
+    }
+
+    let mut registry = registry_in(&root);
+    registry.load_all();
+    assert!(!registry.status_items().is_empty());
+
+    registry.disable("alpha");
+    assert!(
+        registry.status_items().is_empty(),
+        "a stopped plugin must not keep occupying the status bar"
+    );
+}
+
+#[test]
+fn a_retired_plugin_leaves_no_status_behind() {
+    let root = TempRoot::new("status-retired");
+    if !install(&root, "alpha") {
+        return;
+    }
+
+    let mut registry = registry_in(&root);
+    registry.load_all();
+
+    let plugin = registry.get_mut("alpha").expect("ready");
+    let _ = plugin.run_command("hello.boom");
+    registry.retire_failed();
+
+    assert!(
+        registry.status_items().is_empty(),
+        "a crashed plugin must not leave stale text on screen"
+    );
+}
+
+#[test]
+fn a_status_update_from_an_event_reaches_the_registry() {
+    let root = TempRoot::new("status-event");
+    if !install(&root, "alpha") {
+        return;
+    }
+
+    let mut registry = registry_in(&root);
+    registry.load_all();
+
+    let plugin = registry.get_mut("alpha").expect("ready");
+    plugin.drain_requests();
+    plugin
+        .on_event(Event::SessionStart(9))
+        .expect("event delivered");
+    let requests = plugin.drain_requests();
+
+    let update = requests
+        .iter()
+        .find_map(|request| match request {
+            PluginRequest::SetStatus { id, text } => Some((id.clone(), text.clone())),
+            _ => None,
+        })
+        .expect("the guest asked for a status update");
+    assert_eq!(
+        update,
+        ("hello.counter".to_string(), "hello: pane 9".to_string())
+    );
+
+    assert!(registry.set_status("alpha", &update.0, update.1.clone()));
+    assert_eq!(
+        registry
+            .status_items()
+            .into_iter()
+            .find(|(_, item)| item.id == "hello.counter")
+            .map(|(_, item)| item.text),
+        Some(update.1)
+    );
+}
+
+#[test]
+fn a_memory_hungry_plugin_is_stopped_instead_of_growing_without_bound() {
+    let Some(mut plugin) = load(&auto) else {
+        return;
+    };
+
+    let outcome = plugin.run_command("hello.hog");
+
+    assert!(
+        matches!(outcome, Err(PluginError::Trapped(_))),
+        "the store limit must stop the allocation, got {outcome:?}"
+    );
+    assert!(
+        plugin.failure().is_some(),
+        "a plugin that hit the memory ceiling is retired like any other trap"
+    );
+    assert!(
+        plugin.drain_requests().is_empty(),
+        "it never reached its notify call"
     );
 }

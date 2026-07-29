@@ -6,7 +6,7 @@ use crate::gui::settings::{
 };
 use crate::gui::theme::{Palette, SPACING_NORMAL, SPACING_SMALL};
 use crate::plugin::{SettingField, SettingKind};
-use iced::widget::{Space, column, container, row, text, toggler};
+use iced::widget::{Space, button, column, container, row, text, toggler};
 use iced::{Alignment, Background, Border, Color, Element, Length, Theme};
 
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
@@ -29,6 +29,9 @@ pub struct PluginSettingsState {
     pub id: String,
     pub name: String,
     pub version: String,
+    pub description: Option<String>,
+    pub author: Option<String>,
+    pub homepage: Option<String>,
     pub enabled: bool,
     pub state: PluginState,
     pub failure: Option<String>,
@@ -92,6 +95,20 @@ fn header<'a>(
     .spacing(4)
     .width(Length::Fill);
 
+    let identity = match &view.description {
+        Some(description) => identity.push(
+            text(description.as_str())
+                .size(12)
+                .color(palette.text_secondary),
+        ),
+        None => identity,
+    };
+
+    let identity = match &view.homepage {
+        Some(url) => identity.push(link(url, palette)),
+        None => identity,
+    };
+
     row![
         identity,
         toggler(view.enabled)
@@ -111,11 +128,28 @@ fn header<'a>(
 }
 
 fn version_line(view: &PluginSettingsState) -> String {
-    if view.version.is_empty() {
-        view.id.clone()
-    } else {
-        format!("{}  ·  v{}", view.id, view.version)
+    let mut parts = vec![view.id.clone()];
+    if !view.version.is_empty() {
+        parts.push(format!("v{}", view.version));
     }
+    if let Some(author) = &view.author {
+        parts.push(author.clone());
+    }
+    parts.join("  ·  ")
+}
+
+fn link<'a>(url: &'a str, palette: Palette) -> Element<'a, Message> {
+    button(text(url).size(12).color(palette.accent))
+        .style(|_theme: &Theme, _status| iced::widget::button::Style {
+            background: Some(Background::Color(Color::TRANSPARENT)),
+            text_color: Color::WHITE,
+            border: Border::default(),
+            shadow: iced::Shadow::default(),
+            snap: false,
+        })
+        .padding(0)
+        .on_press(Message::OpenUrl(url.to_string()))
+        .into()
 }
 
 fn badge<'a>(state: PluginState, palette: Palette) -> Element<'a, Message> {

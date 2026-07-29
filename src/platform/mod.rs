@@ -19,6 +19,10 @@ pub mod linux;
 pub use linux::*;
 
 pub fn notify(title: &str, body: &str) {
+    if cfg!(test) {
+        return;
+    }
+
     #[cfg(target_os = "macos")]
     let mut command = {
         let mut c = std::process::Command::new("osascript");
@@ -73,6 +77,10 @@ $toast = [Windows.UI.Notifications.ToastNotification]::new($template)
 pub fn open_url(url: &str) {
     if !crate::terminal::url::is_openable(url) {
         eprintln!("Refusing to open non-http(s) URL: {url}");
+        return;
+    }
+
+    if cfg!(test) {
         return;
     }
 

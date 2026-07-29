@@ -2,14 +2,17 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
 use wasmtime::component::{Component, Linker, ResourceTable};
-use wasmtime::{Config, Engine, Store};
+use wasmtime::{Config, Engine, Store, StoreLimitsBuilder};
 use wasmtime_wasi::{DirPerms, FilePerms, WasiCtx, WasiCtxBuilder};
 
 use super::policy::CapabilityPolicy;
 use super::state::{PluginRequest, PluginState};
-use super::{Capability, Contributions, Event, Plugin, PluginInfo, SettingField};
+use super::{Capability, Contributions, Event, Plugin, PluginInfo, PluginProfile, SettingField};
 
 const CALL_FUEL: u64 = 10_000_000;
+const MAX_MEMORY: usize = 64 * 1024 * 1024;
+const MAX_TABLE_ELEMENTS: usize = 100_000;
+const MAX_INSTANCES: usize = 64;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum PluginError {
@@ -43,6 +46,12 @@ impl PluginHost {
         let mut config = Config::new();
         config.wasm_component_model(true);
         config.consume_fuel(true);
+
+        // The mach port handler thread aborts on any interrupted receive, and every
+        // PTY registers a SIGCHLD handler. Signals have no such thread.
+        if cfg!(target_os = "macos") {
+            config.macos_use_mach_ports(false);
+        }
         let engine = Engine::new(&config)?;
 
         let mut linker = Linker::new(&engine);
@@ -134,9 +143,15 @@ impl PluginHost {
         granted: Vec<Capability>,
         config: HashMap<String, String>,
     ) -> wasmtime::Result<Store<PluginState>> {
+        let limits = StoreLimitsBuilder::new()
+            .memory_size(MAX_MEMORY)
+            .table_elements(MAX_TABLE_ELEMENTS)
+            .instances(MAX_INSTANCES)
+            .build();
         let mut store = Store::new(
             &self.engine,
             PluginState {
+                limits,
                 wasi,
                 table: ResourceTable::new(),
                 granted,
@@ -144,6 +159,7 @@ impl PluginHost {
                 requests: Vec::new(),
             },
         );
+        store.limiter(|state| &mut state.limits);
         store.set_fuel(CALL_FUEL)?;
         Ok(store)
     }
@@ -237,6 +253,13 @@ impl LoadedPlugin {
     where
         F: FnOnce(&Plugin, &mut Store<PluginState>) -> wasmtime::Result<Result<(), String>>,
     {
+        self.settle_with(call)
+    }
+
+    fn settle_with<T, F>(&mut self, call: F) -> Result<T, PluginError>
+    where
+        F: FnOnce(&Plugin, &mut Store<PluginState>) -> wasmtime::Result<Result<T, String>>,
+    {
         if let Err(err) = refuel(&mut self.store) {
             return Err(PluginError::Trapped(err.to_string()));
         }
@@ -247,8 +270,13 @@ impl LoadedPlugin {
                 Err(PluginError::Trapped(reason))
             }
             Ok(Err(reported)) => Err(PluginError::Reported(reported)),
-            Ok(Ok(())) => Ok(()),
+            Ok(Ok(value)) => Ok(value),
         }
+    }
+
+    pub fn list_profiles(&mut self) -> Result<Vec<PluginProfile>, PluginError> {
+        self.guard()?;
+        self.settle_with(move |bindings, store| bindings.call_list_profiles(store))
     }
 
     pub fn drain_requests(&mut self) -> Vec<PluginRequest> {

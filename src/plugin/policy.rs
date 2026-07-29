@@ -8,7 +8,11 @@ const AUTO: [Capability; 3] = [
     Capability::Filesystem,
 ];
 
-const NEEDS_CONSENT: [Capability; 2] = [Capability::WritePty, Capability::Network];
+const NEEDS_CONSENT: [Capability; 3] = [
+    Capability::WritePty,
+    Capability::Network,
+    Capability::OpenUrl,
+];
 
 pub fn requires_consent(info: &PluginInfo) -> Vec<Capability> {
     info.capabilities
@@ -35,6 +39,7 @@ pub fn capability_name(cap: Capability) -> &'static str {
         Capability::Notify => "notify",
         Capability::Network => "network",
         Capability::Filesystem => "filesystem",
+        Capability::OpenUrl => "open-url",
     }
 }
 

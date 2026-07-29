@@ -9,7 +9,7 @@ mod updates;
 
 pub use defaults::*;
 pub use metrics::cell_metrics_for_selection;
-pub use shortcuts::{ShortcutId, ShortcutsConfig};
+pub use shortcuts::{ShortcutId, ShortcutsConfig, plugin_key, split_plugin_key};
 pub use types::{
     BellMode, CursorShape, RightClickAction, SshAuthMethod, SshProfile, TabBarPosition,
 };
@@ -288,6 +288,10 @@ impl AppConfig {
                 if let Some(id) = ShortcutId::from_key(&key) {
                     let sanitized = sanitize_shortcut(&value, self.shortcuts.get(id));
                     self.shortcuts.set(id, sanitized);
+                } else if let Some((plugin, command)) = shortcuts::split_plugin_key(&key) {
+                    let sanitized = sanitize_shortcut(&value, "");
+                    self.shortcuts
+                        .set_plugin_binding(plugin, command, sanitized);
                 }
             }
         }

@@ -2,6 +2,7 @@
 name = "한국어"
 
 [shell_picker]
+plugins = "플러그인"
 title = "새 세션 시작"
 ssh = "SSH"
 profiles = "프로필"
@@ -110,6 +111,7 @@ blur_radius = "블러 반경"
 blur_radius_hint = "창 배경 블러 효과의 강도를 조절합니다."
 
 [settings.shortcuts]
+plugins = "플러그인 명령"
 command_palette = "커맨드 팔레트"
 application = "애플리케이션"
 new_tab = "새 탭"

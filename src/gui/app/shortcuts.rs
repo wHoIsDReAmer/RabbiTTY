@@ -126,7 +126,11 @@ struct ParsedShortcut<'a> {
     key: Cow<'a, str>,
 }
 
-pub(super) fn shortcut_matches(binding: &str, physical: &Physical, modifiers: Modifiers) -> bool {
+pub(in crate::gui) fn shortcut_matches(
+    binding: &str,
+    physical: &Physical,
+    modifiers: Modifiers,
+) -> bool {
     let Some(parsed) = parse_shortcut(binding) else {
         return false;
     };
@@ -229,6 +233,14 @@ pub(super) fn physical_key_token(physical: &Physical) -> Option<Cow<'static, str
         Code::PageDown => "PageDown",
         Code::Comma => "Comma",
         Code::Period => "Period",
+        Code::Minus | Code::NumpadSubtract => "-",
+        Code::Equal => "=",
+        Code::BracketLeft => "[",
+        Code::BracketRight => "]",
+        Code::Slash | Code::NumpadDivide => "/",
+        Code::Semicolon => ";",
+        Code::Quote => "'",
+        Code::Backquote => "`",
         Code::F1 => "F1",
         Code::F2 => "F2",
         Code::F3 => "F3",
@@ -334,6 +346,121 @@ mod tests {
             Some(ShortcutAction::SplitAuto)
         ));
     }
+
+    #[test]
+    fn font_size_shortcuts_resolve_from_defaults() {
+        let shortcuts = crate::config::AppConfig::default().shortcuts;
+        let modifier = if cfg!(target_os = "macos") {
+            Modifiers::LOGO
+        } else {
+            Modifiers::CTRL
+        };
+
+        for (code, expected) in [
+            (Code::Equal, "increase"),
+            (Code::Minus, "decrease"),
+            (Code::Digit0, "reset"),
+        ] {
+            let action = ShortcutAction::resolve(&Physical::Code(code), modifier, &shortcuts);
+            let matched = matches!(
+                (action, expected),
+                (Some(ShortcutAction::FontSizeIncrease), "increase")
+                    | (Some(ShortcutAction::FontSizeDecrease), "decrease")
+                    | (Some(ShortcutAction::FontSizeReset), "reset")
+            );
+            assert!(
+                matched,
+                "{code:?} should {expected} the font, got {action:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn every_default_binding_can_be_produced_by_a_physical_key() {
+        for id in ShortcutId::ALL {
+            let binding = id.default_binding();
+            let key = binding.rsplit('+').next().expect("a key token");
+            assert!(
+                normalize_shortcut_key_token(key).is_some(),
+                "{id:?} binds {binding}, but {key} is not a known token"
+            );
+            assert!(
+                token_is_reachable(key),
+                "{id:?} binds {binding}, but no physical key produces {key}"
+            );
+        }
+    }
+
+    fn token_is_reachable(token: &str) -> bool {
+        let normalized = normalize_shortcut_key_token(token).expect("token");
+        ALL_CODES
+            .iter()
+            .any(|code| physical_key_token(&Physical::Code(*code)).as_deref() == Some(&*normalized))
+    }
+
+    const ALL_CODES: [Code; 61] = [
+        Code::KeyA,
+        Code::KeyB,
+        Code::KeyC,
+        Code::KeyD,
+        Code::KeyE,
+        Code::KeyF,
+        Code::KeyG,
+        Code::KeyH,
+        Code::KeyI,
+        Code::KeyJ,
+        Code::KeyK,
+        Code::KeyL,
+        Code::KeyM,
+        Code::KeyN,
+        Code::KeyO,
+        Code::KeyP,
+        Code::KeyQ,
+        Code::KeyR,
+        Code::KeyS,
+        Code::KeyT,
+        Code::KeyU,
+        Code::KeyV,
+        Code::KeyW,
+        Code::KeyX,
+        Code::KeyY,
+        Code::KeyZ,
+        Code::Digit0,
+        Code::Digit1,
+        Code::Digit2,
+        Code::Digit3,
+        Code::Digit4,
+        Code::Digit5,
+        Code::Digit6,
+        Code::Digit7,
+        Code::Digit8,
+        Code::Digit9,
+        Code::Enter,
+        Code::Tab,
+        Code::Space,
+        Code::Escape,
+        Code::ArrowUp,
+        Code::ArrowDown,
+        Code::ArrowLeft,
+        Code::ArrowRight,
+        Code::Home,
+        Code::End,
+        Code::Delete,
+        Code::Backspace,
+        Code::Insert,
+        Code::PageUp,
+        Code::PageDown,
+        Code::Comma,
+        Code::Period,
+        Code::Minus,
+        Code::Equal,
+        Code::BracketLeft,
+        Code::BracketRight,
+        Code::Slash,
+        Code::Semicolon,
+        Code::Quote,
+        Code::Backquote,
+    ];
 
     #[test]
     fn focus_shortcuts_resolve_from_defaults() {

@@ -1,5 +1,4 @@
-// Rabbitty plugin ABI (Tier 2). Semver'd; see README.md.
-package rabbitty:plugin@0.3.0;
+package rabbitty:plugin@0.4.0;
 
 interface types {
     enum capability {
@@ -8,22 +7,71 @@ interface types {
         notify,
         network,
         filesystem,
+        open-url,
     }
 
     record plugin-info {
         name: string,
         version: string,
+        description: option<string>,
+        author: option<string>,
+        homepage: option<string>,
         capabilities: list<capability>,
     }
 
     record command {
         id: string,
         title: string,
+        default-key: option<string>,
     }
 
     record output-pattern {
         id: string,
         regex: string,
+        clickable: bool,
+    }
+
+    enum menu-context {
+        terminal,
+        tab,
+    }
+
+    record menu-item {
+        id: string,
+        title: string,
+        context: menu-context,
+    }
+
+    record status-item {
+        id: string,
+        text: string,
+        tooltip: option<string>,
+        command: option<string>,
+    }
+
+    record ssh-target {
+        host: string,
+        port: u16,
+        user: string,
+        identity-file: option<string>,
+    }
+
+    record local-target {
+        program: option<string>,
+        args: list<string>,
+    }
+
+    variant profile-target {
+        local(local-target),
+        ssh(ssh-target),
+    }
+
+    record plugin-profile {
+        id: string,
+        name: string,
+        subtitle: option<string>,
+        icon: option<string>,
+        target: profile-target,
     }
 
     record number-range {
@@ -38,8 +86,6 @@ interface types {
         select(list<string>),
     }
 
-    // Rendered by the host; values are owned by the host config and read back
-    // through `read-config`.
     record setting-field {
         key: string,
         label: string,
@@ -51,13 +97,14 @@ interface types {
         commands: list<command>,
         output-patterns: list<output-pattern>,
         settings: list<setting-field>,
+        status-items: list<status-item>,
+        menu-items: list<menu-item>,
     }
 
     record match-event {
         pane: u64,
         pattern: string,
         line: string,
-        // Byte offsets of the match within `line`.
         start: u32,
         end: u32,
     }
@@ -65,6 +112,22 @@ interface types {
     record cwd-event {
         pane: u64,
         path: string,
+    }
+
+    record title-event {
+        pane: u64,
+        title: string,
+    }
+
+    record selection-event {
+        pane: u64,
+        text: string,
+    }
+
+    record menu-event {
+        item: string,
+        pane: u64,
+        selection: option<string>,
     }
 
     record setting-event {
@@ -76,7 +139,14 @@ interface types {
         session-start(u64),
         session-close(u64),
         output-matched(match-event),
+        match-activated(match-event),
         cwd-changed(cwd-event),
+        title-changed(title-event),
+        pane-focused(u64),
+        active-tab-changed(u64),
+        selection-changed(selection-event),
+        menu-activated(menu-event),
+        bell(u64),
         setting-changed(setting-event),
     }
 }
@@ -85,22 +155,23 @@ interface host {
     write-pty: func(pane: u64, data: list<u8>);
     notify: func(message: string);
     read-config: func(key: string) -> option<string>;
+    open-url: func(url: string);
+    set-status: func(id: string, text: string);
 }
 
 world plugin {
-    use types.{plugin-info, contributions, event};
+    use types.{plugin-info, contributions, event, plugin-profile};
 
     import host;
 
-    // Runs before anything is granted
     export manifest: func() -> plugin-info;
 
     export init: func() -> result<_, string>;
 
-    // Skipped when the instance has already trapped; it cannot be re-entered.
     export shutdown: func() -> result<_, string>;
 
     export contributions: func() -> result<contributions, string>;
     export on-event: func(ev: event) -> result<_, string>;
     export run-command: func(id: string) -> result<_, string>;
+    export list-profiles: func() -> result<list<plugin-profile>, string>;
 }
