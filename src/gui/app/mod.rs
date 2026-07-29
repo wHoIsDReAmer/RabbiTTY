@@ -39,6 +39,10 @@ pub enum Message {
         plugin: String,
         command: String,
     },
+    PluginProfilesFetched {
+        plugin: String,
+        profiles: Option<Vec<crate::plugin::PluginProfile>>,
+    },
     ActivatePluginMatch {
         plugin: String,
         pattern: String,

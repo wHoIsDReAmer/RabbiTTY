@@ -35,6 +35,9 @@ pub struct PluginHost {
     engine: Engine,
     linker: Linker<PluginState>,
     root: PathBuf,
+    /// Compiling a component is far more expensive than instantiating one, and
+    /// profile enumeration instantiates on every refresh.
+    components: std::sync::RwLock<HashMap<PathBuf, Component>>,
 }
 
 impl PluginHost {
@@ -62,7 +65,29 @@ impl PluginHost {
             engine,
             linker,
             root,
+            components: std::sync::RwLock::new(HashMap::new()),
         })
+    }
+
+    fn component(&self, path: &Path) -> wasmtime::Result<Component> {
+        if let Ok(cache) = self.components.read()
+            && let Some(found) = cache.get(path)
+        {
+            return Ok(found.clone());
+        }
+        let compiled = Component::from_file(&self.engine, path)?;
+        if let Ok(mut cache) = self.components.write() {
+            cache.insert(path.to_path_buf(), compiled.clone());
+        }
+        Ok(compiled)
+    }
+
+    /// Dropped when the plugin directory is rescanned, so a replaced `.wasm`
+    /// is picked up instead of served from the cache.
+    pub fn forget_components(&self) {
+        if let Ok(mut cache) = self.components.write() {
+            cache.clear();
+        }
     }
 
     pub fn load(
@@ -72,7 +97,7 @@ impl PluginHost {
         config: HashMap<String, String>,
         policy: CapabilityPolicy<'_>,
     ) -> wasmtime::Result<LoadedPlugin> {
-        let component = Component::from_file(&self.engine, path)?;
+        let component = self.component(path)?;
         let info = self.read_manifest(&component)?;
         let granted = policy(&info);
 
@@ -80,11 +105,26 @@ impl PluginHost {
     }
 
     pub fn inspect(&self, path: &Path) -> wasmtime::Result<(PluginInfo, Vec<SettingField>)> {
-        let component = Component::from_file(&self.engine, path)?;
+        let component = self.component(path)?;
         let info = self.read_manifest(&component)?;
         let probe = self.start("", &component, info.clone(), Vec::new(), HashMap::new())?;
         let fields = probe.contributions().settings.clone();
         Ok((info, fields))
+    }
+
+    pub fn fetch_profiles(
+        &self,
+        id: &str,
+        path: &Path,
+        config: HashMap<String, String>,
+        policy: CapabilityPolicy<'_>,
+    ) -> wasmtime::Result<Vec<PluginProfile>> {
+        let mut plugin = self.load(id, path, config, policy)?;
+        let profiles = plugin
+            .list_profiles()
+            .map_err(|err| wasmtime::Error::msg(err.to_string()))?;
+        let _ = plugin.shutdown();
+        Ok(profiles)
     }
 
     fn read_manifest(&self, component: &Component) -> wasmtime::Result<PluginInfo> {

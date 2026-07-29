@@ -2,6 +2,9 @@ use super::super::{App, Message};
 use crate::gui::settings::SettingsCategory;
 use crate::gui::settings::plugins::{PluginPermission, PluginState};
 use crate::plugin::{Event, PluginRequest};
+use iced::Task;
+
+const PROFILE_DEADLINE: std::time::Duration = std::time::Duration::from_secs(5);
 
 impl App {
     pub(in crate::gui) fn dispatch_plugin_event(&mut self, event: Event) {
@@ -453,6 +456,55 @@ impl App {
         self.adopt_plugin_shortcuts();
         self.sync_output_capture();
         self.refresh_plugin_settings();
+    }
+
+    /// A plugin that enumerates a network inventory can block for as long as its
+    /// source takes, and fuel only bounds instructions, not blocking I/O. So the
+    /// call happens off the UI thread and gives up after a deadline.
+    pub(in crate::gui) fn refresh_plugin_profiles(&self) -> Task<Message> {
+        let Some(registry) = self.plugins.as_ref() else {
+            return Task::none();
+        };
+        let host = registry.host();
+        let fetches: Vec<Task<Message>> = registry
+            .profile_sources()
+            .into_iter()
+            .map(|source| {
+                let host = std::sync::Arc::clone(&host);
+                let plugin = source.id.clone();
+                Task::perform(
+                    async move {
+                        tokio::task::spawn_blocking(move || {
+                            crate::plugin::fetch_profiles_with_deadline(
+                                &host,
+                                &source,
+                                PROFILE_DEADLINE,
+                            )
+                        })
+                        .await
+                        .unwrap_or(None)
+                    },
+                    move |profiles| Message::PluginProfilesFetched {
+                        plugin: plugin.clone(),
+                        profiles,
+                    },
+                )
+            })
+            .collect();
+        Task::batch(fetches)
+    }
+
+    pub(in crate::gui) fn apply_fetched_profiles(
+        &mut self,
+        plugin: &str,
+        profiles: Option<Vec<crate::plugin::PluginProfile>>,
+    ) {
+        let Some(profiles) = profiles else {
+            return;
+        };
+        if let Some(registry) = self.plugins.as_mut() {
+            registry.set_profiles(plugin, profiles);
+        }
     }
 
     pub(in crate::gui) fn rescan_plugins(&mut self) {
