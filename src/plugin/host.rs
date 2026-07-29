@@ -247,10 +247,13 @@ pub(super) fn abi_version_of(interface: &str) -> Option<&str> {
         .map(|(_, version)| version)
 }
 
+/// Components are binaries, so they live under the data directory rather than
+/// beside `config.toml`. Only Linux differs — on macOS and Windows both paths
+/// resolve to the same directory.
 fn default_root() -> wasmtime::Result<PathBuf> {
-    dirs::config_dir()
+    dirs::data_dir()
         .map(|dir| dir.join("rabbitty").join("plugins"))
-        .ok_or_else(|| wasmtime::Error::msg("no config directory"))
+        .ok_or_else(|| wasmtime::Error::msg("no data directory"))
 }
 
 pub(super) fn dir_name(plugin_name: &str) -> Option<String> {
