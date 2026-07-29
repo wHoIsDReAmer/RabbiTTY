@@ -107,3 +107,51 @@ pub fn open_url(url: &str) {
         eprintln!("Failed to open {url}: {err}");
     }
 }
+
+/// Reveal a directory in the platform file manager. Separate from [`open_url`],
+/// which only accepts http(s) and would reject every path.
+pub fn open_path(path: &std::path::Path) {
+    if let Err(err) = std::fs::create_dir_all(path) {
+        eprintln!("Failed to create {}: {err}", path.display());
+        return;
+    }
+
+    if cfg!(test) {
+        return;
+    }
+
+    #[cfg(target_os = "macos")]
+    let program = "open";
+    #[cfg(target_os = "windows")]
+    let program = "explorer";
+    #[cfg(not(any(target_os = "macos", target_os = "windows")))]
+    let program = "xdg-open";
+
+    // Windows `explorer` reports a non-zero exit even when it succeeds, so the
+    // status is deliberately not checked on any platform.
+    if let Err(err) = std::process::Command::new(program).arg(path).spawn() {
+        eprintln!("Failed to open {}: {err}", path.display());
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn open_path_creates_a_missing_directory() {
+        let dir = std::env::temp_dir().join(format!("rabbitty-open-path-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        assert!(!dir.exists());
+
+        // Under `cfg!(test)` this returns before spawning a file manager, so the
+        // only observable effect is the directory it makes first.
+        open_path(&dir);
+
+        assert!(
+            dir.is_dir(),
+            "the plugin folder should be created on demand"
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+}

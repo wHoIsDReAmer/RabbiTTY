@@ -17,6 +17,8 @@ pub mod ssh;
 pub mod terminal;
 pub mod theme;
 
+pub use plugins::PluginsOverview;
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TerminalFontOption {
     pub label: String,
@@ -113,16 +115,18 @@ pub enum SettingsCategory {
     Theme,
     Shortcuts,
     Ssh,
+    Plugins,
     Plugin(usize),
 }
 
 impl SettingsCategory {
-    pub const BUILTIN: [Self; 5] = [
+    pub const BUILTIN: [Self; 6] = [
         Self::Appearance,
         Self::Terminal,
         Self::Theme,
         Self::Shortcuts,
         Self::Ssh,
+        Self::Plugins,
     ];
 
     pub fn label(self) -> &'static str {
@@ -132,6 +136,7 @@ impl SettingsCategory {
             Self::Theme => crate::t!("settings.categories.theme"),
             Self::Shortcuts => crate::t!("settings.categories.shortcuts"),
             Self::Ssh => crate::t!("settings.categories.ssh"),
+            Self::Plugins => crate::t!("settings.categories.plugins"),
             Self::Plugin(_) => "",
         }
     }
@@ -144,6 +149,7 @@ impl SettingsCategory {
             Self::Theme => Ui::Theme,
             Self::Shortcuts => Ui::Keyboard,
             Self::Ssh => Ui::Server,
+            Self::Plugins => Ui::FolderOpen,
             Self::Plugin(_) => Ui::Plugin,
         }
     }
@@ -696,6 +702,7 @@ pub fn view_category<'a>(
     font_combo_state: &'a iced::widget::combo_box::State<TerminalFontOption>,
     show_all_fonts: bool,
     all_font_options: &'a [TerminalFontOption],
+    plugins_overview: plugins::PluginsOverview,
     palette: Palette,
 ) -> Element<'a, Message> {
     let animations_enabled = config.ui.animations_enabled;
@@ -717,6 +724,9 @@ pub fn view_category<'a>(
         SettingsCategory::Theme => theme::view(config, draft, palette),
         SettingsCategory::Shortcuts => shortcuts::view(config, draft, palette),
         SettingsCategory::Ssh => ssh::view(draft, palette, animations_enabled),
+        SettingsCategory::Plugins => {
+            plugins::system_view(plugins_overview, animations_enabled, palette)
+        }
         SettingsCategory::Plugin(_) => plugins::view(plugin_state, animations_enabled, palette),
     }
 }
@@ -1574,5 +1584,25 @@ mod tests {
         let profiles = draft.collect_profiles();
         assert_eq!(profiles.len(), 1);
         assert_eq!(profiles[0].ssh_profile().unwrap().host, "existing.host");
+    }
+}
+
+#[cfg(test)]
+mod category_tests {
+    use super::SettingsCategory;
+
+    #[test]
+    fn the_plugin_system_category_is_listed_and_labelled() {
+        assert!(
+            SettingsCategory::BUILTIN.contains(&SettingsCategory::Plugins),
+            "the plugin folder section must appear in the sidebar"
+        );
+
+        for category in SettingsCategory::BUILTIN {
+            assert!(
+                !category.label().is_empty(),
+                "{category:?} has no sidebar label"
+            );
+        }
     }
 }

@@ -37,6 +37,15 @@ terminal = "Terminal"
 theme = "Theme"
 shortcuts = "Shortcuts"
 ssh = "Profiles"
+plugins = "Plugins"
+
+[settings.plugins]
+section_title = "Plugin folder"
+folder_hint = "Components are loaded from this directory on startup."
+open_folder = "Open folder"
+rescan = "Rescan"
+installed = "installed"
+disabled = "disabled"
 
 [settings.language]
 section_title = "Language"

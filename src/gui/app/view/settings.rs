@@ -108,6 +108,7 @@ impl App {
             &self.font_combo_state,
             self.show_all_fonts,
             &self.all_font_options,
+            self.plugins_overview(),
             palette,
         ))
         .padding([SPACING_LARGE, 12.0])

@@ -170,6 +170,8 @@ pub enum SettingsMessage {
         plugin: String,
         enabled: bool,
     },
+    OpenPluginFolder,
+    RescanPlugins,
     PluginConsentChanged {
         plugin: String,
         capability: String,

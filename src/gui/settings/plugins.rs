@@ -357,3 +357,78 @@ fn field_row<'a>(
         ),
     }
 }
+
+/// What the plugin *system* section shows, as opposed to a single plugin.
+#[derive(Debug, Default, Clone)]
+pub struct PluginsOverview {
+    pub root: std::path::PathBuf,
+    pub installed: usize,
+    pub disabled: usize,
+}
+
+pub fn system_view<'a>(
+    overview: PluginsOverview,
+    animations_enabled: bool,
+    palette: Palette,
+) -> Element<'a, Message> {
+    let counts = format!(
+        "{} {} · {} {}",
+        overview.installed,
+        crate::t!("settings.plugins.installed"),
+        overview.disabled,
+        crate::t!("settings.plugins.disabled"),
+    );
+
+    let path = container(
+        text(overview.root.display().to_string())
+            .size(12)
+            .color(palette.text_secondary),
+    )
+    .padding([6, 10])
+    .width(Length::Fill)
+    .style(move |_theme: &Theme| container::Style {
+        background: Some(Background::Color(Color {
+            a: 0.05,
+            ..palette.text
+        })),
+        border: Border {
+            radius: 4.0.into(),
+            ..Default::default()
+        },
+        ..Default::default()
+    });
+
+    let actions = row![
+        secondary(
+            crate::t!("settings.plugins.open_folder"),
+            Some(Message::Settings(SettingsMessage::OpenPluginFolder)),
+            palette,
+            animations_enabled,
+        ),
+        secondary(
+            crate::t!("settings.plugins.rescan"),
+            Some(Message::Settings(SettingsMessage::RescanPlugins)),
+            palette,
+            animations_enabled,
+        ),
+    ]
+    .spacing(SPACING_SMALL)
+    .align_y(Alignment::Center);
+
+    let body = column![
+        text(crate::t!("settings.plugins.folder_hint"))
+            .size(13)
+            .color(palette.text_secondary),
+        path,
+        actions,
+        text(counts).size(12).color(palette.text_secondary),
+    ]
+    .spacing(SPACING_NORMAL)
+    .width(Length::Fill);
+
+    crate::gui::settings::section(
+        crate::t!("settings.plugins.section_title"),
+        body.into(),
+        palette,
+    )
+}
