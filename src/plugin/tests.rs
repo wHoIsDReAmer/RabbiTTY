@@ -1266,8 +1266,8 @@ fn a_plugin_can_supply_profiles() {
 }
 
 #[test]
-fn declared_profiles_are_read_back_from_the_cache() {
-    let root = TempRoot::new("profile-cache");
+fn loading_a_plugin_does_not_enumerate_its_profiles() {
+    let root = TempRoot::new("profile-lazy");
     if !install(&root, "alpha") {
         return;
     }
@@ -1275,13 +1275,36 @@ fn declared_profiles_are_read_back_from_the_cache() {
     let mut registry = registry_in(&root);
     registry.load_all();
 
+    assert!(
+        registry.profiles().is_empty(),
+        "startup must not wait on a source that may be a slow network call"
+    );
+    assert_eq!(
+        registry.profile_sources().len(),
+        1,
+        "the plugin is still offered as a source to fetch from later"
+    );
+}
+
+#[test]
+fn a_fetched_profile_list_is_read_back() {
+    let root = TempRoot::new("profile-fetch");
+    if !install(&root, "alpha") {
+        return;
+    }
+
+    let mut registry = registry_in(&root);
+    registry.load_all();
+
+    let source = registry.profile_sources().pop().expect("a source");
+    let fetched = fetch_profiles_blocking(&registry.host(), &source).expect("listed");
+    registry.set_profiles("alpha", fetched);
+
     let profiles = registry.profiles();
     assert_eq!(profiles.len(), 2);
     assert_eq!(profiles[0].0, "alpha", "each profile carries its owner");
-    assert_eq!(profiles[0].1.name, "Hello echo");
 
-    let names: Vec<String> = registry
-        .profiles()
+    let names: Vec<String> = profiles
         .into_iter()
         .map(|(_, profile)| profile.name)
         .collect();
@@ -1297,12 +1320,19 @@ fn a_disabled_plugin_supplies_no_profiles() {
 
     let mut registry = registry_in(&root);
     registry.load_all();
+    let source = registry.profile_sources().pop().expect("a source");
+    let fetched = fetch_profiles_blocking(&registry.host(), &source).expect("listed");
+    registry.set_profiles("alpha", fetched);
     assert!(!registry.profiles().is_empty());
 
     registry.disable("alpha");
     assert!(
         registry.profiles().is_empty(),
         "a disabled plugin must not keep offering profiles"
+    );
+    assert!(
+        registry.profile_sources().is_empty(),
+        "and must not be fetched from again"
     );
 }
 
@@ -1316,11 +1346,16 @@ fn a_retired_plugin_supplies_no_profiles() {
     let mut registry = registry_in(&root);
     registry.load_all();
 
+    let source = registry.profile_sources().pop().expect("a source");
+    let fetched = fetch_profiles_blocking(&registry.host(), &source).expect("listed");
+    registry.set_profiles("alpha", fetched);
+
     let plugin = registry.get_mut("alpha").expect("ready");
     let _ = plugin.run_command("hello.boom");
     registry.retire_failed();
 
     assert!(registry.profiles().is_empty());
+    assert!(registry.profile_sources().is_empty());
 }
 
 #[test]

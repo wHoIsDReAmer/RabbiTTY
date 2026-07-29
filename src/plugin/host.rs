@@ -87,6 +87,21 @@ impl PluginHost {
         Ok((info, fields))
     }
 
+    pub fn fetch_profiles(
+        &self,
+        id: &str,
+        path: &Path,
+        config: HashMap<String, String>,
+        policy: CapabilityPolicy<'_>,
+    ) -> wasmtime::Result<Vec<PluginProfile>> {
+        let mut plugin = self.load(id, path, config, policy)?;
+        let profiles = plugin
+            .list_profiles()
+            .map_err(|err| wasmtime::Error::msg(err.to_string()))?;
+        let _ = plugin.shutdown();
+        Ok(profiles)
+    }
+
     fn read_manifest(&self, component: &Component) -> wasmtime::Result<PluginInfo> {
         let mut store = self.store(WasiCtxBuilder::new().build(), Vec::new(), HashMap::new())?;
         let bindings = Plugin::instantiate(&mut store, component, &self.linker)?;

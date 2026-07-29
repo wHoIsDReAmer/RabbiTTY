@@ -2,6 +2,7 @@ use super::super::{App, Message};
 use crate::gui::settings::SettingsCategory;
 use crate::gui::settings::plugins::{PluginPermission, PluginState};
 use crate::plugin::{Event, PluginRequest};
+use iced::Task;
 
 impl App {
     pub(in crate::gui) fn dispatch_plugin_event(&mut self, event: Event) {
@@ -455,6 +456,49 @@ impl App {
         self.refresh_plugin_settings();
     }
 
+    /// A plugin that enumerates a network inventory can block for as long as its
+    /// source takes, and fuel only bounds instructions, not blocking I/O. So the
+    /// call happens off the UI thread and gives up after a deadline.
+    pub(in crate::gui) fn refresh_plugin_profiles(&self) -> Task<Message> {
+        let Some(registry) = self.plugins.as_ref() else {
+            return Task::none();
+        };
+        let host = registry.host();
+        let fetches: Vec<Task<Message>> = registry
+            .profile_sources()
+            .into_iter()
+            .map(|source| {
+                let host = std::sync::Arc::clone(&host);
+                let plugin = source.id.clone();
+                Task::perform(
+                    async move {
+                        tokio::task::spawn_blocking(move || fetch_with_deadline(&host, &source))
+                            .await
+                            .unwrap_or(None)
+                    },
+                    move |profiles| Message::PluginProfilesFetched {
+                        plugin: plugin.clone(),
+                        profiles,
+                    },
+                )
+            })
+            .collect();
+        Task::batch(fetches)
+    }
+
+    pub(in crate::gui) fn apply_fetched_profiles(
+        &mut self,
+        plugin: &str,
+        profiles: Option<Vec<crate::plugin::PluginProfile>>,
+    ) {
+        let Some(profiles) = profiles else {
+            return;
+        };
+        if let Some(registry) = self.plugins.as_mut() {
+            registry.set_profiles(plugin, profiles);
+        }
+    }
+
     pub(in crate::gui) fn rescan_plugins(&mut self) {
         let Some(registry) = self.plugins.as_mut() else {
             return;
@@ -535,5 +579,34 @@ fn into_profile(declared: crate::plugin::PluginProfile) -> crate::gui::tab::Prof
         name: declared.name,
         icon: declared.icon,
         kind,
+    }
+}
+
+const PROFILE_DEADLINE: std::time::Duration = std::time::Duration::from_secs(5);
+
+/// A source that never answers would otherwise pin the worker forever, so the
+/// call is handed to a thread we are willing to abandon.
+fn fetch_with_deadline(
+    host: &std::sync::Arc<crate::plugin::PluginHost>,
+    source: &crate::plugin::ProfileSource,
+) -> Option<Vec<crate::plugin::PluginProfile>> {
+    let (tx, rx) = std::sync::mpsc::channel();
+    let host = std::sync::Arc::clone(host);
+    let source = source.clone();
+    let id = source.id.clone();
+    std::thread::spawn(move || {
+        let _ = tx.send(crate::plugin::fetch_profiles_blocking(&host, &source));
+    });
+
+    match rx.recv_timeout(PROFILE_DEADLINE) {
+        Ok(Ok(profiles)) => Some(profiles),
+        Ok(Err(reason)) => {
+            eprintln!("plugin {id} failed to list profiles: {reason}");
+            None
+        }
+        Err(_) => {
+            eprintln!("plugin {id} did not list profiles within the deadline; abandoning the call");
+            None
+        }
     }
 }

@@ -20,5 +20,7 @@ pub use host::{PluginError, PluginHost};
 pub use lines::LineReader;
 pub use matcher::span_at;
 pub use policy::{capability_from_name, capability_name, requires_consent};
-pub use registry::{ClickablePattern, PluginRegistry, Status};
+pub use registry::{
+    ClickablePattern, PluginRegistry, ProfileSource, Status, fetch_profiles_blocking,
+};
 pub use state::PluginRequest;

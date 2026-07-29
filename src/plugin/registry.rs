@@ -60,7 +60,6 @@ impl Entry {
             self.fields = plugin.contributions().settings.clone();
             self.status = plugin.contributions().status_items.clone();
             self.menu = plugin.contributions().menu_items.clone();
-            self.profiles = plugin.list_profiles().unwrap_or_default();
         } else if self.info.is_none()
             && let Ok((info, fields)) = host.inspect(&self.path)
         {
@@ -70,8 +69,16 @@ impl Entry {
     }
 }
 
+#[derive(Clone)]
+pub struct ProfileSource {
+    pub id: String,
+    pub path: PathBuf,
+    consented: Vec<Capability>,
+    config: HashMap<String, String>,
+}
+
 pub struct PluginRegistry {
-    host: PluginHost,
+    host: std::sync::Arc<PluginHost>,
     settings: PluginsConfig,
     entries: Vec<Entry>,
 }
@@ -89,7 +96,7 @@ impl Slot {
 impl PluginRegistry {
     pub fn new(host: PluginHost, settings: PluginsConfig) -> Self {
         Self {
-            host,
+            host: std::sync::Arc::new(host),
             settings,
             entries: Vec::new(),
         }
@@ -248,6 +255,34 @@ impl PluginRegistry {
                     .collect::<Vec<_>>()
             })
             .collect()
+    }
+
+    pub fn host(&self) -> std::sync::Arc<PluginHost> {
+        std::sync::Arc::clone(&self.host)
+    }
+
+    pub fn profile_sources(&self) -> Vec<ProfileSource> {
+        self.entries
+            .iter()
+            .filter(
+                |entry| matches!(&entry.slot, Slot::Ready(plugin, _) if plugin.failure().is_none()),
+            )
+            .map(|entry| {
+                let settings = self.settings.get(&entry.id).cloned().unwrap_or_default();
+                ProfileSource {
+                    id: entry.id.clone(),
+                    path: entry.path.clone(),
+                    consented: consented_capabilities(&settings),
+                    config: settings.settings.into_iter().collect(),
+                }
+            })
+            .collect()
+    }
+
+    pub fn set_profiles(&mut self, id: &str, profiles: Vec<PluginProfile>) {
+        if let Some(entry) = self.entry_mut(id) {
+            entry.profiles = profiles;
+        }
     }
 
     pub fn profiles(&self) -> Vec<(String, PluginProfile)> {
@@ -513,4 +548,16 @@ fn consented_capabilities(settings: &PluginSettings) -> Vec<Capability> {
         .iter()
         .filter_map(|name| capability_from_name(name))
         .collect()
+}
+
+/// Runs on a worker thread: the live instance's `Store` is `!Sync`, so profile
+/// enumeration gets an instance of its own that is dropped when it answers.
+pub fn fetch_profiles_blocking(
+    host: &PluginHost,
+    source: &ProfileSource,
+) -> Result<Vec<PluginProfile>, String> {
+    let consented = source.consented.clone();
+    let policy = |info: &PluginInfo| grant_with_consent(info, &consented);
+    host.fetch_profiles(&source.id, &source.path, source.config.clone(), &policy)
+        .map_err(|err| err.to_string())
 }

@@ -137,6 +137,10 @@ impl App {
                 self.show_shell_picker = true;
                 self.shell_picker_selected = 0;
                 self.modal_anim.go_mut(true, Instant::now());
+                return self.refresh_plugin_profiles();
+            }
+            Message::PluginProfilesFetched { plugin, profiles } => {
+                self.apply_fetched_profiles(&plugin, profiles);
             }
             Message::CloseShellPicker => {
                 self.modal_anim.go_mut(false, Instant::now());
