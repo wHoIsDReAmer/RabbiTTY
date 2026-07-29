@@ -51,13 +51,6 @@ impl Write for PtyWriter {
         guard.writer().flush()
     }
 }
-/// macOS `openpty` sets `CLOEXEC` after the fact, so a fork from another thread in
-/// that window inherits this pty's fds and it never sees EOF.
-static SPAWN_GUARD: Mutex<()> = Mutex::new(());
-
-fn lock_spawn() -> std::sync::MutexGuard<'static, ()> {
-    SPAWN_GUARD.lock().unwrap_or_else(|err| err.into_inner())
-}
 
 fn child_env(spec_env: Vec<(String, String)>) -> HashMap<String, String> {
     let mut env: HashMap<String, String> = spec_env.into_iter().collect();
@@ -151,11 +144,8 @@ impl LocalPty {
             cell_height: 1,
         };
 
-        let pty = {
-            let _spawn = lock_spawn();
-            tty::new(&options, window_size, tab_id)
-                .map_err(|err| SessionError::Spawn(format!("pty spawn failed: {err}")))?
-        };
+        let pty = tty::new(&options, window_size, tab_id)
+            .map_err(|err| SessionError::Spawn(format!("pty spawn failed: {err}")))?;
 
         let reader_file = pty
             .file()
@@ -175,6 +165,11 @@ impl LocalPty {
         let reader_handle = thread::spawn(move || {
             let mut reader = reader_file;
             let mut buf = [0u8; 2048];
+
+            // Stopping the reads is not an option even once nobody wants the output:
+            // the shell fills the tty buffer, and then it cannot finish exiting, which
+            // leaves `Pty::drop` waiting on it forever. Drain and discard instead.
+            let mut listening = true;
             loop {
                 match reader.read(&mut buf) {
                     Ok(0) => {
@@ -182,20 +177,18 @@ impl LocalPty {
                         break;
                     }
                     Ok(n) => {
-                        if !send_output_event(
-                            &mut output_tx,
-                            OutputEvent::Data {
-                                tab_id,
-                                bytes: buf[..n].to_vec(),
-                            },
-                        ) {
-                            break;
+                        if listening {
+                            listening = send_output_event(
+                                &mut output_tx,
+                                OutputEvent::Data {
+                                    tab_id,
+                                    bytes: buf[..n].to_vec(),
+                                },
+                            );
                         }
                     }
                     Err(err) if err.kind() == ErrorKind::Interrupted => continue,
                     Err(err) if err.kind() == ErrorKind::WouldBlock => {
-                        // A slave fd leaked into some other child keeps this pty open
-                        // forever, so EOF alone cannot be the only way out.
                         if reader_shutdown.load(Ordering::Relaxed) {
                             break;
                         }
