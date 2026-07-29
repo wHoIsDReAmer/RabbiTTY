@@ -313,6 +313,19 @@ impl App {
         out
     }
 
+    pub(in crate::gui) fn plugins_overview(&self) -> crate::gui::settings::PluginsOverview {
+        let Some(registry) = self.plugins.as_ref() else {
+            return crate::gui::settings::PluginsOverview::default();
+        };
+        let ids: Vec<&str> = registry.ids().collect();
+        let disabled = ids.iter().filter(|id| !registry.is_enabled(id)).count();
+        crate::gui::settings::PluginsOverview {
+            root: registry.root().to_path_buf(),
+            installed: ids.len(),
+            disabled,
+        }
+    }
+
     pub(in crate::gui) fn plugin_id_at(&self, index: usize) -> Option<String> {
         self.plugins
             .as_ref()?
@@ -440,6 +453,23 @@ impl App {
         self.adopt_plugin_shortcuts();
         self.sync_output_capture();
         self.refresh_plugin_settings();
+    }
+
+    pub(in crate::gui) fn rescan_plugins(&mut self) {
+        let Some(registry) = self.plugins.as_mut() else {
+            return;
+        };
+        registry.load_all();
+        self.persist_plugin_settings();
+        self.adopt_plugin_shortcuts();
+        self.sync_output_capture();
+        self.refresh_plugin_settings();
+    }
+
+    pub(in crate::gui) fn open_plugin_folder(&self) {
+        if let Some(registry) = self.plugins.as_ref() {
+            crate::platform::open_path(registry.root());
+        }
     }
 
     fn persist_plugin_settings(&mut self) {

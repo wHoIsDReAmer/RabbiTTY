@@ -225,6 +225,12 @@ impl App {
             SettingsMessage::PluginReloaded(plugin) => {
                 self.reload_plugin(&plugin);
             }
+            SettingsMessage::OpenPluginFolder => {
+                self.open_plugin_folder();
+            }
+            SettingsMessage::RescanPlugins => {
+                self.rescan_plugins();
+            }
             SettingsMessage::ProfileModalTabSelected(tab) => {
                 self.settings_draft.set_profile_modal_tab(tab);
             }
