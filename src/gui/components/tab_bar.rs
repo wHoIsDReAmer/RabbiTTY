@@ -63,11 +63,38 @@ pub fn tab_bar<'a>(
         tab_elements.push(tab_item.into());
     }
 
-    let add_btn = button_factory::icon("+", on_add, palette, animations_enabled);
-    let settings_btn = button_factory::icon("\u{2699}", on_settings, palette, animations_enabled);
+    let bar_icon =
+        |icon| crate::gui::icons::ui_hover(icon, 13.0, palette.text_secondary, palette.text);
+
+    let add_btn = button_factory::icon_content(
+        bar_icon(crate::gui::icons::Ui::Add),
+        on_add,
+        palette,
+        animations_enabled,
+    );
+    let settings_btn = button_factory::icon_content(
+        bar_icon(crate::gui::icons::Ui::Settings),
+        on_settings,
+        palette,
+        animations_enabled,
+    );
 
     let sftp_btn: Option<Element<Message>> = sftp_toggle.map(|(msg, active)| {
-        button_factory::icon_toggle("\u{21C5}", msg, active, palette, animations_enabled)
+        button_factory::icon_toggle_content(
+            crate::gui::icons::ui(
+                crate::gui::icons::Ui::Sftp,
+                13.0,
+                if active {
+                    palette.background
+                } else {
+                    palette.text_secondary
+                },
+            ),
+            msg,
+            active,
+            palette,
+            animations_enabled,
+        )
     });
 
     let tabs_row = row(tab_elements)
@@ -174,16 +201,19 @@ fn window_controls<'a>(palette: Palette) -> iced::widget::Row<'a, Message> {
         }
     };
 
+    let control =
+        |icon| crate::gui::icons::ui_hover(icon, 12.0, palette.text_secondary, Color::WHITE);
+
     row![
-        button(text("\u{2500}").size(12))
+        button(control(crate::gui::icons::Ui::Minimize))
             .on_press(Message::WindowMinimize)
             .padding([6, 12])
             .style(win_style(hover_subtle)),
-        button(text("\u{25a1}").size(12))
+        button(control(crate::gui::icons::Ui::Maximize))
             .on_press(Message::WindowMaximize)
             .padding([6, 12])
             .style(win_style(hover_subtle)),
-        button(text("\u{2715}").size(12))
+        button(control(crate::gui::icons::Ui::Close))
             .on_press(Message::Exit)
             .padding([6, 12])
             .style(win_style(hover_close)),
@@ -264,40 +294,51 @@ fn browser_tab<'a>(
     } else {
         title.into()
     };
-    let index_label = if index == crate::gui::app::SETTINGS_TAB_INDEX {
-        text("\u{2699}".to_string()).size(10)
-    } else {
-        text(format!("{}", index + 1)).size(10)
-    }
-    .color(Color {
+    let label_color = Color {
         a: 0.35,
         ..palette.text_secondary
-    });
+    };
+    let index_label: Element<'a, Message> = if index == crate::gui::app::SETTINGS_TAB_INDEX {
+        crate::gui::icons::ui(crate::gui::icons::Ui::Settings, 10.0, label_color)
+    } else {
+        text(format!("{}", index + 1))
+            .size(10)
+            .color(label_color)
+            .into()
+    };
     let tab_text = text(display_title).size(12);
 
     // Background painted by `hover_fade` behind the button.
-    let close_btn_inner = button(text("\u{2715}").size(9))
-        .on_press(Message::CloseTab(index))
-        .padding([2, 5])
-        .style(
-            move |_theme: &Theme, status: button::Status| button::Style {
-                background: Some(Background::Color(Color::TRANSPARENT)),
-                text_color: match status {
-                    button::Status::Hovered => palette.text,
-                    _ => Color {
-                        a: 0.5,
-                        ..palette.text_secondary
-                    },
+    let close_btn_inner = button(crate::gui::icons::ui_hover(
+        crate::gui::icons::Ui::Close,
+        9.0,
+        Color {
+            a: 0.5,
+            ..palette.text_secondary
+        },
+        palette.text,
+    ))
+    .on_press(Message::CloseTab(index))
+    .padding([2, 5])
+    .style(
+        move |_theme: &Theme, status: button::Status| button::Style {
+            background: Some(Background::Color(Color::TRANSPARENT)),
+            text_color: match status {
+                button::Status::Hovered => palette.text,
+                _ => Color {
+                    a: 0.5,
+                    ..palette.text_secondary
                 },
-                border: Border {
-                    radius: 4.0.into(),
-                    width: 0.0,
-                    color: Color::TRANSPARENT,
-                },
-                shadow: iced::Shadow::default(),
-                snap: true,
             },
-        );
+            border: Border {
+                radius: 4.0.into(),
+                width: 0.0,
+                color: Color::TRANSPARENT,
+            },
+            shadow: iced::Shadow::default(),
+            snap: true,
+        },
+    );
     let close_rest = HoverStyle {
         background: Color::TRANSPARENT,
         border_color: Color::TRANSPARENT,

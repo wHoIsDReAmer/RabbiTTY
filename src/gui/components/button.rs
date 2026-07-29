@@ -132,25 +132,38 @@ pub fn icon<'a>(
     palette: Palette,
     animations_enabled: bool,
 ) -> Element<'a, Message> {
-    let inner = button(text(glyph.as_ref().to_string()).size(13))
-        .padding([6, 10])
-        .on_press(on_press)
-        .style(
-            move |_theme: &Theme, status: button::Status| button::Style {
-                background: Some(Background::Color(Color::TRANSPARENT)),
-                text_color: match status {
-                    button::Status::Hovered => palette.text,
-                    _ => palette.text_secondary,
-                },
-                border: Border {
-                    radius: ICON_RADIUS.into(),
-                    width: 0.0,
-                    color: Color::TRANSPARENT,
-                },
-                shadow: Shadow::default(),
-                snap: true,
+    icon_content(
+        text(glyph.as_ref().to_string()).size(13).into(),
+        on_press,
+        palette,
+        animations_enabled,
+    )
+}
+
+/// [`icon`] for callers that supply their own content, such as an svg icon that
+/// a button's `text_color` cannot reach.
+pub fn icon_content<'a>(
+    content: Element<'a, Message>,
+    on_press: Message,
+    palette: Palette,
+    animations_enabled: bool,
+) -> Element<'a, Message> {
+    let inner = button(content).padding([6, 10]).on_press(on_press).style(
+        move |_theme: &Theme, status: button::Status| button::Style {
+            background: Some(Background::Color(Color::TRANSPARENT)),
+            text_color: match status {
+                button::Status::Hovered => palette.text,
+                _ => palette.text_secondary,
             },
-        );
+            border: Border {
+                radius: ICON_RADIUS.into(),
+                width: 0.0,
+                color: Color::TRANSPARENT,
+            },
+            shadow: Shadow::default(),
+            snap: true,
+        },
+    );
 
     let rest = HoverStyle {
         background: Color::TRANSPARENT,

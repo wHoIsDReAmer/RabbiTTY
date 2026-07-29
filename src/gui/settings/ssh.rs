@@ -1,7 +1,7 @@
 use crate::config::SshAuthMethod;
 use crate::gui::app::{Message, SettingsMessage};
 use crate::gui::components::{
-    HoverStyle, button_icon, hover_fade, icon_toggle_content, primary, secondary,
+    HoverStyle, button_icon, hover_fade, icon_content, icon_toggle_content, primary, secondary,
 };
 use crate::gui::icons;
 use crate::gui::settings::{
@@ -134,8 +134,8 @@ fn template_overlay<'a>(
                 .size(16)
                 .color(palette.text),
             container("").width(Length::Fill),
-            button_icon(
-                "x",
+            icon_content(
+                icons::ui_hover(icons::Ui::Close, 13.0, palette.text_secondary, palette.text),
                 Message::Settings(SettingsMessage::CloseProfileModal),
                 palette,
                 animations_enabled
@@ -305,10 +305,14 @@ fn content<'a>(
 fn empty_state(palette: Palette) -> Element<'static, Message> {
     container(
         column![
-            text("\u{21c4}").size(28).color(Color {
-                a: 0.3,
-                ..palette.text
-            }),
+            crate::gui::icons::ui(
+                crate::gui::icons::Ui::Plug,
+                28.0,
+                Color {
+                    a: 0.3,
+                    ..palette.text
+                },
+            ),
             text(crate::t!("settings.ssh.no_profiles"))
                 .size(13)
                 .color(Color {
@@ -360,14 +364,19 @@ fn profile_row<'a>(
             .spacing(4)
             .width(Length::Fill),
             row![
-                button_icon(
-                    "\u{25b6}",
+                icon_content(
+                    icons::ui_hover(
+                        icons::Ui::Launch,
+                        13.0,
+                        palette.text_secondary,
+                        palette.text
+                    ),
                     Message::Settings(SettingsMessage::LaunchProfile(index)),
                     palette,
                     animations_enabled,
                 ),
-                button_icon(
-                    "\u{270e}",
+                icon_content(
+                    icons::ui_hover(icons::Ui::Edit, 13.0, palette.text_secondary, palette.text),
                     Message::Settings(SettingsMessage::EditProfile(index)),
                     palette,
                     animations_enabled,
@@ -502,8 +511,8 @@ fn modal_overlay_content<'a>(
         row![
             text(title).size(16).color(palette.text),
             container("").width(Length::Fill),
-            button_icon(
-                "x",
+            icon_content(
+                icons::ui_hover(icons::Ui::Close, 13.0, palette.text_secondary, palette.text),
                 Message::Settings(SettingsMessage::CloseProfileModal),
                 palette,
                 animations_enabled

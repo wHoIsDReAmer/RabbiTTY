@@ -38,9 +38,17 @@ impl App {
                     }
                 };
 
-            let btn_content = row![text(icon).size(14), text(label).size(13),]
-                .spacing(SPACING_SMALL)
-                .align_y(iced::Alignment::Center);
+            let icon_color = if is_active {
+                palette.background
+            } else {
+                palette.text_secondary
+            };
+            let btn_content = row![
+                crate::gui::icons::ui(icon, 14.0, icon_color),
+                text(label).size(13),
+            ]
+            .spacing(SPACING_SMALL)
+            .align_y(iced::Alignment::Center);
 
             let item = button(btn_content)
                 .padding([8, 12])

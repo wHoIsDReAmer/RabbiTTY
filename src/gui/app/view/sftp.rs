@@ -104,19 +104,19 @@ fn drawer_header<'a>(
     };
 
     let upload_btn = drawer_icon_button(
-        "\u{2191}",
+        crate::gui::icons::Ui::Upload,
         Message::Sftp(SftpMessage::RequestUpload),
         palette,
         animations_enabled,
     );
     let refresh_btn = drawer_icon_button(
-        "\u{27F3}",
+        crate::gui::icons::Ui::Refresh,
         Message::Sftp(SftpMessage::Refresh),
         palette,
         animations_enabled,
     );
     let close_btn = drawer_icon_button(
-        "\u{2715}",
+        crate::gui::icons::Ui::Close,
         Message::Sftp(SftpMessage::ToggleDrawer),
         palette,
         animations_enabled,
@@ -143,30 +143,37 @@ fn drawer_header<'a>(
 /// Small icon button used by the SFTP drawer header. Uses a slightly tighter
 /// padding than the global `icon` factory so it fits the header height.
 fn drawer_icon_button<'a>(
-    glyph: &'a str,
+    icon: crate::gui::icons::Ui,
     on_press: Message,
     palette: Palette,
     animations_enabled: bool,
 ) -> Element<'a, Message> {
-    let inner = button(text(glyph.to_string()).size(12))
-        .on_press(on_press)
-        .padding([3, 8])
-        .style(
-            move |_theme: &Theme, _status: button::Status| button::Style {
-                background: Some(Background::Color(Color::TRANSPARENT)),
-                text_color: Color {
-                    a: 0.7,
-                    ..palette.text
-                },
-                border: Border {
-                    radius: RADIUS_SMALL.into(),
-                    width: 0.0,
-                    color: Color::TRANSPARENT,
-                },
-                shadow: Shadow::default(),
-                snap: true,
+    let inner = button(crate::gui::icons::ui(
+        icon,
+        12.0,
+        Color {
+            a: 0.7,
+            ..palette.text
+        },
+    ))
+    .on_press(on_press)
+    .padding([3, 8])
+    .style(
+        move |_theme: &Theme, _status: button::Status| button::Style {
+            background: Some(Background::Color(Color::TRANSPARENT)),
+            text_color: Color {
+                a: 0.7,
+                ..palette.text
             },
-        );
+            border: Border {
+                radius: RADIUS_SMALL.into(),
+                width: 0.0,
+                color: Color::TRANSPARENT,
+            },
+            shadow: Shadow::default(),
+            snap: true,
+        },
+    );
     let rest = HoverStyle {
         background: Color::TRANSPARENT,
         border_color: Color::TRANSPARENT,
@@ -260,10 +267,14 @@ fn parent_row<'a>(
     let row_style = row_style_factory(palette);
     let inner = button(
         row![
-            text("\u{2190}").size(11).color(Color {
-                a: 0.55,
-                ..palette.text
-            }),
+            crate::gui::icons::ui(
+                crate::gui::icons::Ui::Back,
+                11.0,
+                Color {
+                    a: 0.55,
+                    ..palette.text
+                },
+            ),
             text("..").size(12).color(Color {
                 a: 0.7,
                 ..palette.text
@@ -297,11 +308,11 @@ fn entry_row<'a>(
     animations_enabled: bool,
 ) -> Element<'a, Message> {
     let marker = if entry.is_dir {
-        "\u{25B8}"
+        Some(crate::gui::icons::Ui::Directory)
     } else if entry.is_symlink {
-        "\u{2937}"
+        Some(crate::gui::icons::Ui::Symlink)
     } else {
-        " "
+        None
     };
     let marker_color = if entry.is_dir {
         Color {
@@ -331,7 +342,13 @@ fn entry_row<'a>(
     };
 
     let row_content = row![
-        text(marker).size(11).color(marker_color),
+        match marker {
+            Some(icon) => crate::gui::icons::ui(icon, 11.0, marker_color),
+            None => Space::new()
+                .width(Length::Fixed(11.0))
+                .height(Length::Shrink)
+                .into(),
+        },
         text(name_with_suffix).size(12).color(name_color),
         Space::new().width(Length::Fill),
         text(size_text).size(11).color(Color {
@@ -486,13 +503,14 @@ fn transfer_row<'a>(
         });
 
     let status_marker: Element<Message> = if row_state.finished {
-        text("\u{2713}")
-            .size(12)
-            .color(Color {
+        crate::gui::icons::ui(
+            crate::gui::icons::Ui::Check,
+            12.0,
+            Color {
                 a: 0.7,
                 ..palette.accent
-            })
-            .into()
+            },
+        )
     } else {
         let cancel_style = move |_theme: &Theme, _status: button::Status| button::Style {
             background: Some(Background::Color(Color::TRANSPARENT)),
@@ -508,10 +526,17 @@ fn transfer_row<'a>(
             shadow: Shadow::default(),
             snap: true,
         };
-        let cancel_btn = button(text("\u{2715}").size(10))
-            .on_press(Message::Sftp(SftpMessage::CancelTransfer))
-            .padding([2, 6])
-            .style(cancel_style);
+        let cancel_btn = button(crate::gui::icons::ui(
+            crate::gui::icons::Ui::Close,
+            10.0,
+            Color {
+                a: 0.55,
+                ..palette.text
+            },
+        ))
+        .on_press(Message::Sftp(SftpMessage::CancelTransfer))
+        .padding([2, 6])
+        .style(cancel_style);
         let cancel_rest = HoverStyle {
             background: Color::TRANSPARENT,
             border_color: Color::TRANSPARENT,
