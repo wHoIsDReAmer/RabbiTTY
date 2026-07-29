@@ -40,6 +40,8 @@ ssh = "Profiles"
 plugins = "Plugins"
 
 [settings.plugins]
+install_title = "Install this plugin?"
+install_confirm = "Install"
 install = "Install from file…"
 installed_notice = "Installed {name}."
 remove = "Remove"

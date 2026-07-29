@@ -260,6 +260,13 @@ impl PluginRegistry {
 
     /// Validates the file first: an unreadable or wrong-ABI component is
     /// rejected before anything lands in the plugin directory.
+    pub fn preview(&self, source: &Path) -> Result<PluginInfo, String> {
+        self.host
+            .inspect(source)
+            .map(|(info, _)| info)
+            .map_err(|err| err.to_string())
+    }
+
     pub fn install(&mut self, source: &Path) -> Result<String, String> {
         let (info, _) = self.host.inspect(source).map_err(|err| err.to_string())?;
         let dir = super::host::dir_name(&info.name)

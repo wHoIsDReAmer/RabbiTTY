@@ -245,8 +245,14 @@ impl App {
             }
             SettingsMessage::PluginFilePicked(picked) => {
                 if let Some(path) = picked {
-                    self.install_plugin(&path);
+                    self.preview_plugin_install(&path);
                 }
+            }
+            SettingsMessage::CancelInstallPlugin => {
+                self.plugin_pending_install = None;
+            }
+            SettingsMessage::ConfirmInstallPlugin => {
+                self.install_pending_plugin();
             }
             SettingsMessage::RequestRemovePlugin(id) => {
                 self.plugin_pending_removal = Some(id);

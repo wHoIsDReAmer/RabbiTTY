@@ -22,6 +22,11 @@ mod view;
 
 pub(super) const SETTINGS_TAB_INDEX: usize = usize::MAX;
 
+pub(super) struct PendingInstall {
+    pub path: std::path::PathBuf,
+    pub summary: String,
+}
+
 #[derive(Clone)]
 pub enum Message {
     Noop,
@@ -178,6 +183,8 @@ pub enum SettingsMessage {
     RescanPlugins,
     InstallPlugin,
     PluginFilePicked(Option<std::path::PathBuf>),
+    CancelInstallPlugin,
+    ConfirmInstallPlugin,
     RequestRemovePlugin(String),
     CancelRemovePlugin,
     ConfirmRemovePlugin,
@@ -340,6 +347,7 @@ pub struct App {
     pub(super) plugin_settings: crate::gui::settings::plugins::PluginSettingsState,
     pub(super) plugin_notice: Option<String>,
     pub(super) plugin_pending_removal: Option<String>,
+    pub(super) plugin_pending_install: Option<PendingInstall>,
 }
 
 /// Duration of the visual bell flash overlay.
@@ -493,6 +501,7 @@ impl App {
             plugin_settings: Default::default(),
             plugin_notice: None,
             plugin_pending_removal: None,
+            plugin_pending_install: None,
         };
         app.adopt_plugin_shortcuts();
         app

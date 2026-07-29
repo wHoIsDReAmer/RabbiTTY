@@ -1687,3 +1687,40 @@ fn removing_an_unknown_plugin_is_reported_not_ignored() {
 
     assert!(registry.uninstall("nope").is_err());
 }
+
+#[test]
+fn previewing_a_candidate_reads_it_without_installing() {
+    let Some(source) = hello_component() else {
+        return;
+    };
+    let root = TempRoot::new("preview");
+    std::fs::create_dir_all(&root.0).expect("root");
+    let mut registry = registry_in(&root);
+    registry.load_all();
+
+    let info = registry.preview(&source).expect("readable");
+
+    assert_eq!(info.name, "hello");
+    assert!(
+        info.capabilities.contains(&Capability::OpenUrl),
+        "the user must see every capability before deciding"
+    );
+    assert_eq!(
+        registry.ids().count(),
+        0,
+        "previewing must not copy anything in"
+    );
+}
+
+#[test]
+fn previewing_a_file_that_is_not_a_plugin_reports_why() {
+    let root = TempRoot::new("preview-bad");
+    std::fs::create_dir_all(&root.0).expect("root");
+    let bogus = root.0.join("bogus.wasm");
+    std::fs::write(&bogus, b"not a component").expect("write");
+
+    let mut registry = registry_in(&root);
+    registry.load_all();
+
+    assert!(registry.preview(&bogus).is_err());
+}
