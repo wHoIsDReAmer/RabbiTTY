@@ -22,5 +22,6 @@ pub use matcher::span_at;
 pub use policy::{capability_from_name, capability_name, requires_consent};
 pub use registry::{
     ClickablePattern, PluginRegistry, ProfileSource, Status, fetch_profiles_blocking,
+    fetch_profiles_with_deadline,
 };
 pub use state::PluginRequest;

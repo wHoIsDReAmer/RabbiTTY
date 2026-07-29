@@ -1472,3 +1472,68 @@ fn a_memory_hungry_plugin_is_stopped_instead_of_growing_without_bound() {
         "it never reached its notify call"
     );
 }
+
+#[test]
+fn a_source_that_answers_in_time_is_used() {
+    let root = TempRoot::new("profile-deadline-ok");
+    if !install(&root, "alpha") {
+        return;
+    }
+
+    let mut registry = registry_in(&root);
+    registry.load_all();
+    let source = registry.profile_sources().pop().expect("a source");
+
+    let fetched = fetch_profiles_with_deadline(
+        &registry.host(),
+        &source,
+        std::time::Duration::from_secs(10),
+    );
+
+    assert_eq!(fetched.map(|list| list.len()), Some(2));
+}
+
+#[test]
+fn a_stalled_source_is_abandoned_at_the_deadline() {
+    let root = TempRoot::new("profile-deadline-stall");
+    if !install(&root, "alpha") {
+        return;
+    }
+    let mut settings = crate::config::plugins::PluginsConfig::new();
+    settings.insert(
+        "alpha".to_string(),
+        crate::config::plugins::PluginSettings {
+            enabled: true,
+            consented: Vec::new(),
+            settings: [("slow".to_string(), "true".to_string())]
+                .into_iter()
+                .collect(),
+        },
+    );
+
+    let mut registry = registry_with(&root, settings);
+    registry.load_all();
+    let source = registry.profile_sources().pop().expect("a source");
+
+    let started = std::time::Instant::now();
+    let fetched = fetch_profiles_with_deadline(
+        &registry.host(),
+        &source,
+        std::time::Duration::from_millis(200),
+    );
+    let waited = started.elapsed();
+
+    assert!(
+        fetched.is_none(),
+        "a source that misses the deadline must not be waited on"
+    );
+    assert!(
+        waited >= std::time::Duration::from_millis(150),
+        "returned after only {waited:?}, so the fetch failed outright \
+         rather than running into the deadline"
+    );
+    assert!(
+        waited < std::time::Duration::from_secs(2),
+        "the caller returned after {waited:?}, so it was still blocked on the guest"
+    );
+}

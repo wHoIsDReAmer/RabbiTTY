@@ -113,6 +113,7 @@ impl PluginRegistry {
     pub fn load_all(&mut self) {
         self.shutdown_all();
         self.entries.clear();
+        self.host.forget_components();
         for (id, path) in discover(self.host.root()) {
             let settings = self.settings.get(&id).cloned().unwrap_or_default();
             let slot = if settings.enabled {
@@ -560,4 +561,33 @@ pub fn fetch_profiles_blocking(
     let policy = |info: &PluginInfo| grant_with_consent(info, &consented);
     host.fetch_profiles(&source.id, &source.path, source.config.clone(), &policy)
         .map_err(|err| err.to_string())
+}
+
+/// A source that never answers would otherwise pin the caller forever, so the
+/// call is handed to a thread we are willing to abandon. Fuel cannot help here:
+/// it counts instructions, and a guest blocked in host I/O burns none.
+pub fn fetch_profiles_with_deadline(
+    host: &std::sync::Arc<PluginHost>,
+    source: &ProfileSource,
+    deadline: std::time::Duration,
+) -> Option<Vec<PluginProfile>> {
+    let (tx, rx) = std::sync::mpsc::channel();
+    let host = std::sync::Arc::clone(host);
+    let worker = source.clone();
+    let id = source.id.clone();
+    std::thread::spawn(move || {
+        let _ = tx.send(fetch_profiles_blocking(&host, &worker));
+    });
+
+    match rx.recv_timeout(deadline) {
+        Ok(Ok(profiles)) => Some(profiles),
+        Ok(Err(reason)) => {
+            eprintln!("plugin {id} failed to list profiles: {reason}");
+            None
+        }
+        Err(_) => {
+            eprintln!("plugin {id} did not list profiles in time; abandoning the call");
+            None
+        }
+    }
 }

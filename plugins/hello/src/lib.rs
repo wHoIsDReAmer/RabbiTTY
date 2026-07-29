@@ -108,6 +108,12 @@ impl Guest for HelloPlugin {
     }
 
     fn list_profiles() -> Result<Vec<PluginProfile>, String> {
+        // Stands in for a slow inventory source. Sleeping blocks in host I/O, so
+        // it burns no fuel — exactly the case the host's deadline has to cover.
+        if host::read_config("slow").as_deref() == Some("true") {
+            std::thread::sleep(std::time::Duration::from_secs(3));
+        }
+
         Ok(vec![
             PluginProfile {
                 id: "hello.local".to_string(),

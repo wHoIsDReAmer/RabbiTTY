@@ -4,6 +4,8 @@ use crate::gui::settings::plugins::{PluginPermission, PluginState};
 use crate::plugin::{Event, PluginRequest};
 use iced::Task;
 
+const PROFILE_DEADLINE: std::time::Duration = std::time::Duration::from_secs(5);
+
 impl App {
     pub(in crate::gui) fn dispatch_plugin_event(&mut self, event: Event) {
         let Some(registry) = self.plugins.as_mut() else {
@@ -472,9 +474,15 @@ impl App {
                 let plugin = source.id.clone();
                 Task::perform(
                     async move {
-                        tokio::task::spawn_blocking(move || fetch_with_deadline(&host, &source))
-                            .await
-                            .unwrap_or(None)
+                        tokio::task::spawn_blocking(move || {
+                            crate::plugin::fetch_profiles_with_deadline(
+                                &host,
+                                &source,
+                                PROFILE_DEADLINE,
+                            )
+                        })
+                        .await
+                        .unwrap_or(None)
                     },
                     move |profiles| Message::PluginProfilesFetched {
                         plugin: plugin.clone(),
@@ -579,34 +587,5 @@ fn into_profile(declared: crate::plugin::PluginProfile) -> crate::gui::tab::Prof
         name: declared.name,
         icon: declared.icon,
         kind,
-    }
-}
-
-const PROFILE_DEADLINE: std::time::Duration = std::time::Duration::from_secs(5);
-
-/// A source that never answers would otherwise pin the worker forever, so the
-/// call is handed to a thread we are willing to abandon.
-fn fetch_with_deadline(
-    host: &std::sync::Arc<crate::plugin::PluginHost>,
-    source: &crate::plugin::ProfileSource,
-) -> Option<Vec<crate::plugin::PluginProfile>> {
-    let (tx, rx) = std::sync::mpsc::channel();
-    let host = std::sync::Arc::clone(host);
-    let source = source.clone();
-    let id = source.id.clone();
-    std::thread::spawn(move || {
-        let _ = tx.send(crate::plugin::fetch_profiles_blocking(&host, &source));
-    });
-
-    match rx.recv_timeout(PROFILE_DEADLINE) {
-        Ok(Ok(profiles)) => Some(profiles),
-        Ok(Err(reason)) => {
-            eprintln!("plugin {id} failed to list profiles: {reason}");
-            None
-        }
-        Err(_) => {
-            eprintln!("plugin {id} did not list profiles within the deadline; abandoning the call");
-            None
-        }
     }
 }
