@@ -40,6 +40,11 @@ ssh = "프로필"
 plugins = "플러그인"
 
 [settings.plugins]
+install = "파일에서 설치…"
+installed_notice = "{name} 설치됨."
+remove = "제거"
+remove_title = "이 플러그인을 제거할까요?"
+remove_body = "{name} 및 해당 설정이 디스크에서 삭제됩니다."
 section_title = "플러그인 폴더"
 folder_hint = "시작할 때 이 디렉터리에서 컴포넌트를 읽습니다."
 open_folder = "폴더 열기"

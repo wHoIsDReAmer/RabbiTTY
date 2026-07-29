@@ -40,6 +40,11 @@ ssh = "Profiles"
 plugins = "Plugins"
 
 [settings.plugins]
+install = "Install from file…"
+installed_notice = "Installed {name}."
+remove = "Remove"
+remove_title = "Remove this plugin?"
+remove_body = "{name} and its settings will be deleted from disk."
 section_title = "Plugin folder"
 folder_hint = "Components are loaded from this directory on startup."
 open_folder = "Open folder"

@@ -326,6 +326,7 @@ impl App {
             root: registry.root().to_path_buf(),
             installed: ids.len(),
             disabled,
+            notice: self.plugin_notice.clone(),
         }
     }
 
@@ -505,6 +506,43 @@ impl App {
         if let Some(registry) = self.plugins.as_mut() {
             registry.set_profiles(plugin, profiles);
         }
+    }
+
+    pub(in crate::gui) fn install_plugin(&mut self, source: &std::path::Path) {
+        let Some(registry) = self.plugins.as_mut() else {
+            return;
+        };
+        self.plugin_notice = match registry.install(source) {
+            Ok(name) => {
+                Some(crate::t!("settings.plugins.installed_notice").replace("{name}", &name))
+            }
+            Err(reason) => Some(reason),
+        };
+        self.after_registry_change();
+    }
+
+    pub(in crate::gui) fn remove_pending_plugin(&mut self) {
+        let Some(id) = self.plugin_pending_removal.take() else {
+            return;
+        };
+        let Some(registry) = self.plugins.as_mut() else {
+            return;
+        };
+        if let Err(reason) = registry.uninstall(&id) {
+            self.plugin_notice = Some(reason);
+        } else {
+            self.plugin_notice = None;
+            self.settings_category = SettingsCategory::Plugins;
+        }
+        self.after_registry_change();
+    }
+
+    fn after_registry_change(&mut self) {
+        self.persist_plugin_settings();
+        self.adopt_plugin_shortcuts();
+        self.sync_output_capture();
+        self.sync_plugin_shortcut_draft();
+        self.refresh_plugin_settings();
     }
 
     pub(in crate::gui) fn rescan_plugins(&mut self) {

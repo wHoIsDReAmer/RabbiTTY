@@ -176,6 +176,11 @@ pub enum SettingsMessage {
     },
     OpenPluginFolder,
     RescanPlugins,
+    InstallPlugin,
+    PluginFilePicked(Option<std::path::PathBuf>),
+    RequestRemovePlugin(String),
+    CancelRemovePlugin,
+    ConfirmRemovePlugin,
     PluginConsentChanged {
         plugin: String,
         capability: String,
@@ -333,6 +338,8 @@ pub struct App {
     // ── Plugins ─────────────────────────────────────────────────────────
     pub(super) plugins: Option<crate::plugin::PluginRegistry>,
     pub(super) plugin_settings: crate::gui::settings::plugins::PluginSettingsState,
+    pub(super) plugin_notice: Option<String>,
+    pub(super) plugin_pending_removal: Option<String>,
 }
 
 /// Duration of the visual bell flash overlay.
@@ -484,6 +491,8 @@ impl App {
 
             plugins,
             plugin_settings: Default::default(),
+            plugin_notice: None,
+            plugin_pending_removal: None,
         };
         app.adopt_plugin_shortcuts();
         app

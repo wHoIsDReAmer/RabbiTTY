@@ -78,7 +78,7 @@ pub fn view<'a>(
 fn header<'a>(
     view: &'a PluginSettingsState,
     palette: Palette,
-    _animations_enabled: bool,
+    animations_enabled: bool,
 ) -> Element<'a, Message> {
     let plugin = view.id.clone();
     let identity = column![
@@ -109,8 +109,17 @@ fn header<'a>(
         None => identity,
     };
 
+    let remove = view.id.clone();
     row![
         identity,
+        secondary(
+            crate::t!("settings.plugins.remove"),
+            Some(Message::Settings(SettingsMessage::RequestRemovePlugin(
+                remove
+            ))),
+            palette,
+            animations_enabled,
+        ),
         toggler(view.enabled)
             .on_toggle(
                 move |enabled| Message::Settings(SettingsMessage::PluginToggled {
@@ -364,6 +373,7 @@ pub struct PluginsOverview {
     pub root: std::path::PathBuf,
     pub installed: usize,
     pub disabled: usize,
+    pub notice: Option<String>,
 }
 
 pub fn system_view<'a>(
@@ -411,11 +421,17 @@ pub fn system_view<'a>(
             palette,
             animations_enabled,
         ),
+        secondary(
+            crate::t!("settings.plugins.install"),
+            Some(Message::Settings(SettingsMessage::InstallPlugin)),
+            palette,
+            animations_enabled,
+        ),
     ]
     .spacing(SPACING_SMALL)
     .align_y(Alignment::Center);
 
-    let body = column![
+    let mut body = column![
         text(crate::t!("settings.plugins.folder_hint"))
             .size(13)
             .color(palette.text_secondary),
@@ -425,6 +441,10 @@ pub fn system_view<'a>(
     ]
     .spacing(SPACING_NORMAL)
     .width(Length::Fill);
+
+    if let Some(notice) = overview.notice {
+        body = body.push(text(notice).size(12).color(palette.error));
+    }
 
     crate::gui::settings::section(
         crate::t!("settings.plugins.section_title"),
