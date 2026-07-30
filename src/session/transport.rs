@@ -9,11 +9,14 @@ use std::collections::HashMap;
 #[cfg(unix)]
 use std::io::ErrorKind;
 use std::io::{Read, Write};
+#[cfg(unix)]
+use std::os::fd::AsRawFd;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, OnceLock};
 use std::thread;
 use std::thread::JoinHandle;
+#[cfg(windows)]
 use std::time::Duration;
 
 /// A connection backend behind a [`Session`](super::Session)
@@ -114,6 +117,27 @@ fn terminfo_exists(terminfo: &str) -> bool {
     false
 }
 
+#[cfg(unix)]
+const POLL_TIMEOUT_MS: i32 = 50;
+const READ_BUF: usize = 64 * 1024;
+const COALESCE_CAP: usize = 256 * 1024;
+
+/// Blocks until the fd has something to read, it hangs up, or the timeout
+/// expires. The timeout only exists so shutdown is noticed promptly.
+#[cfg(unix)]
+fn wait_readable(fd: std::os::fd::RawFd, timeout_ms: i32) {
+    let mut poll_fd = libc::pollfd {
+        fd,
+        events: libc::POLLIN,
+        revents: 0,
+    };
+
+    // SAFETY: one initialised pollfd is passed with a matching count.
+    unsafe {
+        libc::poll(&mut poll_fd, 1, timeout_ms);
+    }
+}
+
 // ── Local PTY (unix) ────────────────────────────────────────────────────────
 #[cfg(unix)]
 pub(super) struct LocalPty {
@@ -164,7 +188,9 @@ impl LocalPty {
 
         let reader_handle = thread::spawn(move || {
             let mut reader = reader_file;
-            let mut buf = [0u8; 2048];
+            let mut buf = [0u8; READ_BUF];
+
+            let mut pending: Vec<u8> = Vec::new();
 
             // Stopping the reads is not an option even once nobody wants the output:
             // the shell fills the tty buffer, and then it cannot finish exiting, which
@@ -177,22 +203,44 @@ impl LocalPty {
                         break;
                     }
                     Ok(n) => {
+                        pending.extend_from_slice(&buf[..n]);
+                        if pending.len() < COALESCE_CAP {
+                            continue;
+                        }
+
                         if listening {
                             listening = send_output_event(
                                 &mut output_tx,
                                 OutputEvent::Data {
                                     tab_id,
-                                    bytes: buf[..n].to_vec(),
+                                    bytes: std::mem::take(&mut pending),
                                 },
                             );
                         }
+
+                        pending.clear();
                     }
                     Err(err) if err.kind() == ErrorKind::Interrupted => continue,
                     Err(err) if err.kind() == ErrorKind::WouldBlock => {
+                        if !pending.is_empty() {
+                            if listening {
+                                listening = send_output_event(
+                                    &mut output_tx,
+                                    OutputEvent::Data {
+                                        tab_id,
+                                        bytes: std::mem::take(&mut pending),
+                                    },
+                                );
+                            }
+
+                            pending.clear();
+                            continue;
+                        }
                         if reader_shutdown.load(Ordering::Relaxed) {
                             break;
                         }
-                        thread::sleep(Duration::from_millis(1));
+
+                        wait_readable(reader.as_raw_fd(), POLL_TIMEOUT_MS);
                         continue;
                     }
                     Err(_) => {
@@ -295,20 +343,32 @@ impl LocalPty {
         let reader_pty = Arc::clone(&pty);
         let reader_shutdown = Arc::clone(&shutdown);
         let reader_handle = thread::spawn(move || {
-            let mut buf = [0u8; 2048];
+            let mut buf = [0u8; READ_BUF];
+            // Reads here never block, so a read returning nothing means the pty is
+            // empty right now. Accumulating until that happens turns many small
+            // reads into one message, and each read still takes the lock on its own
+            // so resizes and writes are not held up.
+            let mut pending: Vec<u8> = Vec::new();
             while !reader_shutdown.load(Ordering::Acquire) {
-                let (bytes, exited) = {
+                let (read, exited) = {
                     let mut guard = match reader_pty.lock() {
                         Ok(g) => g,
                         Err(_) => break,
                     };
                     let n = guard.reader().read(&mut buf).unwrap_or(0);
-                    let bytes = if n > 0 { Some(buf[..n].to_vec()) } else { None };
                     let exited = matches!(guard.next_child_event(), Some(ChildEvent::Exited(_)));
-                    (bytes, exited)
+                    (n, exited)
                 };
 
-                if let Some(bytes) = bytes {
+                if read > 0 {
+                    pending.extend_from_slice(&buf[..read]);
+                    if pending.len() < COALESCE_CAP {
+                        continue;
+                    }
+                }
+
+                if !pending.is_empty() {
+                    let bytes = std::mem::take(&mut pending);
                     if !send_output_event(&mut output_tx, OutputEvent::Data { tab_id, bytes }) {
                         break;
                     }
