@@ -119,9 +119,7 @@ fn terminfo_exists(terminfo: &str) -> bool {
 
 #[cfg(unix)]
 const POLL_TIMEOUT_MS: i32 = 50;
-#[cfg(unix)]
 const READ_BUF: usize = 64 * 1024;
-#[cfg(unix)]
 const COALESCE_CAP: usize = 256 * 1024;
 
 /// Blocks until the fd has something to read, it hangs up, or the timeout
@@ -345,20 +343,32 @@ impl LocalPty {
         let reader_pty = Arc::clone(&pty);
         let reader_shutdown = Arc::clone(&shutdown);
         let reader_handle = thread::spawn(move || {
-            let mut buf = [0u8; 2048];
+            let mut buf = [0u8; READ_BUF];
+            // Reads here never block, so a read returning nothing means the pty is
+            // empty right now. Accumulating until that happens turns many small
+            // reads into one message, and each read still takes the lock on its own
+            // so resizes and writes are not held up.
+            let mut pending: Vec<u8> = Vec::new();
             while !reader_shutdown.load(Ordering::Acquire) {
-                let (bytes, exited) = {
+                let (read, exited) = {
                     let mut guard = match reader_pty.lock() {
                         Ok(g) => g,
                         Err(_) => break,
                     };
                     let n = guard.reader().read(&mut buf).unwrap_or(0);
-                    let bytes = if n > 0 { Some(buf[..n].to_vec()) } else { None };
                     let exited = matches!(guard.next_child_event(), Some(ChildEvent::Exited(_)));
-                    (bytes, exited)
+                    (n, exited)
                 };
 
-                if let Some(bytes) = bytes {
+                if read > 0 {
+                    pending.extend_from_slice(&buf[..read]);
+                    if pending.len() < COALESCE_CAP {
+                        continue;
+                    }
+                }
+
+                if !pending.is_empty() {
+                    let bytes = std::mem::take(&mut pending);
                     if !send_output_event(&mut output_tx, OutputEvent::Data { tab_id, bytes }) {
                         break;
                     }
