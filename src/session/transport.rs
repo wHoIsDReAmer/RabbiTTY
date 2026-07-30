@@ -9,11 +9,14 @@ use std::collections::HashMap;
 #[cfg(unix)]
 use std::io::ErrorKind;
 use std::io::{Read, Write};
+#[cfg(unix)]
+use std::os::fd::AsRawFd;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, OnceLock};
 use std::thread;
 use std::thread::JoinHandle;
+#[cfg(windows)]
 use std::time::Duration;
 
 /// A connection backend behind a [`Session`](super::Session)
@@ -114,6 +117,29 @@ fn terminfo_exists(terminfo: &str) -> bool {
     false
 }
 
+#[cfg(unix)]
+const POLL_TIMEOUT_MS: i32 = 50;
+#[cfg(unix)]
+const READ_BUF: usize = 64 * 1024;
+#[cfg(unix)]
+const COALESCE_CAP: usize = 256 * 1024;
+
+/// Blocks until the fd has something to read, it hangs up, or the timeout
+/// expires. The timeout only exists so shutdown is noticed promptly.
+#[cfg(unix)]
+fn wait_readable(fd: std::os::fd::RawFd, timeout_ms: i32) {
+    let mut poll_fd = libc::pollfd {
+        fd,
+        events: libc::POLLIN,
+        revents: 0,
+    };
+
+    // SAFETY: one initialised pollfd is passed with a matching count.
+    unsafe {
+        libc::poll(&mut poll_fd, 1, timeout_ms);
+    }
+}
+
 // ── Local PTY (unix) ────────────────────────────────────────────────────────
 #[cfg(unix)]
 pub(super) struct LocalPty {
@@ -164,7 +190,9 @@ impl LocalPty {
 
         let reader_handle = thread::spawn(move || {
             let mut reader = reader_file;
-            let mut buf = [0u8; 2048];
+            let mut buf = [0u8; READ_BUF];
+
+            let mut pending: Vec<u8> = Vec::new();
 
             // Stopping the reads is not an option even once nobody wants the output:
             // the shell fills the tty buffer, and then it cannot finish exiting, which
@@ -177,22 +205,44 @@ impl LocalPty {
                         break;
                     }
                     Ok(n) => {
+                        pending.extend_from_slice(&buf[..n]);
+                        if pending.len() < COALESCE_CAP {
+                            continue;
+                        }
+
                         if listening {
                             listening = send_output_event(
                                 &mut output_tx,
                                 OutputEvent::Data {
                                     tab_id,
-                                    bytes: buf[..n].to_vec(),
+                                    bytes: std::mem::take(&mut pending),
                                 },
                             );
                         }
+
+                        pending.clear();
                     }
                     Err(err) if err.kind() == ErrorKind::Interrupted => continue,
                     Err(err) if err.kind() == ErrorKind::WouldBlock => {
+                        if !pending.is_empty() {
+                            if listening {
+                                listening = send_output_event(
+                                    &mut output_tx,
+                                    OutputEvent::Data {
+                                        tab_id,
+                                        bytes: std::mem::take(&mut pending),
+                                    },
+                                );
+                            }
+
+                            pending.clear();
+                            continue;
+                        }
                         if reader_shutdown.load(Ordering::Relaxed) {
                             break;
                         }
-                        thread::sleep(Duration::from_millis(1));
+
+                        wait_readable(reader.as_raw_fd(), POLL_TIMEOUT_MS);
                         continue;
                     }
                     Err(_) => {
