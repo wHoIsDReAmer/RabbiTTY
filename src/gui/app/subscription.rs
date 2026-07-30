@@ -2,10 +2,15 @@ use super::{App, Message};
 use iced::advanced::input_method;
 use iced::futures::StreamExt;
 use iced::futures::channel::mpsc;
+use iced::futures::future::{self, Either};
 use iced::futures::sink::SinkExt;
 use iced::stream;
 use iced::time::Instant;
 use iced::{Event, Subscription, event, keyboard, mouse, time, window};
+
+/// Under half a frame: long enough to fold a burst into one repaint, short
+/// enough that key echo stays imperceptible.
+const COALESCE_WINDOW: std::time::Duration = std::time::Duration::from_millis(8);
 
 impl App {
     pub fn subscription(&self) -> Subscription<Message> {
@@ -58,6 +63,23 @@ impl App {
                         while let Ok(event) = receiver.try_recv() {
                             batch.push(event);
                         }
+
+                        // Every message costs a repaint, and a repaint rebuilds the
+                        // whole grid. Holding the burst for part of a frame lets the
+                        // reader thread keep draining the pty — which is what stops
+                        // the child from blocking on write — while we paint once.
+                        let mut window = Box::pin(tokio::time::sleep(COALESCE_WINDOW));
+                        loop {
+                            match future::select(window, receiver.next()).await {
+                                Either::Left(_) => break,
+                                Either::Right((Some(event), pending)) => {
+                                    batch.push(event);
+                                    window = pending;
+                                }
+                                Either::Right((None, _)) => break,
+                            }
+                        }
+
                         if batch.len() == 1 {
                             if output
                                 .send(Message::PtyOutput(batch.pop().unwrap()))
