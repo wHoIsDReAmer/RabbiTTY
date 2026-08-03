@@ -154,6 +154,13 @@ impl TerminalEngine {
         self.term.mode().contains(TermMode::SGR_MOUSE)
     }
 
+    /// Returns true when the program has enabled application cursor keys
+    /// (`\e[?1h`). ncurses programs set this and then expect `ESC O A` rather
+    /// than `ESC [ A`, so sending the wrong form makes arrows unreadable.
+    pub fn app_cursor(&self) -> bool {
+        self.term.mode().contains(TermMode::APP_CURSOR)
+    }
+
     /// Returns true when the terminal is in the alternate screen buffer.
     pub fn alt_screen(&self) -> bool {
         self.term.mode().contains(TermMode::ALT_SCREEN)

@@ -241,6 +241,10 @@ impl Pane {
     }
 
     /// Returns true when the running program has enabled bracketed paste.
+    pub fn app_cursor(&self) -> bool {
+        self.engine.app_cursor()
+    }
+
     pub fn bracketed_paste(&self) -> bool {
         self.engine.bracketed_paste()
     }
@@ -340,12 +344,12 @@ impl Pane {
                     }
                 }
                 Named::Escape => Some(Cow::Borrowed(b"\x1b")),
-                Named::ArrowUp => Some(cursor_seq(b'A', modifiers)),
-                Named::ArrowDown => Some(cursor_seq(b'B', modifiers)),
-                Named::ArrowRight => Some(cursor_seq(b'C', modifiers)),
-                Named::ArrowLeft => Some(cursor_seq(b'D', modifiers)),
-                Named::Home => Some(cursor_seq(b'H', modifiers)),
-                Named::End => Some(cursor_seq(b'F', modifiers)),
+                Named::ArrowUp => Some(cursor_seq(b'A', modifiers, self.app_cursor())),
+                Named::ArrowDown => Some(cursor_seq(b'B', modifiers, self.app_cursor())),
+                Named::ArrowRight => Some(cursor_seq(b'C', modifiers, self.app_cursor())),
+                Named::ArrowLeft => Some(cursor_seq(b'D', modifiers, self.app_cursor())),
+                Named::Home => Some(cursor_seq(b'H', modifiers, self.app_cursor())),
+                Named::End => Some(cursor_seq(b'F', modifiers, self.app_cursor())),
                 Named::Delete => Some(tilde_seq(b"3", modifiers)),
                 Named::PageUp => Some(tilde_seq(b"5", modifiers)),
                 Named::PageDown => Some(tilde_seq(b"6", modifiers)),
@@ -391,7 +395,7 @@ fn csi_modifier(m: Modifiers) -> u8 {
     1 + m.shift() as u8 + (m.alt() as u8) * 2 + (m.control() as u8) * 4
 }
 
-fn cursor_seq<'a>(final_byte: u8, m: Modifiers) -> Cow<'a, [u8]> {
+fn cursor_seq<'a>(final_byte: u8, m: Modifiers, app_cursor: bool) -> Cow<'a, [u8]> {
     if m.alt() && !m.shift() && !m.control() && matches!(final_byte, b'C' | b'D') {
         return Cow::Borrowed(if final_byte == b'C' {
             b"\x1bf"
@@ -401,7 +405,10 @@ fn cursor_seq<'a>(final_byte: u8, m: Modifiers) -> Cow<'a, [u8]> {
     }
     let code = csi_modifier(m);
     if code == 1 {
-        Cow::Owned(vec![0x1b, b'[', final_byte])
+        // Modified keys keep the parameterised CSI form in either mode; only the
+        // bare key changes shape.
+        let introducer = if app_cursor { b'O' } else { b'[' };
+        Cow::Owned(vec![0x1b, introducer, final_byte])
     } else {
         Cow::Owned(vec![0x1b, b'[', b'1', b';', b'0' + code, final_byte])
     }
@@ -734,23 +741,49 @@ impl TerminalTab {
 mod tests {
     use super::*;
 
+    const NORMAL: bool = false;
+    const APP: bool = true;
+
     #[test]
     fn option_arrows_send_word_jump() {
-        assert_eq!(&*cursor_seq(b'D', Modifiers::ALT), b"\x1bb");
-        assert_eq!(&*cursor_seq(b'C', Modifiers::ALT), b"\x1bf");
+        assert_eq!(&*cursor_seq(b'D', Modifiers::ALT, NORMAL), b"\x1bb");
+        assert_eq!(&*cursor_seq(b'C', Modifiers::ALT, NORMAL), b"\x1bf");
     }
 
     #[test]
     fn plain_arrows_are_unmodified() {
-        assert_eq!(&*cursor_seq(b'D', Modifiers::empty()), b"\x1b[D");
-        assert_eq!(&*cursor_seq(b'A', Modifiers::empty()), b"\x1b[A");
+        assert_eq!(&*cursor_seq(b'D', Modifiers::empty(), NORMAL), b"\x1b[D");
+        assert_eq!(&*cursor_seq(b'A', Modifiers::empty(), NORMAL), b"\x1b[A");
+    }
+
+    #[test]
+    fn application_cursor_keys_use_ss3() {
+        // ncurses reads `\EOA` from terminfo once it enables this mode; sending
+        // the CSI form leaves it parsing ESC, '[' and 'A' as separate keys.
+        assert_eq!(&*cursor_seq(b'A', Modifiers::empty(), APP), b"\x1bOA");
+        assert_eq!(&*cursor_seq(b'B', Modifiers::empty(), APP), b"\x1bOB");
+        assert_eq!(&*cursor_seq(b'C', Modifiers::empty(), APP), b"\x1bOC");
+        assert_eq!(&*cursor_seq(b'D', Modifiers::empty(), APP), b"\x1bOD");
+    }
+
+    #[test]
+    fn home_and_end_follow_the_same_mode() {
+        assert_eq!(&*cursor_seq(b'H', Modifiers::empty(), NORMAL), b"\x1b[H");
+        assert_eq!(&*cursor_seq(b'H', Modifiers::empty(), APP), b"\x1bOH");
+        assert_eq!(&*cursor_seq(b'F', Modifiers::empty(), APP), b"\x1bOF");
     }
 
     #[test]
     fn modified_arrows_use_csi_parameters() {
-        assert_eq!(&*cursor_seq(b'D', Modifiers::SHIFT), b"\x1b[1;2D");
-        assert_eq!(&*cursor_seq(b'C', Modifiers::CTRL), b"\x1b[1;5C");
-        assert_eq!(&*cursor_seq(b'A', Modifiers::ALT), b"\x1b[1;3A");
+        assert_eq!(&*cursor_seq(b'D', Modifiers::SHIFT, NORMAL), b"\x1b[1;2D");
+        assert_eq!(&*cursor_seq(b'C', Modifiers::CTRL, NORMAL), b"\x1b[1;5C");
+        assert_eq!(&*cursor_seq(b'A', Modifiers::ALT, NORMAL), b"\x1b[1;3A");
+    }
+
+    #[test]
+    fn a_modifier_keeps_the_csi_form_even_in_application_mode() {
+        assert_eq!(&*cursor_seq(b'D', Modifiers::SHIFT, APP), b"\x1b[1;2D");
+        assert_eq!(&*cursor_seq(b'C', Modifiers::CTRL, APP), b"\x1b[1;5C");
     }
 
     #[test]
