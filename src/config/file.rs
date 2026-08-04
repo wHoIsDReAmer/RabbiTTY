@@ -46,6 +46,7 @@ pub(super) struct TerminalFileConfig {
     pub(super) cursor_shape: Option<CursorShape>,
     pub(super) cursor_blink: Option<bool>,
     pub(super) bold_is_bright: Option<bool>,
+    pub(super) minimum_contrast: Option<f32>,
     pub(super) bell_mode: Option<BellMode>,
     pub(super) right_click_action: Option<RightClickAction>,
 }
@@ -89,6 +90,7 @@ impl From<&AppConfig> for FileConfig {
                 cursor_shape: Some(config.terminal.cursor_shape),
                 cursor_blink: Some(config.terminal.cursor_blink),
                 bold_is_bright: Some(config.terminal.bold_is_bright),
+                minimum_contrast: Some(config.terminal.minimum_contrast),
                 bell_mode: Some(config.terminal.bell_mode),
                 right_click_action: Some(config.terminal.right_click_action),
             }),

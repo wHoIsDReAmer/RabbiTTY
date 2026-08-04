@@ -12,6 +12,7 @@ pub struct TerminalTheme {
     cursor: Rgb,
     ansi: [Rgb; 16],
     bold_is_bright: bool,
+    minimum_contrast: f32,
 }
 
 /// A named color preset with foreground, background, cursor, and 16 ANSI colors.
@@ -371,6 +372,7 @@ impl Default for TerminalTheme {
             cursor: rgb_from_triplet(preset.cursor),
             ansi: preset.ansi.map(rgb_from_triplet),
             bold_is_bright: crate::config::DEFAULT_BOLD_IS_BRIGHT,
+            minimum_contrast: crate::config::DEFAULT_MINIMUM_CONTRAST,
         }
     }
 }
@@ -391,6 +393,7 @@ impl TerminalTheme {
             cursor: rgb_from_triplet(config.theme.cursor),
             ansi: base_ansi,
             bold_is_bright: config.terminal.bold_is_bright,
+            minimum_contrast: config.terminal.minimum_contrast,
         }
     }
 
@@ -430,6 +433,10 @@ impl TerminalTheme {
             NamedColor::DimCyan => dim_rgb(self.ansi[6]),
             NamedColor::DimWhite => dim_rgb(self.ansi[7]),
         }
+    }
+
+    pub(super) fn minimum_contrast(&self) -> f32 {
+        self.minimum_contrast
     }
 
     pub(super) fn indexed_color(&self, index: u8) -> Rgb {
@@ -495,16 +502,16 @@ pub(super) fn resolve_rgb(
     }
 }
 
-/// Minimum WCAG contrast ratio for terminal text readability.
-const MIN_CONTRAST_RATIO: f32 = 3.0;
-
-/// Ensure foreground has minimum contrast against background.
-pub(super) fn enforce_min_contrast(fg: Rgb, bg: Rgb) -> Rgb {
+/// Off by default: rewriting app-chosen colours turns black art grey.
+pub(super) fn enforce_min_contrast(fg: Rgb, bg: Rgb, minimum: f32) -> Rgb {
+    if minimum <= 1.0 {
+        return fg;
+    }
     let fg_lum = relative_luminance(fg);
     let bg_lum = relative_luminance(bg);
     let ratio = contrast_ratio(fg_lum, bg_lum);
 
-    if ratio >= MIN_CONTRAST_RATIO {
+    if ratio >= minimum {
         return fg;
     }
 
@@ -533,7 +540,7 @@ pub(super) fn enforce_min_contrast(fg: Rgb, bg: Rgb) -> Rgb {
         };
         let cand_lum = relative_luminance(candidate);
         let cand_ratio = contrast_ratio(cand_lum, bg_lum);
-        if cand_ratio >= MIN_CONTRAST_RATIO {
+        if cand_ratio >= minimum {
             best = candidate;
             hi = mid;
         } else {
@@ -676,5 +683,43 @@ mod tests {
         );
         assert_eq!(cyan(&on, Flags::BOLD), bright);
         assert_ne!(cyan(&on, Flags::BOLD), cyan(&on, Flags::empty()));
+    }
+
+    const BLACK: Rgb = Rgb { r: 0, g: 0, b: 0 };
+    const DARK: Rgb = Rgb {
+        r: 40,
+        g: 42,
+        b: 54,
+    };
+
+    #[test]
+    fn by_default_a_black_glyph_on_a_dark_cell_keeps_its_colour() {
+        let cfg = AppConfig::default();
+        assert_eq!(cfg.terminal.minimum_contrast, 1.0);
+
+        let theme = TerminalTheme::from_config(&cfg);
+        assert_eq!(
+            enforce_min_contrast(BLACK, DARK, theme.minimum_contrast()),
+            BLACK
+        );
+    }
+
+    #[test]
+    fn raising_the_minimum_lifts_a_black_glyph_off_a_dark_cell() {
+        let lifted = enforce_min_contrast(BLACK, DARK, 3.0);
+        assert_ne!(lifted, BLACK);
+
+        let ratio = contrast_ratio(relative_luminance(lifted), relative_luminance(DARK));
+        assert!(ratio >= 3.0, "{ratio}");
+    }
+
+    #[test]
+    fn a_glyph_already_past_the_minimum_is_left_alone() {
+        let white = Rgb {
+            r: 255,
+            g: 255,
+            b: 255,
+        };
+        assert_eq!(enforce_min_contrast(white, DARK, 3.0), white);
     }
 }
