@@ -377,7 +377,8 @@ impl TextPipelineData {
             let span = if cell.wide { 2.0 } else { 1.0 };
             let cell_x = cell.col as f32 * cell_width;
             let cell_y = cell.row as f32 * cell_height;
-            let pos = if drawn_to_cell && info.bearing == [0.0, 0.0] {
+            let cell_drawn = drawn_to_cell && info.bearing == [0.0, 0.0];
+            let pos = if cell_drawn {
                 [origin[0] + cell_x, origin[1] + cell_y]
             } else {
                 let wide_offset_x = (cell_width * span - self.cell_advance * span).max(0.0) * 0.5;
@@ -400,9 +401,15 @@ impl TextPipelineData {
             } else {
                 cell.fg
             };
+            // A cell is fractional but the bitmap is not; span the cell or seams show.
+            let size = if cell_drawn {
+                [cell_width * span, cell_height]
+            } else {
+                info.size
+            };
             self.glyph_instances.push(GlyphInstance {
                 pos,
-                size: info.size,
+                size,
                 uv_min: info.uv_min,
                 uv_max: info.uv_max,
                 color,
