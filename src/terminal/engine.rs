@@ -267,7 +267,7 @@ impl TerminalEngine {
                     fg_rgb = if let Some((_, v)) = contrast_memo.iter().find(|(k, _)| *k == key) {
                         *v
                     } else {
-                        let v = enforce_min_contrast(fg_rgb, bg_rgb);
+                        let v = enforce_min_contrast(fg_rgb, bg_rgb, self.theme.minimum_contrast());
                         if contrast_memo.len() < 64 {
                             contrast_memo.push((key, v));
                         }

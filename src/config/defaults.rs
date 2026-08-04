@@ -112,4 +112,7 @@ pub const DEFAULT_MULTILINE_PASTE_CONFIRM: bool = false;
 pub const DEFAULT_TERMINAL_SCROLL_MULTIPLIER: f32 = 1.0;
 pub const DEFAULT_CURSOR_BLINK: bool = true;
 pub const DEFAULT_BOLD_IS_BRIGHT: bool = false;
+
+/// 1.0 disables it, as in iTerm2.
+pub const DEFAULT_MINIMUM_CONTRAST: f32 = 1.0;
 pub const DEFAULT_ANIMATIONS_ENABLED: bool = true;
