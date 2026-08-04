@@ -1,5 +1,6 @@
 mod atlas;
 mod rasterize;
+mod synthetic;
 
 use crate::config::DEFAULT_TERMINAL_FONT_SIZE;
 use crate::terminal::CellVisual;
@@ -57,6 +58,7 @@ pub(super) struct TextPipelineData {
     line_height: f32,
     line_min_y: f32,
     cell_advance: f32,
+    synthetic: std::collections::HashMap<(char, u32, u32), GlyphInfo>,
     fallback_font: Option<FontArc>,
     glyphs: HashMap<char, GlyphInfo>,
     raster_buf: Vec<u8>,
@@ -246,6 +248,7 @@ impl TextPipelineData {
             line_height: 0.0,
             line_min_y: 0.0,
             cell_advance: 0.0,
+            synthetic: std::collections::HashMap::new(),
             glyphs: HashMap::new(),
             raster_buf: Vec::new(),
             filter_buf: Vec::new(),
@@ -350,8 +353,21 @@ impl TextPipelineData {
                 continue;
             }
 
-            let Some(info) = self.get_or_insert_glyph(cell.ch, device, queue) else {
-                continue;
+            let drawn_to_cell = synthetic::is_synthetic(cell.ch);
+            let info = if drawn_to_cell {
+                match self.get_or_insert_synthetic(cell.ch, cell_width, cell_height, device, queue)
+                {
+                    Some(info) => info,
+                    None => match self.get_or_insert_glyph(cell.ch, device, queue) {
+                        Some(info) => info,
+                        None => continue,
+                    },
+                }
+            } else {
+                match self.get_or_insert_glyph(cell.ch, device, queue) {
+                    Some(info) => info,
+                    None => continue,
+                }
             };
 
             if info.size[0] == 0.0 || info.size[1] == 0.0 {
@@ -361,13 +377,17 @@ impl TextPipelineData {
             let span = if cell.wide { 2.0 } else { 1.0 };
             let cell_x = cell.col as f32 * cell_width;
             let cell_y = cell.row as f32 * cell_height;
-            let wide_offset_x = (cell_width * span - self.cell_advance * span).max(0.0) * 0.5;
-            let origin_x = cell_x + wide_offset_x;
-            let origin_y = cell_y + top_margin - self.line_min_y;
-            let pos = [
-                origin[0] + origin_x + info.bearing[0],
-                origin[1] + origin_y + info.bearing[1],
-            ];
+            let pos = if drawn_to_cell && info.bearing == [0.0, 0.0] {
+                [origin[0] + cell_x, origin[1] + cell_y]
+            } else {
+                let wide_offset_x = (cell_width * span - self.cell_advance * span).max(0.0) * 0.5;
+                let origin_x = cell_x + wide_offset_x;
+                let origin_y = cell_y + top_margin - self.line_min_y;
+                [
+                    origin[0] + origin_x + info.bearing[0],
+                    origin[1] + origin_y + info.bearing[1],
+                ]
+            };
 
             let bg_color =
                 if selection.is_some_and(|s| s.contains_at(cell.row, cell.col, display_offset)) {
@@ -482,6 +502,7 @@ impl TextPipelineData {
         }
         self.cell_advance = advance;
         self.glyphs.clear();
+        self.synthetic.clear();
         self.atlas.packer.reset(self.atlas.size);
     }
 
@@ -495,6 +516,7 @@ impl TextPipelineData {
         self.line_min_y = 0.0;
         self.cell_advance = 0.0;
         self.glyphs.clear();
+        self.synthetic.clear();
         self.rebuild_atlas(device, self.atlas.size);
     }
 
@@ -502,6 +524,7 @@ impl TextPipelineData {
         let atlas = GlyphAtlas::new(device, size);
         self.atlas = atlas;
         self.glyphs.clear();
+        self.synthetic.clear();
         self.atlas.packer.reset(size);
         self.uniform_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("terminal.text.bind_group"),
@@ -543,6 +566,77 @@ impl TextPipelineData {
         }
 
         None
+    }
+
+    fn get_or_insert_synthetic(
+        &mut self,
+        ch: char,
+        cell_width: f32,
+        cell_height: f32,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+    ) -> Option<GlyphInfo> {
+        let width = cell_width.round().max(1.0) as u32;
+        let height = cell_height.round().max(1.0) as u32;
+        let key = (ch, width, height);
+        if let Some(info) = self.synthetic.get(&key) {
+            return Some(*info);
+        }
+
+        let coverage = synthetic::draw(ch, width, height)?;
+        let pos = self.allocate_in_atlas(device, coverage.width, coverage.height)?;
+        let origin_x = pos.0 + ATLAS_PADDING;
+        let origin_y = pos.1 + ATLAS_PADDING;
+
+        let bytes_per_row = align_to(coverage.width * 4, COPY_BYTES_PER_ROW_ALIGNMENT);
+        let mut padded = vec![0u8; (bytes_per_row * coverage.height) as usize];
+        for y in 0..coverage.height {
+            for x in 0..coverage.width {
+                let value = coverage.alpha[(y * coverage.width + x) as usize];
+                let idx = (y * bytes_per_row + x * 4) as usize;
+                padded[idx] = value;
+                padded[idx + 1] = value;
+                padded[idx + 2] = value;
+                padded[idx + 3] = value;
+            }
+        }
+
+        queue.write_texture(
+            wgpu::TexelCopyTextureInfo {
+                texture: &self.atlas.texture,
+                mip_level: 0,
+                origin: wgpu::Origin3d {
+                    x: origin_x,
+                    y: origin_y,
+                    z: 0,
+                },
+                aspect: wgpu::TextureAspect::All,
+            },
+            &padded,
+            wgpu::TexelCopyBufferLayout {
+                offset: 0,
+                bytes_per_row: Some(bytes_per_row),
+                rows_per_image: Some(coverage.height),
+            },
+            wgpu::Extent3d {
+                width: coverage.width,
+                height: coverage.height,
+                depth_or_array_layers: 1,
+            },
+        );
+
+        let atlas_size = self.atlas.size as f32;
+        let info = GlyphInfo {
+            uv_min: [origin_x as f32 / atlas_size, origin_y as f32 / atlas_size],
+            uv_max: [
+                (origin_x + coverage.width) as f32 / atlas_size,
+                (origin_y + coverage.height) as f32 / atlas_size,
+            ],
+            size: [coverage.width as f32, coverage.height as f32],
+            bearing: [0.0, 0.0],
+        };
+        self.synthetic.insert(key, info);
+        Some(info)
     }
 
     fn get_or_insert_glyph(
