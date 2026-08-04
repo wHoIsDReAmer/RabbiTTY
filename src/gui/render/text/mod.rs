@@ -633,11 +633,16 @@ impl TextPipelineData {
         );
 
         let atlas_size = self.atlas.size as f32;
+        // Stretched quads would sample a texel past the glyph.
+        let inset = 0.5 / atlas_size;
         let info = GlyphInfo {
-            uv_min: [origin_x as f32 / atlas_size, origin_y as f32 / atlas_size],
+            uv_min: [
+                origin_x as f32 / atlas_size + inset,
+                origin_y as f32 / atlas_size + inset,
+            ],
             uv_max: [
-                (origin_x + coverage.width) as f32 / atlas_size,
-                (origin_y + coverage.height) as f32 / atlas_size,
+                (origin_x + coverage.width) as f32 / atlas_size - inset,
+                (origin_y + coverage.height) as f32 / atlas_size - inset,
             ],
             size: [coverage.width as f32, coverage.height as f32],
             bearing: [0.0, 0.0],
