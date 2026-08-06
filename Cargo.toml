@@ -6,7 +6,7 @@ default-members = ["."]
 
 [package]
 name = "rabbitty"
-version = "0.1.2"
+version = "0.2.0"
 edition = "2024"
 authors = ["neverprogrammer@gmail.com"]
 rust-version = "1.92"
