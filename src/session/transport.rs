@@ -11,7 +11,7 @@ use std::io::ErrorKind;
 use std::io::{Read, Write};
 #[cfg(unix)]
 use std::os::fd::AsRawFd;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, OnceLock};
 use std::thread;
@@ -61,7 +61,60 @@ fn child_env(spec_env: Vec<(String, String)>) -> HashMap<String, String> {
         .or_insert_with(|| default_term().to_string());
     env.entry("COLORTERM".to_string())
         .or_insert_with(|| "truecolor".to_string());
+    if needs_locale(&env) {
+        env.insert("LANG".to_string(), default_locale().to_string());
+    }
     env
+}
+
+/// A GUI launch inherits no locale from launchd, and in the C locale programs
+/// writing to a tty replace non-ASCII with `?`.
+fn needs_locale(env: &HashMap<String, String>) -> bool {
+    ["LC_ALL", "LC_CTYPE", "LANG"]
+        .iter()
+        .all(|key| !env.contains_key(*key) && std::env::var_os(key).is_none())
+}
+
+fn default_locale() -> &'static str {
+    static LOCALE: OnceLock<String> = OnceLock::new();
+    LOCALE.get_or_init(|| {
+        utf8_locale(system_locale().as_deref(), |name| {
+            Path::new("/usr/share/locale").join(name).exists()
+        })
+    })
+}
+
+fn system_locale() -> Option<String> {
+    if !cfg!(target_os = "macos") {
+        return None;
+    }
+    let out = std::process::Command::new("defaults")
+        .args(["read", "-g", "AppleLocale"])
+        .output()
+        .ok()?;
+    let raw = String::from_utf8(out.stdout).ok()?.trim().to_string();
+    (!raw.is_empty()).then_some(raw)
+}
+
+fn utf8_locale(raw: Option<&str>, exists: impl Fn(&str) -> bool) -> String {
+    const FALLBACK: &str = "en_US.UTF-8";
+    let Some(raw) = raw else {
+        return FALLBACK.to_string();
+    };
+    let base = raw
+        .split(['@', '.'])
+        .next()
+        .unwrap_or_default()
+        .replace('-', "_");
+    if base.is_empty() {
+        return FALLBACK.to_string();
+    }
+    let candidate = format!("{base}.UTF-8");
+    if exists(&candidate) {
+        candidate
+    } else {
+        FALLBACK.to_string()
+    }
 }
 
 fn default_term() -> &'static str {
@@ -502,7 +555,8 @@ fn process_cwd(_pid: u32) -> Option<PathBuf> {
 
 #[cfg(test)]
 mod tests {
-    use super::child_env;
+    use super::{child_env, needs_locale, utf8_locale};
+    use std::collections::HashMap;
 
     #[test]
     fn child_env_supplies_term_without_touching_the_process() {
@@ -522,5 +576,36 @@ mod tests {
         ]);
         assert_eq!(env.get("TERM").map(String::as_str), Some("dumb"));
         assert_eq!(env.get("PROMPT_COMMAND").map(String::as_str), Some("true"));
+    }
+
+    #[test]
+    fn a_system_locale_becomes_its_utf8_variant() {
+        assert_eq!(
+            utf8_locale(Some("ko_KR"), |n| n == "ko_KR.UTF-8"),
+            "ko_KR.UTF-8"
+        );
+        assert_eq!(
+            utf8_locale(Some("ko-KR"), |n| n == "ko_KR.UTF-8"),
+            "ko_KR.UTF-8"
+        );
+        assert_eq!(
+            utf8_locale(Some("en_US@rg=krzzzz"), |n| n == "en_US.UTF-8"),
+            "en_US.UTF-8"
+        );
+    }
+
+    #[test]
+    fn an_unavailable_or_missing_locale_falls_back_to_utf8() {
+        assert_eq!(utf8_locale(Some("zh-Hans-CN"), |_| false), "en_US.UTF-8");
+        assert_eq!(utf8_locale(None, |_| true), "en_US.UTF-8");
+        assert_eq!(utf8_locale(Some(""), |_| true), "en_US.UTF-8");
+    }
+
+    #[test]
+    fn a_locale_the_profile_already_sets_is_left_alone() {
+        for key in ["LC_ALL", "LC_CTYPE", "LANG"] {
+            let env = HashMap::from([(key.to_string(), "C".to_string())]);
+            assert!(!needs_locale(&env), "{key}");
+        }
     }
 }
