@@ -474,8 +474,6 @@ impl App {
                 }
             }
             Message::CursorBlink => {
-                // A keystroke within the last interval means the user is still
-                // typing, and a cursor that blinks out mid-word reads as lag.
                 let typing = self
                     .last_key_at
                     .is_some_and(|at| at.elapsed() < super::CURSOR_BLINK_INTERVAL);

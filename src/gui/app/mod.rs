@@ -352,7 +352,6 @@ pub struct App {
     pub(super) plugin_pending_install: Option<PendingInstall>,
 }
 
-/// Duration of the visual bell flash overlay.
 pub(super) const BELL_FLASH_DURATION: std::time::Duration = std::time::Duration::from_millis(150);
 
 pub(super) const CURSOR_BLINK_INTERVAL: std::time::Duration = std::time::Duration::from_millis(530);
