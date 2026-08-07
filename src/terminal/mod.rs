@@ -76,6 +76,22 @@ impl Selection {
         }
     }
 
+    /// Smallest selection covering both, used to extend a word or line drag
+    /// past the unit it was anchored on. Both must share an anchor frame.
+    pub fn union(&self, other: &Selection) -> Selection {
+        let (a_start, a_end) = self.ordered();
+        let (b_start, b_end) = other.ordered();
+        Selection {
+            start: if before(a_start, b_start) {
+                a_start
+            } else {
+                b_start
+            },
+            end: if before(a_end, b_end) { b_end } else { a_end },
+            anchor_offset: self.anchor_offset,
+        }
+    }
+
     pub fn contains_at(&self, viewport_row: usize, col: usize, current_offset: usize) -> bool {
         let row = viewport_row as i64 - self.delta(current_offset);
         let (start, end) = self.ordered();
@@ -95,6 +111,10 @@ impl Selection {
     }
 }
 
+fn before(a: SelectionPoint, b: SelectionPoint) -> bool {
+    a.row < b.row || (a.row == b.row && a.col < b.col)
+}
+
 #[cfg(test)]
 mod selection_tests {
     use super::{Selection, SelectionPoint};
@@ -111,6 +131,33 @@ mod selection_tests {
             },
             anchor_offset: anchor,
         }
+    }
+
+    #[test]
+    fn a_union_spans_from_the_earlier_start_to_the_later_end() {
+        let anchor = sel((5, 4), (5, 8), 0);
+        let later = sel((7, 2), (7, 6), 0);
+        let u = anchor.union(&later);
+        assert_eq!((u.start.row, u.start.col), (5, 4));
+        assert_eq!((u.end.row, u.end.col), (7, 6));
+    }
+
+    #[test]
+    fn a_union_keeps_the_anchor_whole_when_dragging_backwards() {
+        let anchor = sel((5, 4), (5, 8), 0);
+        let earlier = sel((3, 1), (3, 3), 0);
+        let u = anchor.union(&earlier);
+        assert_eq!((u.start.row, u.start.col), (3, 1));
+        assert_eq!((u.end.row, u.end.col), (5, 8));
+    }
+
+    #[test]
+    fn a_union_with_a_unit_inside_the_anchor_changes_nothing() {
+        let anchor = sel((5, 4), (5, 8), 0);
+        let inside = sel((5, 6), (5, 6), 0);
+        let u = anchor.union(&inside);
+        assert_eq!((u.start.row, u.start.col), (5, 4));
+        assert_eq!((u.end.row, u.end.col), (5, 8));
     }
 
     #[test]

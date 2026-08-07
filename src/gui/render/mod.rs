@@ -278,6 +278,9 @@ pub struct TerminalShaderState {
     drag_start: Option<GridPos>,
     /// Where the button went down, so a click that only jitters is not a drag.
     drag_origin: Option<Point>,
+    drag_mode: DragMode,
+    /// The word or line the drag was anchored on, kept whole as it extends.
+    drag_anchor_sel: Option<Selection>,
     drag_anchor_offset: usize,
     /// Last left-button click, used to detect double/triple clicks.
     last_click: Option<Click>,
@@ -285,6 +288,32 @@ pub struct TerminalShaderState {
     scrollbar_drag: Option<u64>,
     last_bounds: Rectangle,
     modifiers: iced::keyboard::Modifiers,
+}
+
+/// What a drag extends by: the double and triple click paths keep selecting in
+/// whole words or lines once the pointer moves.
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+enum DragMode {
+    #[default]
+    Char,
+    Word,
+    Line,
+}
+
+/// Restates a selection built from the current viewport in the drag's anchor
+/// frame, so it stays put when the view scrolls underneath it.
+fn rebase(sel: Selection, delta: i64, anchor_offset: usize) -> Selection {
+    Selection {
+        start: SelectionPoint {
+            row: sel.start.row - delta,
+            col: sel.start.col,
+        },
+        end: SelectionPoint {
+            row: sel.end.row - delta,
+            col: sel.end.col,
+        },
+        anchor_offset,
+    }
 }
 
 /// A press only becomes a drag once the pointer leaves this radius, so a click
@@ -415,10 +444,14 @@ impl ShaderProgram<Message> for TerminalProgram {
                 state.last_click = Some(click);
                 match click.kind() {
                     click::Kind::Double => {
-                        state.dragging = false;
-                        state.drag_start = None;
-                        state.drag_origin = None;
                         let sel = pane.word_selection(grid_pos);
+                        state.dragging = true;
+                        state.drag_pane = Some(pane.id);
+                        state.drag_start = Some(grid_pos);
+                        state.drag_origin = Some(pos);
+                        state.drag_anchor_offset = pane.display_offset;
+                        state.drag_mode = DragMode::Word;
+                        state.drag_anchor_sel = sel;
                         return Some(
                             Action::publish(Message::SelectionChanged {
                                 pane: pane.id,
@@ -428,10 +461,14 @@ impl ShaderProgram<Message> for TerminalProgram {
                         );
                     }
                     click::Kind::Triple => {
-                        state.dragging = false;
-                        state.drag_start = None;
-                        state.drag_origin = None;
                         let sel = pane.line_selection(grid_pos);
+                        state.dragging = true;
+                        state.drag_pane = Some(pane.id);
+                        state.drag_start = Some(grid_pos);
+                        state.drag_origin = Some(pos);
+                        state.drag_anchor_offset = pane.display_offset;
+                        state.drag_mode = DragMode::Line;
+                        state.drag_anchor_sel = Some(sel);
                         return Some(
                             Action::publish(Message::SelectionChanged {
                                 pane: pane.id,
@@ -446,6 +483,8 @@ impl ShaderProgram<Message> for TerminalProgram {
                         state.drag_start = Some(grid_pos);
                         state.drag_origin = Some(pos);
                         state.drag_anchor_offset = pane.display_offset;
+                        state.drag_mode = DragMode::Char;
+                        state.drag_anchor_sel = None;
                         return Some(
                             Action::publish(Message::SelectionChanged {
                                 pane: pane.id,
@@ -532,18 +571,45 @@ impl ShaderProgram<Message> for TerminalProgram {
                     // Translate the current viewport row back into the anchor frame
                     // so the selection follows content when the user scrolls.
                     let delta = pane.display_offset as i64 - state.drag_anchor_offset as i64;
-                    let start = SelectionPoint {
-                        row: drag_start.row as i64,
-                        col: drag_start.col,
+                    let unit = match state.drag_mode {
+                        DragMode::Char => None,
+                        DragMode::Word => pane.word_selection(grid_pos),
+                        DragMode::Line => Some(pane.line_selection(grid_pos)),
                     };
-                    let end = SelectionPoint {
-                        row: grid_pos.row as i64 - delta,
-                        col: grid_pos.col,
-                    };
-                    let sel = Selection {
-                        start,
-                        end,
-                        anchor_offset: state.drag_anchor_offset,
+                    let sel = match state.drag_mode {
+                        DragMode::Char => Selection {
+                            start: SelectionPoint {
+                                row: drag_start.row as i64,
+                                col: drag_start.col,
+                            },
+                            end: SelectionPoint {
+                                row: grid_pos.row as i64 - delta,
+                                col: grid_pos.col,
+                            },
+                            anchor_offset: state.drag_anchor_offset,
+                        },
+                        _ => {
+                            // Whitespace has no word to snap to, so the bare cell
+                            // under the pointer carries the edge instead.
+                            let cell = Selection {
+                                start: SelectionPoint {
+                                    row: grid_pos.row as i64 - delta,
+                                    col: grid_pos.col,
+                                },
+                                end: SelectionPoint {
+                                    row: grid_pos.row as i64 - delta,
+                                    col: grid_pos.col,
+                                },
+                                anchor_offset: state.drag_anchor_offset,
+                            };
+                            let current = unit
+                                .map(|s| rebase(s, delta, state.drag_anchor_offset))
+                                .unwrap_or(cell);
+                            match state.drag_anchor_sel {
+                                Some(anchor) => anchor.union(&current),
+                                None => current,
+                            }
+                        }
                     };
                     return Some(
                         Action::publish(Message::SelectionChanged {
