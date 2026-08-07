@@ -518,20 +518,18 @@ impl ShaderProgram<Message> for TerminalProgram {
                         row: grid_pos.row as i64 - delta,
                         col: grid_pos.col,
                     };
-                    if start != end {
-                        let sel = Selection {
-                            start,
-                            end,
-                            anchor_offset: state.drag_anchor_offset,
-                        };
-                        return Some(
-                            Action::publish(Message::SelectionChanged {
-                                pane: pane.id,
-                                selection: Some(sel),
-                            })
-                            .and_capture(),
-                        );
-                    }
+                    let sel = Selection {
+                        start,
+                        end,
+                        anchor_offset: state.drag_anchor_offset,
+                    };
+                    return Some(
+                        Action::publish(Message::SelectionChanged {
+                            pane: pane.id,
+                            selection: Some(sel),
+                        })
+                        .and_capture(),
+                    );
                 }
             }
             Event::Mouse(mouse::Event::ButtonReleased(mouse::Button::Left)) => {

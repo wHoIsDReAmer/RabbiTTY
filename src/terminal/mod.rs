@@ -93,10 +93,6 @@ impl Selection {
         }
         true
     }
-
-    pub fn is_empty(&self) -> bool {
-        self.start == self.end
-    }
 }
 
 #[cfg(test)]
@@ -115,6 +111,16 @@ mod selection_tests {
             },
             anchor_offset: anchor,
         }
+    }
+
+    #[test]
+    fn a_selection_that_starts_and_ends_on_one_cell_covers_that_cell_only() {
+        let s = sel((5, 7), (5, 7), 0);
+        assert!(s.contains_at(5, 7, 0));
+        assert!(!s.contains_at(5, 6, 0));
+        assert!(!s.contains_at(5, 8, 0));
+        assert!(!s.contains_at(4, 7, 0));
+        assert!(!s.contains_at(6, 7, 0));
     }
 
     #[test]

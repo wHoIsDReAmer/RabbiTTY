@@ -176,7 +176,7 @@ impl Pane {
     }
 
     pub fn selected_text(&self) -> Option<String> {
-        let sel = self.selection.as_ref().filter(|s| !s.is_empty())?;
+        let sel = self.selection.as_ref()?;
         let cells = self.engine.render_cells();
         let size = self.engine.size();
         let (current_offset, _) = self.engine.scroll_position();
