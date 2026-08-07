@@ -331,6 +331,8 @@ pub struct App {
     // ── Terminal paint state ────────────────────────────────────────────
     /// Current on/off phase of the blinking cursor.
     pub(super) cursor_blink_on: bool,
+    /// Last keystroke, so the cursor holds steady while the user is typing.
+    pub(super) last_key_at: Option<std::time::Instant>,
     /// Start time of an active visual bell flash, if any.
     pub(super) bell_flash_start: Option<std::time::Instant>,
 
@@ -352,6 +354,8 @@ pub struct App {
 
 /// Duration of the visual bell flash overlay.
 pub(super) const BELL_FLASH_DURATION: std::time::Duration = std::time::Duration::from_millis(150);
+
+pub(super) const CURSOR_BLINK_INTERVAL: std::time::Duration = std::time::Duration::from_millis(530);
 
 #[derive(Debug, Clone)]
 pub struct PasswordPromptState {
@@ -488,6 +492,7 @@ impl App {
             terminal_context_menu: false,
 
             cursor_blink_on: true,
+            last_key_at: None,
             bell_flash_start: None,
 
             resize_debounce_pending: false,
@@ -797,6 +802,49 @@ mod tests {
         let (tx, _rx) = mpsc::unbounded();
         app.pty_sender = Some(tx);
         app
+    }
+
+    #[test]
+    fn an_idle_cursor_keeps_blinking() {
+        let mut app = app_with_pty();
+        assert!(app.cursor_blink_on);
+        let _ = app.update(Message::CursorBlink);
+        assert!(!app.cursor_blink_on);
+        let _ = app.update(Message::CursorBlink);
+        assert!(app.cursor_blink_on);
+    }
+
+    #[test]
+    fn the_cursor_holds_steady_while_a_key_is_being_pressed() {
+        let mut app = app_with_pty();
+        let _ = app.update(Message::CreateTab(Profile::default_shell()));
+        let _ = app.update(Message::CursorBlink);
+        assert!(!app.cursor_blink_on, "precondition: blinked off");
+
+        let _ = app.update(Message::KeyPressed {
+            key: Key::Character("a".into()),
+            physical_key: iced::keyboard::key::Physical::Code(iced::keyboard::key::Code::KeyA),
+            modifiers: Modifiers::empty(),
+            text: Some("a".into()),
+            repeat: false,
+        });
+        assert!(app.cursor_blink_on, "typing did not light the cursor");
+
+        let _ = app.update(Message::CursorBlink);
+        assert!(app.cursor_blink_on, "cursor blinked out mid-typing");
+    }
+
+    #[test]
+    fn blinking_resumes_once_typing_stops() {
+        let mut app = app_with_pty();
+        app.last_key_at = std::time::Instant::now().checked_sub(CURSOR_BLINK_INTERVAL * 2);
+        assert!(
+            app.last_key_at.is_some(),
+            "clock is too young for this test"
+        );
+
+        let _ = app.update(Message::CursorBlink);
+        assert!(!app.cursor_blink_on);
     }
 
     #[test]
