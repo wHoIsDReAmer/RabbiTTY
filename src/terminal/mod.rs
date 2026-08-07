@@ -77,7 +77,7 @@ impl Selection {
     }
 
     /// Smallest selection covering both, used to extend a word or line drag
-    /// past the unit it was anchored on. Both must share an anchor frame.
+    /// past the word or line it started on. Both must share an anchor frame.
     pub fn union(&self, other: &Selection) -> Selection {
         let (a_start, a_end) = self.ordered();
         let (b_start, b_end) = other.ordered();
