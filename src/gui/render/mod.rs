@@ -276,6 +276,8 @@ impl TerminalProgram {
 pub struct TerminalShaderState {
     dragging: bool,
     drag_start: Option<GridPos>,
+    /// Where the button went down, so a click that only jitters is not a drag.
+    drag_origin: Option<Point>,
     drag_anchor_offset: usize,
     /// Last left-button click, used to detect double/triple clicks.
     last_click: Option<Click>,
@@ -283,6 +285,16 @@ pub struct TerminalShaderState {
     scrollbar_drag: Option<u64>,
     last_bounds: Rectangle,
     modifiers: iced::keyboard::Modifiers,
+}
+
+/// A press only becomes a drag once the pointer leaves this radius, so a click
+/// that wobbles by a pixel does not select the character under it.
+const DRAG_THRESHOLD: f32 = 3.0;
+
+fn past_drag_threshold(origin: Point, current: Point) -> bool {
+    let dx = current.x - origin.x;
+    let dy = current.y - origin.y;
+    dx * dx + dy * dy >= DRAG_THRESHOLD * DRAG_THRESHOLD
 }
 
 /// Word delimiter check (alacritty-style). A "word" is a run of non-whitespace
@@ -405,6 +417,7 @@ impl ShaderProgram<Message> for TerminalProgram {
                     click::Kind::Double => {
                         state.dragging = false;
                         state.drag_start = None;
+                        state.drag_origin = None;
                         let sel = pane.word_selection(grid_pos);
                         return Some(
                             Action::publish(Message::SelectionChanged {
@@ -417,6 +430,7 @@ impl ShaderProgram<Message> for TerminalProgram {
                     click::Kind::Triple => {
                         state.dragging = false;
                         state.drag_start = None;
+                        state.drag_origin = None;
                         let sel = pane.line_selection(grid_pos);
                         return Some(
                             Action::publish(Message::SelectionChanged {
@@ -430,6 +444,7 @@ impl ShaderProgram<Message> for TerminalProgram {
                         state.dragging = true;
                         state.drag_pane = Some(pane.id);
                         state.drag_start = Some(grid_pos);
+                        state.drag_origin = Some(pos);
                         state.drag_anchor_offset = pane.display_offset;
                         return Some(
                             Action::publish(Message::SelectionChanged {
@@ -495,6 +510,13 @@ impl ShaderProgram<Message> for TerminalProgram {
                     );
                 }
                 if let Some(drag_start) = state.drag_start {
+                    if state
+                        .drag_origin
+                        .is_some_and(|origin| !past_drag_threshold(origin, pos))
+                    {
+                        return None;
+                    }
+                    state.drag_origin = None;
                     let raw_y = cursor.position().map(|p| p.y);
                     let out_up = raw_y.is_some_and(|y| y < bounds.y + rect.y);
                     let out_down = raw_y.is_some_and(|y| y > bounds.y + rect.y + rect.height);
@@ -540,6 +562,7 @@ impl ShaderProgram<Message> for TerminalProgram {
                     let grid_pos = pane.pixel_to_grid(pos, rect, padding, self.cell_size);
                     state.dragging = false;
                     state.drag_pane = None;
+                    state.drag_origin = None;
                     return Some(
                         Action::publish(Message::TerminalMouseRelease {
                             col: grid_pos.col,
@@ -554,6 +577,7 @@ impl ShaderProgram<Message> for TerminalProgram {
                 if state.dragging {
                     state.dragging = false;
                     state.drag_pane = None;
+                    state.drag_origin = None;
                     return Some(
                         Action::publish(Message::TerminalSelectionAutoscrollStop).and_capture(),
                     );
@@ -989,6 +1013,23 @@ impl Primitive for TerminalPrimitive {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_click_that_wobbles_within_a_pixel_is_not_a_drag() {
+        let origin = Point::new(100.0, 100.0);
+        assert!(!past_drag_threshold(origin, origin));
+        assert!(!past_drag_threshold(origin, Point::new(101.0, 100.0)));
+        assert!(!past_drag_threshold(origin, Point::new(100.0, 98.0)));
+    }
+
+    #[test]
+    fn a_deliberate_drag_crosses_the_threshold_in_any_direction() {
+        let origin = Point::new(100.0, 100.0);
+        assert!(past_drag_threshold(origin, Point::new(104.0, 100.0)));
+        assert!(past_drag_threshold(origin, Point::new(96.0, 100.0)));
+        assert!(past_drag_threshold(origin, Point::new(100.0, 105.0)));
+        assert!(past_drag_threshold(origin, Point::new(103.0, 103.0)));
+    }
 
     #[test]
     fn dragging_the_scrollbar_to_the_top_scrolls_back_through_history() {
