@@ -291,6 +291,8 @@ impl App {
                 text,
                 repeat,
             } => {
+                self.last_key_at = Some(std::time::Instant::now());
+                self.cursor_blink_on = true;
                 return self.handle_key_pressed(key, physical_key, modifiers, text, repeat);
             }
             Message::TabBarScroll(delta) => {
@@ -472,7 +474,10 @@ impl App {
                 }
             }
             Message::CursorBlink => {
-                self.cursor_blink_on = !self.cursor_blink_on;
+                let typing = self
+                    .last_key_at
+                    .is_some_and(|at| at.elapsed() < super::CURSOR_BLINK_INTERVAL);
+                self.cursor_blink_on = typing || !self.cursor_blink_on;
             }
             Message::TerminalAreaResized(size) => {
                 if (self.terminal_area.width - size.width).abs() > 0.5

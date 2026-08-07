@@ -37,7 +37,7 @@ impl App {
             && self.active_tab != super::SETTINGS_TAB_INDEX
             && self.tabs.get(self.active_tab).is_some()
         {
-            time::every(std::time::Duration::from_millis(530)).map(|_| Message::CursorBlink)
+            time::every(super::CURSOR_BLINK_INTERVAL).map(|_| Message::CursorBlink)
         } else {
             Subscription::none()
         };
