@@ -276,6 +276,11 @@ impl TerminalProgram {
 pub struct TerminalShaderState {
     dragging: bool,
     drag_start: Option<GridPos>,
+    /// Where the button went down, so a click that only jitters is not a drag.
+    drag_origin: Option<Point>,
+    drag_mode: DragMode,
+    /// The word or line the drag was anchored on, kept whole as it extends.
+    drag_anchor_sel: Option<Selection>,
     drag_anchor_offset: usize,
     /// Last left-button click, used to detect double/triple clicks.
     last_click: Option<Click>,
@@ -283,6 +288,42 @@ pub struct TerminalShaderState {
     scrollbar_drag: Option<u64>,
     last_bounds: Rectangle,
     modifiers: iced::keyboard::Modifiers,
+}
+
+/// What a drag extends by: the double and triple click paths keep selecting in
+/// whole words or lines once the pointer moves.
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+enum DragMode {
+    #[default]
+    Char,
+    Word,
+    Line,
+}
+
+/// Restates a selection built from the current viewport in the drag's anchor
+/// frame, so it stays put when the view scrolls underneath it.
+fn rebase(sel: Selection, delta: i64, anchor_offset: usize) -> Selection {
+    Selection {
+        start: SelectionPoint {
+            row: sel.start.row - delta,
+            col: sel.start.col,
+        },
+        end: SelectionPoint {
+            row: sel.end.row - delta,
+            col: sel.end.col,
+        },
+        anchor_offset,
+    }
+}
+
+/// A press only becomes a drag once the pointer leaves this radius, so a click
+/// that wobbles by a pixel does not select the character under it.
+const DRAG_THRESHOLD: f32 = 3.0;
+
+fn past_drag_threshold(origin: Point, current: Point) -> bool {
+    let dx = current.x - origin.x;
+    let dy = current.y - origin.y;
+    dx * dx + dy * dy >= DRAG_THRESHOLD * DRAG_THRESHOLD
 }
 
 /// Word delimiter check (alacritty-style). A "word" is a run of non-whitespace
@@ -403,9 +444,14 @@ impl ShaderProgram<Message> for TerminalProgram {
                 state.last_click = Some(click);
                 match click.kind() {
                     click::Kind::Double => {
-                        state.dragging = false;
-                        state.drag_start = None;
                         let sel = pane.word_selection(grid_pos);
+                        state.dragging = true;
+                        state.drag_pane = Some(pane.id);
+                        state.drag_start = Some(grid_pos);
+                        state.drag_origin = Some(pos);
+                        state.drag_anchor_offset = pane.display_offset;
+                        state.drag_mode = DragMode::Word;
+                        state.drag_anchor_sel = sel;
                         return Some(
                             Action::publish(Message::SelectionChanged {
                                 pane: pane.id,
@@ -415,9 +461,14 @@ impl ShaderProgram<Message> for TerminalProgram {
                         );
                     }
                     click::Kind::Triple => {
-                        state.dragging = false;
-                        state.drag_start = None;
                         let sel = pane.line_selection(grid_pos);
+                        state.dragging = true;
+                        state.drag_pane = Some(pane.id);
+                        state.drag_start = Some(grid_pos);
+                        state.drag_origin = Some(pos);
+                        state.drag_anchor_offset = pane.display_offset;
+                        state.drag_mode = DragMode::Line;
+                        state.drag_anchor_sel = Some(sel);
                         return Some(
                             Action::publish(Message::SelectionChanged {
                                 pane: pane.id,
@@ -430,7 +481,10 @@ impl ShaderProgram<Message> for TerminalProgram {
                         state.dragging = true;
                         state.drag_pane = Some(pane.id);
                         state.drag_start = Some(grid_pos);
+                        state.drag_origin = Some(pos);
                         state.drag_anchor_offset = pane.display_offset;
+                        state.drag_mode = DragMode::Char;
+                        state.drag_anchor_sel = None;
                         return Some(
                             Action::publish(Message::SelectionChanged {
                                 pane: pane.id,
@@ -495,6 +549,13 @@ impl ShaderProgram<Message> for TerminalProgram {
                     );
                 }
                 if let Some(drag_start) = state.drag_start {
+                    if state
+                        .drag_origin
+                        .is_some_and(|origin| !past_drag_threshold(origin, pos))
+                    {
+                        return None;
+                    }
+                    state.drag_origin = None;
                     let raw_y = cursor.position().map(|p| p.y);
                     let out_up = raw_y.is_some_and(|y| y < bounds.y + rect.y);
                     let out_down = raw_y.is_some_and(|y| y > bounds.y + rect.y + rect.height);
@@ -510,28 +571,53 @@ impl ShaderProgram<Message> for TerminalProgram {
                     // Translate the current viewport row back into the anchor frame
                     // so the selection follows content when the user scrolls.
                     let delta = pane.display_offset as i64 - state.drag_anchor_offset as i64;
-                    let start = SelectionPoint {
-                        row: drag_start.row as i64,
-                        col: drag_start.col,
+                    let unit = match state.drag_mode {
+                        DragMode::Char => None,
+                        DragMode::Word => pane.word_selection(grid_pos),
+                        DragMode::Line => Some(pane.line_selection(grid_pos)),
                     };
-                    let end = SelectionPoint {
-                        row: grid_pos.row as i64 - delta,
-                        col: grid_pos.col,
-                    };
-                    if start != end {
-                        let sel = Selection {
-                            start,
-                            end,
+                    let sel = match state.drag_mode {
+                        DragMode::Char => Selection {
+                            start: SelectionPoint {
+                                row: drag_start.row as i64,
+                                col: drag_start.col,
+                            },
+                            end: SelectionPoint {
+                                row: grid_pos.row as i64 - delta,
+                                col: grid_pos.col,
+                            },
                             anchor_offset: state.drag_anchor_offset,
-                        };
-                        return Some(
-                            Action::publish(Message::SelectionChanged {
-                                pane: pane.id,
-                                selection: Some(sel),
-                            })
-                            .and_capture(),
-                        );
-                    }
+                        },
+                        _ => {
+                            // Whitespace has no word to snap to, so the bare cell
+                            // under the pointer carries the edge instead.
+                            let cell = Selection {
+                                start: SelectionPoint {
+                                    row: grid_pos.row as i64 - delta,
+                                    col: grid_pos.col,
+                                },
+                                end: SelectionPoint {
+                                    row: grid_pos.row as i64 - delta,
+                                    col: grid_pos.col,
+                                },
+                                anchor_offset: state.drag_anchor_offset,
+                            };
+                            let current = unit
+                                .map(|s| rebase(s, delta, state.drag_anchor_offset))
+                                .unwrap_or(cell);
+                            match state.drag_anchor_sel {
+                                Some(anchor) => anchor.union(&current),
+                                None => current,
+                            }
+                        }
+                    };
+                    return Some(
+                        Action::publish(Message::SelectionChanged {
+                            pane: pane.id,
+                            selection: Some(sel),
+                        })
+                        .and_capture(),
+                    );
                 }
             }
             Event::Mouse(mouse::Event::ButtonReleased(mouse::Button::Left)) => {
@@ -542,6 +628,7 @@ impl ShaderProgram<Message> for TerminalProgram {
                     let grid_pos = pane.pixel_to_grid(pos, rect, padding, self.cell_size);
                     state.dragging = false;
                     state.drag_pane = None;
+                    state.drag_origin = None;
                     return Some(
                         Action::publish(Message::TerminalMouseRelease {
                             col: grid_pos.col,
@@ -556,6 +643,7 @@ impl ShaderProgram<Message> for TerminalProgram {
                 if state.dragging {
                     state.dragging = false;
                     state.drag_pane = None;
+                    state.drag_origin = None;
                     return Some(
                         Action::publish(Message::TerminalSelectionAutoscrollStop).and_capture(),
                     );
@@ -991,6 +1079,23 @@ impl Primitive for TerminalPrimitive {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_click_that_wobbles_within_a_pixel_is_not_a_drag() {
+        let origin = Point::new(100.0, 100.0);
+        assert!(!past_drag_threshold(origin, origin));
+        assert!(!past_drag_threshold(origin, Point::new(101.0, 100.0)));
+        assert!(!past_drag_threshold(origin, Point::new(100.0, 98.0)));
+    }
+
+    #[test]
+    fn a_deliberate_drag_crosses_the_threshold_in_any_direction() {
+        let origin = Point::new(100.0, 100.0);
+        assert!(past_drag_threshold(origin, Point::new(104.0, 100.0)));
+        assert!(past_drag_threshold(origin, Point::new(96.0, 100.0)));
+        assert!(past_drag_threshold(origin, Point::new(100.0, 105.0)));
+        assert!(past_drag_threshold(origin, Point::new(103.0, 103.0)));
+    }
 
     #[test]
     fn dragging_the_scrollbar_to_the_top_scrolls_back_through_history() {
