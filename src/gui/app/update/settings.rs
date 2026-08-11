@@ -387,6 +387,9 @@ impl App {
                 self.settings_draft.cursor_shape = shape;
                 return self.apply_settings(true);
             }
+            SettingsMessage::WheelZoomToggled(enabled) => {
+                self.settings_draft.wheel_zoom = enabled;
+            }
             SettingsMessage::CursorBlinkToggled(enabled) => {
                 self.settings_draft.cursor_blink = enabled;
                 return self.apply_settings(true);

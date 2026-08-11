@@ -397,6 +397,17 @@ impl App {
                     pane.scroll_to_relative(rel);
                 }
             }
+            Message::ModifiersChanged(modifiers) => {
+                self.modifiers = modifiers;
+            }
+            Message::TerminalWheelScroll(raw_delta) if self.wheel_zooms() => {
+                // A notch is one step, matching the font size shortcuts.
+                let steps = raw_delta.signum();
+                if steps == 0.0 {
+                    return Task::none();
+                }
+                return self.adjust_font_size(steps);
+            }
             Message::TerminalWheelScroll(raw_delta) => {
                 let now = std::time::Instant::now();
                 let gap = self.wheel_last_event.map(|last| now.duration_since(last));

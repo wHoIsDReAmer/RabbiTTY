@@ -71,6 +71,7 @@ pub struct TerminalConfig {
     pub cursor_shape: CursorShape,
     pub cursor_blink: bool,
     pub bold_is_bright: bool,
+    pub wheel_zoom: bool,
     pub minimum_contrast: f32,
     pub bell_mode: BellMode,
     pub right_click_action: RightClickAction,
@@ -113,6 +114,7 @@ impl Default for AppConfig {
                 cursor_shape: CursorShape::default(),
                 cursor_blink: DEFAULT_CURSOR_BLINK,
                 bold_is_bright: DEFAULT_BOLD_IS_BRIGHT,
+                wheel_zoom: DEFAULT_WHEEL_ZOOM,
                 minimum_contrast: DEFAULT_MINIMUM_CONTRAST,
                 bell_mode: BellMode::default(),
                 right_click_action: RightClickAction::default(),
@@ -228,6 +230,9 @@ impl AppConfig {
             }
             if let Some(enabled) = term.bold_is_bright {
                 self.terminal.bold_is_bright = enabled;
+            }
+            if let Some(enabled) = term.wheel_zoom {
+                self.terminal.wheel_zoom = enabled;
             }
             if let Some(ratio) = term.minimum_contrast {
                 self.terminal.minimum_contrast = ratio.clamp(1.0, 21.0);
