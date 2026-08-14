@@ -276,13 +276,20 @@ impl App {
             }
             Message::PtyOutput(event) => {
                 self.handle_pty_event(event);
-                return Task::none();
+                return self.take_clipboard_task();
             }
             Message::PtyOutputBatch(events) => {
                 for event in events {
                     self.handle_pty_event(event);
                 }
-                return Task::none();
+                return self.take_clipboard_task();
+            }
+            Message::OscClipboardRead(text) => {
+                if let Some((pane_id, format)) = self.osc_clipboard_read.take()
+                    && let Some(pane) = self.pane_mut_by_id(pane_id)
+                {
+                    pane.reply_clipboard(&format, &text);
+                }
             }
             Message::KeyPressed {
                 key,

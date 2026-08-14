@@ -3,7 +3,7 @@ pub mod font;
 pub mod theme;
 pub mod url;
 
-pub use engine::TerminalEngine;
+pub use engine::{ClipboardFormatter, TerminalEngine, TitleChange};
 pub use theme::TerminalTheme;
 
 use alacritty_terminal::grid::Dimensions;

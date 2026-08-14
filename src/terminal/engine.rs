@@ -4,10 +4,11 @@ use alacritty_terminal::event::{Event, EventListener, WindowSize};
 use alacritty_terminal::grid::Dimensions;
 use alacritty_terminal::grid::Scroll;
 use alacritty_terminal::term::cell::Flags;
+use alacritty_terminal::term::color::Colors;
 use alacritty_terminal::term::{
-    Config as TermConfig, RenderableContent, Term, TermMode, point_to_viewport,
+    Config as TermConfig, Osc52, RenderableContent, Term, TermMode, point_to_viewport,
 };
-use alacritty_terminal::vte::ansi::{CursorShape, Processor, Rgb};
+use alacritty_terminal::vte::ansi::{CursorShape, NamedColor, Processor, Rgb};
 use std::cell::{Cell, RefCell};
 use std::io::Write;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -21,8 +22,29 @@ pub struct TerminalEngine {
     cells_cache: RefCell<Arc<Vec<CellVisual>>>,
     cache_dirty: Cell<bool>,
     cache_size: Cell<TerminalSize>,
-    title: Arc<Mutex<Option<String>>>,
+    title: Arc<Mutex<Option<TitleChange>>>,
     bell_pending: Arc<AtomicBool>,
+    osc: Arc<Mutex<OscPending>>,
+    writer: Arc<Mutex<Box<dyn Write + Send>>>,
+}
+
+/// What the program asked the title to become.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum TitleChange {
+    Set(String),
+    Reset,
+}
+
+pub type ClipboardFormatter = Arc<dyn Fn(&str) -> String + Send + Sync>;
+type ColorFormatter = Arc<dyn Fn(Rgb) -> String + Send + Sync>;
+
+/// OSC work the pty thread cannot finish on its own: colour queries need the
+/// term's palette, and clipboard access belongs to the gui thread.
+#[derive(Default)]
+pub(super) struct OscPending {
+    clipboard_write: Option<String>,
+    clipboard_read: Option<ClipboardFormatter>,
+    colors: Vec<(usize, ColorFormatter)>,
 }
 
 impl TerminalEngine {
@@ -34,10 +56,14 @@ impl TerminalEngine {
     ) -> Self {
         let config = TermConfig {
             scrolling_history: scrollback,
+            // Both directions are let through here and refused later against
+            // our own config, so toggling the setting needs no new terminal.
+            osc52: Osc52::CopyPaste,
             ..Default::default()
         };
-        let title: Arc<Mutex<Option<String>>> = Arc::new(Mutex::new(None));
+        let title: Arc<Mutex<Option<TitleChange>>> = Arc::new(Mutex::new(None));
         let bell_pending: Arc<AtomicBool> = Arc::new(AtomicBool::new(false));
+        let osc: Arc<Mutex<OscPending>> = Arc::new(Mutex::new(OscPending::default()));
         let term = Term::new(
             config,
             &size,
@@ -46,6 +72,7 @@ impl TerminalEngine {
                 size,
                 title: Arc::clone(&title),
                 bell_pending: Arc::clone(&bell_pending),
+                osc: Arc::clone(&osc),
             },
         );
 
@@ -59,6 +86,8 @@ impl TerminalEngine {
             cache_size: Cell::new(size),
             title,
             bell_pending,
+            osc,
+            writer,
         }
     }
 
@@ -66,7 +95,7 @@ impl TerminalEngine {
         self.size
     }
 
-    pub fn take_title(&self) -> Option<String> {
+    pub fn take_title(&self) -> Option<TitleChange> {
         self.title.lock().ok()?.take()
     }
 
@@ -77,7 +106,56 @@ impl TerminalEngine {
 
     pub fn feed_bytes(&mut self, bytes: &[u8]) {
         self.processor.advance(&mut self.term, bytes);
+        self.answer_color_requests();
         self.cache_dirty.set(true);
+    }
+
+    /// A colour query is answered from the live palette so an earlier OSC 4
+    /// override wins over the theme, matching what the screen actually shows.
+    fn answer_color_requests(&mut self) {
+        let pending = match self.osc.lock() {
+            Ok(mut guard) if !guard.colors.is_empty() => std::mem::take(&mut guard.colors),
+            _ => return,
+        };
+        let colors = self.term.colors();
+        let replies: Vec<String> = pending
+            .into_iter()
+            .map(|(index, format)| format(self.color_at(colors, index)))
+            .collect();
+        if let Ok(mut guard) = self.writer.lock() {
+            for reply in replies {
+                let _ = guard.write_all(reply.as_bytes());
+            }
+            let _ = guard.flush();
+        }
+    }
+
+    fn color_at(&self, colors: &Colors, index: usize) -> Rgb {
+        if let Some(rgb) = colors[index] {
+            return rgb;
+        }
+        match index {
+            0..=255 => self.theme.indexed_color(index as u8),
+            257 => self.theme.named_color(NamedColor::Background),
+            258 => self.theme.named_color(NamedColor::Cursor),
+            _ => self.theme.named_color(NamedColor::Foreground),
+        }
+    }
+
+    pub fn take_clipboard_write(&self) -> Option<String> {
+        self.osc.lock().ok()?.clipboard_write.take()
+    }
+
+    pub fn take_clipboard_read(&self) -> Option<ClipboardFormatter> {
+        self.osc.lock().ok()?.clipboard_read.take()
+    }
+
+    /// Answers a pending OSC 52 read with whatever the gui handed back.
+    pub fn reply_clipboard(&self, format: &ClipboardFormatter, text: &str) {
+        if let Ok(mut guard) = self.writer.lock() {
+            let _ = guard.write_all(format(text).as_bytes());
+            let _ = guard.flush();
+        }
     }
 
     pub fn resize(&mut self, new_size: TerminalSize) {
@@ -310,8 +388,9 @@ impl TerminalEngine {
 struct PtyEventProxy {
     writer: Arc<Mutex<Box<dyn Write + Send>>>,
     size: TerminalSize,
-    title: Arc<Mutex<Option<String>>>,
+    title: Arc<Mutex<Option<TitleChange>>>,
     bell_pending: Arc<AtomicBool>,
+    osc: Arc<Mutex<OscPending>>,
 }
 
 impl EventListener for PtyEventProxy {
@@ -338,11 +417,33 @@ impl EventListener for PtyEventProxy {
             }
             Event::Title(new_title) => {
                 if let Ok(mut guard) = self.title.lock() {
-                    *guard = Some(new_title);
+                    *guard = Some(TitleChange::Set(new_title));
+                }
+            }
+            Event::ResetTitle => {
+                if let Ok(mut guard) = self.title.lock() {
+                    *guard = Some(TitleChange::Reset);
                 }
             }
             Event::Bell => {
                 self.bell_pending.store(true, Ordering::Relaxed);
+            }
+            // The last write wins: a program that sets the clipboard twice
+            // before the gui looks only meant the second one.
+            Event::ClipboardStore(_, text) => {
+                if let Ok(mut guard) = self.osc.lock() {
+                    guard.clipboard_write = Some(text);
+                }
+            }
+            Event::ClipboardLoad(_, formatter) => {
+                if let Ok(mut guard) = self.osc.lock() {
+                    guard.clipboard_read = Some(formatter);
+                }
+            }
+            Event::ColorRequest(index, formatter) => {
+                if let Ok(mut guard) = self.osc.lock() {
+                    guard.colors.push((index, formatter));
+                }
             }
             _ => {}
         }
@@ -360,6 +461,101 @@ mod tests {
             Arc::new(Mutex::new(Box::new(std::io::sink()))),
             TerminalTheme::default(),
         )
+    }
+
+    /// Shares the buffer the engine writes replies into, so a test can read
+    /// what the terminal answered the program.
+    #[derive(Clone, Default)]
+    struct Replies(Arc<Mutex<Vec<u8>>>);
+
+    impl Write for Replies {
+        fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+            self.0.lock().unwrap().extend_from_slice(buf);
+            Ok(buf.len())
+        }
+        fn flush(&mut self) -> std::io::Result<()> {
+            Ok(())
+        }
+    }
+
+    fn engine_with_replies() -> (TerminalEngine, Replies) {
+        let replies = Replies::default();
+        let engine = TerminalEngine::new(
+            TerminalSize::new(8, 3),
+            100,
+            Arc::new(Mutex::new(Box::new(replies.clone()))),
+            TerminalTheme::default(),
+        );
+        (engine, replies)
+    }
+
+    fn answered(replies: &Replies) -> String {
+        String::from_utf8_lossy(&replies.0.lock().unwrap()).into_owned()
+    }
+
+    #[test]
+    fn a_colour_query_is_answered_from_the_theme() {
+        let (mut engine, replies) = engine_with_replies();
+        engine.feed_bytes(b"\x1b]4;1;?\x07");
+        let reply = answered(&replies);
+        assert!(reply.contains("4;1;"), "no OSC 4 reply: {reply:?}");
+        assert!(
+            reply.contains("rgb:"),
+            "reply is not an rgb spec: {reply:?}"
+        );
+    }
+
+    #[test]
+    fn a_colour_query_reports_what_osc_4_set_rather_than_the_theme() {
+        let (mut engine, replies) = engine_with_replies();
+        engine.feed_bytes(b"\x1b]4;1;rgb:ffff/0000/0000\x07");
+        engine.feed_bytes(b"\x1b]4;1;?\x07");
+        let reply = answered(&replies);
+        assert!(
+            reply.contains("ffff/0000/0000"),
+            "override not reported: {reply:?}"
+        );
+    }
+
+    #[test]
+    fn the_foreground_and_background_can_be_queried_too() {
+        let (mut engine, replies) = engine_with_replies();
+        engine.feed_bytes(b"\x1b]10;?\x07");
+        engine.feed_bytes(b"\x1b]11;?\x07");
+        let reply = answered(&replies);
+        assert!(reply.contains("10;"), "no foreground reply: {reply:?}");
+        assert!(reply.contains("11;"), "no background reply: {reply:?}");
+    }
+
+    #[test]
+    fn osc_52_hands_the_decoded_text_to_the_host() {
+        let mut engine = test_engine();
+        // "hi" base64 encoded.
+        engine.feed_bytes(b"\x1b]52;c;aGk=\x07");
+        assert_eq!(engine.take_clipboard_write().as_deref(), Some("hi"));
+        assert_eq!(engine.take_clipboard_write(), None, "not drained");
+    }
+
+    #[test]
+    fn an_osc_52_query_asks_the_host_and_the_reply_reaches_the_program() {
+        let (mut engine, replies) = engine_with_replies();
+        engine.feed_bytes(b"\x1b]52;c;?\x07");
+        let format = engine.take_clipboard_read().expect("no read request");
+        engine.reply_clipboard(&format, "hi");
+        let reply = answered(&replies);
+        assert!(reply.contains("52;"), "no OSC 52 reply: {reply:?}");
+        assert!(reply.contains("aGk="), "text not encoded back: {reply:?}");
+    }
+
+    #[test]
+    fn a_title_reset_is_reported_separately_from_a_title_change() {
+        let mut engine = test_engine();
+        // Stack the absent title, set one, then pop back to it.
+        engine.feed_bytes(b"\x1b[22t");
+        engine.feed_bytes(b"\x1b]2;hello\x07");
+        assert_eq!(engine.take_title(), Some(TitleChange::Set("hello".into())));
+        engine.feed_bytes(b"\x1b[23t");
+        assert_eq!(engine.take_title(), Some(TitleChange::Reset));
     }
 
     #[test]

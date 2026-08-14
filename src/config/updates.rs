@@ -33,6 +33,8 @@ pub struct AppConfigUpdates {
     pub terminal_cursor_blink: Option<bool>,
     pub terminal_bold_is_bright: Option<bool>,
     pub terminal_wheel_zoom: Option<bool>,
+    pub terminal_osc52_write: Option<bool>,
+    pub terminal_osc52_read: Option<bool>,
     pub terminal_bell_mode: Option<BellMode>,
     pub terminal_right_click_action: Option<RightClickAction>,
 }
@@ -98,6 +100,12 @@ impl AppConfig {
         }
         if let Some(enabled) = updates.terminal_wheel_zoom {
             self.terminal.wheel_zoom = enabled;
+        }
+        if let Some(enabled) = updates.terminal_osc52_write {
+            self.terminal.osc52_write = enabled;
+        }
+        if let Some(enabled) = updates.terminal_osc52_read {
+            self.terminal.osc52_read = enabled;
         }
         if let Some(enabled) = updates.terminal_bold_is_bright {
             self.terminal.bold_is_bright = enabled;

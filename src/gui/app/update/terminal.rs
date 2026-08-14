@@ -7,7 +7,21 @@ use iced::widget::scrollable;
 use iced::{Size, Task};
 
 impl App {
-    pub(super) fn handle_pty_event(&mut self, event: OutputEvent) {
+    pub(super) fn take_clipboard_task(&mut self) -> Task<Message> {
+        let mut tasks: Vec<Task<Message>> = Vec::new();
+        if let Some(text) = self.osc_clipboard_write.take() {
+            tasks.push(iced::clipboard::write(text));
+        }
+        if self.osc_clipboard_read.is_some() {
+            tasks.push(
+                iced::clipboard::read()
+                    .map(|text| Message::OscClipboardRead(text.unwrap_or_default())),
+            );
+        }
+        Task::batch(tasks)
+    }
+
+    pub(crate) fn handle_pty_event(&mut self, event: OutputEvent) {
         match event {
             OutputEvent::Data { tab_id, bytes } => {
                 if let Some(pane) = self.pane_mut_by_id(tab_id) {
@@ -15,6 +29,8 @@ impl App {
                     let lines = pane.take_output_lines();
                     let title = pane.take_title_change();
                     let cwd = pane.take_cwd_change();
+                    let clipboard_write = pane.take_clipboard_write();
+                    let clipboard_read = pane.take_clipboard_read();
                     if bell {
                         self.handle_bell(tab_id);
                         self.dispatch_plugin_event(crate::plugin::Event::Bell(tab_id));
@@ -31,6 +47,16 @@ impl App {
                         self.dispatch_plugin_event(crate::plugin::Event::CwdChanged(
                             crate::plugin::CwdEvent { pane: tab_id, path },
                         ));
+                    }
+                    // Drained either way so a refused request cannot pile up,
+                    // then dropped unless the config allows it.
+                    if self.config.terminal.osc52_write {
+                        self.osc_clipboard_write = clipboard_write;
+                    }
+                    if self.config.terminal.osc52_read
+                        && let Some(format) = clipboard_read
+                    {
+                        self.osc_clipboard_read = Some((tab_id, format));
                     }
                     self.match_output_lines(tab_id, lines);
                 }

@@ -131,6 +131,7 @@ pub enum Message {
     AnimationTick,
     CursorBlink,
     ModifiersChanged(iced::keyboard::Modifiers),
+    OscClipboardRead(String),
     ApplyWindowStyle,
 
     #[cfg(target_os = "windows")]
@@ -157,6 +158,8 @@ pub enum SettingsMessage {
     CursorShapeSelected(crate::config::CursorShape),
     CursorBlinkToggled(bool),
     WheelZoomToggled(bool),
+    Osc52WriteToggled(bool),
+    Osc52ReadToggled(bool),
     BoldIsBrightToggled(bool),
     BellModeSelected(crate::config::BellMode),
     RightClickActionSelected(crate::config::RightClickAction),
@@ -337,6 +340,10 @@ pub struct App {
     pub(super) last_key_at: Option<std::time::Instant>,
     /// Latest modifier state, needed by the wheel which carries none.
     pub(super) modifiers: iced::keyboard::Modifiers,
+    /// Clipboard text an OSC 52 write asked us to store.
+    pub(super) osc_clipboard_write: Option<String>,
+    /// Pane awaiting an OSC 52 read, with the formatter for its reply.
+    pub(super) osc_clipboard_read: Option<(u64, crate::terminal::ClipboardFormatter)>,
     /// Start time of an active visual bell flash, if any.
     pub(super) bell_flash_start: Option<std::time::Instant>,
 
@@ -497,6 +504,8 @@ impl App {
             cursor_blink_on: true,
             last_key_at: None,
             modifiers: iced::keyboard::Modifiers::empty(),
+            osc_clipboard_write: None,
+            osc_clipboard_read: None,
             bell_flash_start: None,
 
             resize_debounce_pending: false,
@@ -815,6 +824,43 @@ mod tests {
     }
 
     const ZOOM_MOD: Modifiers = Modifiers::CTRL;
+
+    /// Goes straight to the handler: `update` would drain the pending
+    /// clipboard into a task before the test could look at it.
+    fn feed(app: &mut App, bytes: &[u8]) {
+        let tab_id = app.tabs[0].panes[0].id;
+        app.handle_pty_event(crate::session::OutputEvent::Data {
+            tab_id,
+            bytes: bytes.to_vec(),
+        });
+    }
+
+    #[test]
+    fn osc52_write_reaches_the_clipboard_only_when_allowed() {
+        let mut app = zoom_app();
+        app.config.terminal.osc52_write = true;
+        feed(&mut app, b"\x1b]52;c;aGk=\x07");
+        assert_eq!(app.osc_clipboard_write.take().as_deref(), Some("hi"));
+
+        app.config.terminal.osc52_write = false;
+        feed(&mut app, b"\x1b]52;c;aGk=\x07");
+        assert_eq!(app.osc_clipboard_write, None, "refused write still queued");
+    }
+
+    #[test]
+    fn osc52_read_is_refused_by_default() {
+        let mut app = zoom_app();
+        assert!(!app.config.terminal.osc52_read, "read defaults to on");
+        feed(&mut app, b"\x1b]52;c;?\x07");
+        assert!(
+            app.osc_clipboard_read.is_none(),
+            "refused read still queued"
+        );
+
+        app.config.terminal.osc52_read = true;
+        feed(&mut app, b"\x1b]52;c;?\x07");
+        assert!(app.osc_clipboard_read.is_some(), "allowed read not queued");
+    }
 
     #[test]
     fn the_wheel_alone_never_changes_the_font_size() {

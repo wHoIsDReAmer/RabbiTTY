@@ -387,6 +387,12 @@ impl App {
                 self.settings_draft.cursor_shape = shape;
                 return self.apply_settings(true);
             }
+            SettingsMessage::Osc52WriteToggled(enabled) => {
+                self.settings_draft.osc52_write = enabled;
+            }
+            SettingsMessage::Osc52ReadToggled(enabled) => {
+                self.settings_draft.osc52_read = enabled;
+            }
             SettingsMessage::WheelZoomToggled(enabled) => {
                 self.settings_draft.wheel_zoom = enabled;
             }
