@@ -504,7 +504,12 @@ impl App {
         }
     }
 
-    fn adjust_font_size(&mut self, delta: f32) -> Task<Message> {
+    pub(super) fn wheel_zooms(&self) -> bool {
+        self.config.terminal.wheel_zoom
+            && (self.modifiers.control() || (cfg!(target_os = "macos") && self.modifiers.logo()))
+    }
+
+    pub(super) fn adjust_font_size(&mut self, delta: f32) -> Task<Message> {
         let new_size = self.config.terminal.font_size + delta;
         self.set_font_size(new_size)
     }

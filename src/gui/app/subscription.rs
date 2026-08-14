@@ -114,6 +114,9 @@ impl App {
                     text: text.map(|s| s.to_string()),
                     repeat,
                 }),
+                Event::Keyboard(keyboard::Event::ModifiersChanged(modifiers)) => {
+                    Some(Message::ModifiersChanged(modifiers))
+                }
                 Event::InputMethod(input_method::Event::Opened) => {
                     Some(Message::ImeStateChanged(true))
                 }

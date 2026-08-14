@@ -130,6 +130,7 @@ pub enum Message {
     ResizeDebounce,
     AnimationTick,
     CursorBlink,
+    ModifiersChanged(iced::keyboard::Modifiers),
     ApplyWindowStyle,
 
     #[cfg(target_os = "windows")]
@@ -155,6 +156,7 @@ pub enum SettingsMessage {
     MultilinePasteConfirmToggled(bool),
     CursorShapeSelected(crate::config::CursorShape),
     CursorBlinkToggled(bool),
+    WheelZoomToggled(bool),
     BoldIsBrightToggled(bool),
     BellModeSelected(crate::config::BellMode),
     RightClickActionSelected(crate::config::RightClickAction),
@@ -333,6 +335,8 @@ pub struct App {
     pub(super) cursor_blink_on: bool,
     /// Last keystroke, so the cursor holds steady while the user is typing.
     pub(super) last_key_at: Option<std::time::Instant>,
+    /// Latest modifier state, needed by the wheel which carries none.
+    pub(super) modifiers: iced::keyboard::Modifiers,
     /// Start time of an active visual bell flash, if any.
     pub(super) bell_flash_start: Option<std::time::Instant>,
 
@@ -492,6 +496,7 @@ impl App {
 
             cursor_blink_on: true,
             last_key_at: None,
+            modifiers: iced::keyboard::Modifiers::empty(),
             bell_flash_start: None,
 
             resize_debounce_pending: false,
@@ -801,6 +806,54 @@ mod tests {
         let (tx, _rx) = mpsc::unbounded();
         app.pty_sender = Some(tx);
         app
+    }
+
+    fn zoom_app() -> App {
+        let mut app = app_with_pty();
+        let _ = app.update(Message::CreateTab(Profile::default_shell()));
+        app
+    }
+
+    const ZOOM_MOD: Modifiers = Modifiers::CTRL;
+
+    #[test]
+    fn the_wheel_alone_never_changes_the_font_size() {
+        let mut app = zoom_app();
+        let before = app.config.terminal.font_size;
+        let _ = app.update(Message::TerminalWheelScroll(1.0));
+        assert_eq!(app.config.terminal.font_size, before);
+    }
+
+    #[test]
+    fn the_modifier_and_wheel_zoom_in_and_out() {
+        let mut app = zoom_app();
+        let before = app.config.terminal.font_size;
+        let _ = app.update(Message::ModifiersChanged(ZOOM_MOD));
+
+        let _ = app.update(Message::TerminalWheelScroll(1.0));
+        assert_eq!(app.config.terminal.font_size, before + 1.0);
+
+        let _ = app.update(Message::TerminalWheelScroll(-1.0));
+        assert_eq!(app.config.terminal.font_size, before);
+    }
+
+    #[test]
+    fn a_notch_is_one_step_however_far_the_wheel_reports() {
+        let mut app = zoom_app();
+        let before = app.config.terminal.font_size;
+        let _ = app.update(Message::ModifiersChanged(ZOOM_MOD));
+        let _ = app.update(Message::TerminalWheelScroll(9.0));
+        assert_eq!(app.config.terminal.font_size, before + 1.0);
+    }
+
+    #[test]
+    fn zoom_stays_off_when_the_setting_is_disabled() {
+        let mut app = zoom_app();
+        app.config.terminal.wheel_zoom = false;
+        let before = app.config.terminal.font_size;
+        let _ = app.update(Message::ModifiersChanged(ZOOM_MOD));
+        let _ = app.update(Message::TerminalWheelScroll(1.0));
+        assert_eq!(app.config.terminal.font_size, before);
     }
 
     #[test]

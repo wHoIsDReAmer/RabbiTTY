@@ -85,6 +85,14 @@ pub fn view<'a>(
                 config.ui.animations_enabled,
             ),
             setting_row(
+                crate::t!("settings.terminal.wheel_zoom"),
+                toggler(draft.wheel_zoom)
+                    .on_toggle(|a0| Message::Settings(SettingsMessage::WheelZoomToggled(a0)))
+                    .size(18)
+                    .style(accent_toggler_style(palette)),
+                palette,
+            ),
+            setting_row(
                 crate::t!("settings.terminal.blink"),
                 toggler(draft.cursor_blink)
                     .on_toggle(|a0| Message::Settings(SettingsMessage::CursorBlinkToggled(a0)))
