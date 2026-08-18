@@ -110,6 +110,7 @@ visual = "Visual flash"
 sound = "Sound"
 
 [settings.terminal.right_click_action]
+copy_or_paste = "Copy selection, else paste"
 paste = "Paste"
 menu = "Menu"
 none = "None"

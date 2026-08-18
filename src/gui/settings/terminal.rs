@@ -208,6 +208,9 @@ fn bell_mode_label(mode: BellMode) -> &'static str {
 
 fn right_click_action_label(action: RightClickAction) -> &'static str {
     match action {
+        RightClickAction::CopyOrPaste => {
+            crate::t!("settings.terminal.right_click_action.copy_or_paste")
+        }
         RightClickAction::Paste => crate::t!("settings.terminal.right_click_action.paste"),
         RightClickAction::Menu => crate::t!("settings.terminal.right_click_action.menu"),
         RightClickAction::None => crate::t!("settings.terminal.right_click_action.none"),

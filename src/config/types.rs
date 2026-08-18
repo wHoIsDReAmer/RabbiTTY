@@ -75,19 +75,24 @@ impl TabBarPosition {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize, Default)]
 #[serde(rename_all = "snake_case")]
 pub enum RightClickAction {
+    /// Copies the selection when there is one, and pastes otherwise.
     #[default]
+    CopyOrPaste,
     Paste,
     Menu,
     None,
 }
 
 impl RightClickAction {
-    pub const ALL: [Self; 3] = [Self::Paste, Self::Menu, Self::None];
+    pub const ALL: [Self; 4] = [Self::CopyOrPaste, Self::Paste, Self::Menu, Self::None];
 }
 
 impl std::fmt::Display for RightClickAction {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let label = match self {
+            Self::CopyOrPaste => {
+                crate::t!("settings.terminal.right_click_action.copy_or_paste")
+            }
             Self::Paste => crate::t!("settings.terminal.right_click_action.paste"),
             Self::Menu => crate::t!("settings.terminal.right_click_action.menu"),
             Self::None => crate::t!("settings.terminal.right_click_action.none"),
