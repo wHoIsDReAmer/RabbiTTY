@@ -37,7 +37,7 @@ fn main() -> iced::Result {
     .window(iced::window::Settings {
         exit_on_close_request: false,
         size: Size::new(app_config.ui.window_width, app_config.ui.window_height),
-        transparent: true,
+        transparent: app_config.theme.wants_transparent_window(),
         icon: iced::window::icon::from_file_data(APP_ICON_PNG, None).ok(),
 
         #[cfg(target_os = "macos")]

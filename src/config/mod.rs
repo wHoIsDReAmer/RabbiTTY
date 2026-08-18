@@ -89,6 +89,18 @@ pub struct ThemeConfig {
     pub macos_blur_radius: i32,
 }
 
+impl ThemeConfig {
+    /// A transparent window gets no frame stroke from macOS, leaving a black
+    /// hairline, so only ask for one when the background lets anything through.
+    pub fn wants_transparent_window(&self) -> bool {
+        self.background_opacity < 1.0
+    }
+
+    pub fn blur_is_visible(&self) -> bool {
+        self.blur_enabled && self.wants_transparent_window()
+    }
+}
+
 impl Default for AppConfig {
     fn default() -> Self {
         let (cell_width, cell_height) = default_cell_metrics();
@@ -325,6 +337,42 @@ impl AppConfig {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn an_opaque_unblurred_window_is_not_asked_to_be_transparent() {
+        let mut theme = AppConfig::default().theme;
+        theme.background_opacity = 1.0;
+        theme.blur_enabled = false;
+        assert!(!theme.wants_transparent_window());
+    }
+
+    #[test]
+    fn a_translucent_background_asks_for_a_transparent_window() {
+        let mut theme = AppConfig::default().theme;
+        theme.background_opacity = 0.9;
+        theme.blur_enabled = false;
+        assert!(theme.wants_transparent_window());
+    }
+
+    #[test]
+    fn blur_behind_an_opaque_background_buys_nothing_and_is_skipped() {
+        let mut theme = AppConfig::default().theme;
+        theme.background_opacity = 1.0;
+        theme.blur_enabled = true;
+        assert!(!theme.wants_transparent_window());
+        assert!(!theme.blur_is_visible());
+    }
+
+    #[test]
+    fn blur_applies_once_the_background_lets_it_through() {
+        let mut theme = AppConfig::default().theme;
+        theme.background_opacity = 0.7;
+        theme.blur_enabled = true;
+        assert!(theme.blur_is_visible());
+
+        theme.blur_enabled = false;
+        assert!(!theme.blur_is_visible());
+    }
 
     #[test]
     fn terminal_bell_defaults_to_sound() {

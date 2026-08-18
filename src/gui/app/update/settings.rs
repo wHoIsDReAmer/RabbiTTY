@@ -20,7 +20,13 @@ impl App {
             let radius_changed = updates
                 .macos_blur_radius
                 .is_some_and(|v| v != self.config.theme.macos_blur_radius);
-            if blur_toggled || radius_changed {
+            // Transparency is fixed at window creation.
+            let opacity_changed = updates.background_opacity.is_some_and(|v| {
+                let mut after = self.config.theme.clone();
+                after.background_opacity = v;
+                after.wants_transparent_window() != self.config.theme.wants_transparent_window()
+            });
+            if blur_toggled || radius_changed || opacity_changed {
                 self.show_restart_confirm = true;
                 self.pending_settings_updates = Some(updates);
                 self.pending_save_on_restart = save;

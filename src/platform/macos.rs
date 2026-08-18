@@ -68,7 +68,7 @@ fn apply_style_inner(handle: WindowHandle<'_>, theme: &ThemeConfig) {
             - NSWindowCollectionBehavior::FullScreenAllowsTiling,
     );
 
-    if !theme.blur_enabled {
+    if !theme.blur_is_visible() {
         return;
     }
 
