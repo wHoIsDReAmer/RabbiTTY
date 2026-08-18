@@ -20,8 +20,7 @@ impl App {
             let radius_changed = updates
                 .macos_blur_radius
                 .is_some_and(|v| v != self.config.theme.macos_blur_radius);
-            // Transparency is fixed when the window is created, so crossing
-            // the threshold needs a new one.
+            // Transparency is fixed at window creation.
             let opacity_changed = updates.background_opacity.is_some_and(|v| {
                 let mut after = self.config.theme.clone();
                 after.background_opacity = v;

@@ -90,17 +90,12 @@ pub struct ThemeConfig {
 }
 
 impl ThemeConfig {
-    /// macOS draws a window frame as an outer dark stroke over an inner light
-    /// one, and skips the light half on a transparent window, which leaves a
-    /// black hairline. So only ask for one when the look needs it.
-    ///
-    /// Blur alone is not a reason: it sits behind the background, so an opaque
-    /// background hides it entirely.
+    /// A transparent window gets no frame stroke from macOS, leaving a black
+    /// hairline, so only ask for one when the background lets anything through.
     pub fn wants_transparent_window(&self) -> bool {
         self.background_opacity < 1.0
     }
 
-    /// Blur is only visible through a translucent background.
     pub fn blur_is_visible(&self) -> bool {
         self.blur_enabled && self.wants_transparent_window()
     }
