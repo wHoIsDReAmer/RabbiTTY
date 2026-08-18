@@ -28,7 +28,6 @@ pub struct TerminalEngine {
     writer: Arc<Mutex<Box<dyn Write + Send>>>,
 }
 
-/// What the program asked the title to become.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum TitleChange {
     Set(String),
@@ -38,8 +37,7 @@ pub enum TitleChange {
 pub type ClipboardFormatter = Arc<dyn Fn(&str) -> String + Send + Sync>;
 type ColorFormatter = Arc<dyn Fn(Rgb) -> String + Send + Sync>;
 
-/// OSC work the pty thread cannot finish on its own: colour queries need the
-/// term's palette, and clipboard access belongs to the gui thread.
+/// OSC work the pty thread cannot finish on its own.
 #[derive(Default)]
 pub(super) struct OscPending {
     clipboard_write: Option<String>,
@@ -56,8 +54,7 @@ impl TerminalEngine {
     ) -> Self {
         let config = TermConfig {
             scrolling_history: scrollback,
-            // Both directions are let through here and refused later against
-            // our own config, so toggling the setting needs no new terminal.
+            // Refused later against our own config, which can change freely.
             osc52: Osc52::CopyPaste,
             ..Default::default()
         };
@@ -110,8 +107,7 @@ impl TerminalEngine {
         self.cache_dirty.set(true);
     }
 
-    /// A colour query is answered from the live palette so an earlier OSC 4
-    /// override wins over the theme, matching what the screen actually shows.
+    /// Answered from the live palette, so an OSC 4 override wins over the theme.
     fn answer_color_requests(&mut self) {
         let pending = match self.osc.lock() {
             Ok(mut guard) if !guard.colors.is_empty() => std::mem::take(&mut guard.colors),
@@ -150,7 +146,6 @@ impl TerminalEngine {
         self.osc.lock().ok()?.clipboard_read.take()
     }
 
-    /// Answers a pending OSC 52 read with whatever the gui handed back.
     pub fn reply_clipboard(&self, format: &ClipboardFormatter, text: &str) {
         if let Ok(mut guard) = self.writer.lock() {
             let _ = guard.write_all(format(text).as_bytes());
@@ -428,8 +423,7 @@ impl EventListener for PtyEventProxy {
             Event::Bell => {
                 self.bell_pending.store(true, Ordering::Relaxed);
             }
-            // The last write wins: a program that sets the clipboard twice
-            // before the gui looks only meant the second one.
+            // Last write wins.
             Event::ClipboardStore(_, text) => {
                 if let Ok(mut guard) = self.osc.lock() {
                     guard.clipboard_write = Some(text);
@@ -463,8 +457,7 @@ mod tests {
         )
     }
 
-    /// Shares the buffer the engine writes replies into, so a test can read
-    /// what the terminal answered the program.
+    /// Shares the engine's reply buffer so a test can read what it answered.
     #[derive(Clone, Default)]
     struct Replies(Arc<Mutex<Vec<u8>>>);
 

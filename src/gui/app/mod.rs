@@ -340,9 +340,8 @@ pub struct App {
     pub(super) last_key_at: Option<std::time::Instant>,
     /// Latest modifier state, needed by the wheel which carries none.
     pub(super) modifiers: iced::keyboard::Modifiers,
-    /// Clipboard text an OSC 52 write asked us to store.
     pub(super) osc_clipboard_write: Option<String>,
-    /// Pane awaiting an OSC 52 read, with the formatter for its reply.
+    /// Pane id awaiting an OSC 52 read, with the formatter for its reply.
     pub(super) osc_clipboard_read: Option<(u64, crate::terminal::ClipboardFormatter)>,
     /// Start time of an active visual bell flash, if any.
     pub(super) bell_flash_start: Option<std::time::Instant>,
@@ -825,8 +824,7 @@ mod tests {
 
     const ZOOM_MOD: Modifiers = Modifiers::CTRL;
 
-    /// Goes straight to the handler: `update` would drain the pending
-    /// clipboard into a task before the test could look at it.
+    /// `update` would drain the pending clipboard before the test sees it.
     fn feed(app: &mut App, bytes: &[u8]) {
         let tab_id = app.tabs[0].panes[0].id;
         app.handle_pty_event(crate::session::OutputEvent::Data {

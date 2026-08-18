@@ -48,8 +48,7 @@ impl App {
                             crate::plugin::CwdEvent { pane: tab_id, path },
                         ));
                     }
-                    // Drained either way so a refused request cannot pile up,
-                    // then dropped unless the config allows it.
+                    // Drained either way so a refused request cannot pile up.
                     if self.config.terminal.osc52_write {
                         self.osc_clipboard_write = clipboard_write;
                     }

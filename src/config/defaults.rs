@@ -115,10 +115,9 @@ pub const DEFAULT_BOLD_IS_BRIGHT: bool = false;
 
 pub const DEFAULT_WHEEL_ZOOM: bool = true;
 
-/// OSC 52 write lets a remote program replace the clipboard.
 pub const DEFAULT_OSC52_WRITE: bool = true;
-/// OSC 52 read hands the clipboard to a remote program, so it stays off until
-/// asked for, as in xterm.
+/// Reading hands the clipboard to a remote program, so it is off until asked
+/// for, as in xterm.
 pub const DEFAULT_OSC52_READ: bool = false;
 
 /// 1.0 disables it, as in iTerm2.
