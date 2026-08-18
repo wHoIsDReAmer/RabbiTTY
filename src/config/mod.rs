@@ -89,6 +89,15 @@ pub struct ThemeConfig {
     pub macos_blur_radius: i32,
 }
 
+impl ThemeConfig {
+    /// macOS draws a window frame as an outer dark stroke over an inner light
+    /// one, and skips the light half on a transparent window, which leaves a
+    /// black hairline. So only ask for one when the look needs it.
+    pub fn wants_transparent_window(&self) -> bool {
+        self.background_opacity < 1.0 || self.blur_enabled
+    }
+}
+
 impl Default for AppConfig {
     fn default() -> Self {
         let (cell_width, cell_height) = default_cell_metrics();
@@ -325,6 +334,29 @@ impl AppConfig {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn an_opaque_unblurred_window_is_not_asked_to_be_transparent() {
+        let mut theme = AppConfig::default().theme;
+        theme.background_opacity = 1.0;
+        theme.blur_enabled = false;
+        assert!(!theme.wants_transparent_window());
+    }
+
+    #[test]
+    fn translucency_or_blur_each_ask_for_a_transparent_window() {
+        let base = AppConfig::default().theme;
+
+        let mut translucent = base.clone();
+        translucent.background_opacity = 0.9;
+        translucent.blur_enabled = false;
+        assert!(translucent.wants_transparent_window());
+
+        let mut blurred = base;
+        blurred.background_opacity = 1.0;
+        blurred.blur_enabled = true;
+        assert!(blurred.wants_transparent_window());
+    }
 
     #[test]
     fn terminal_bell_defaults_to_sound() {
