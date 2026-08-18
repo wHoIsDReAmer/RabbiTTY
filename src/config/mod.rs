@@ -93,8 +93,16 @@ impl ThemeConfig {
     /// macOS draws a window frame as an outer dark stroke over an inner light
     /// one, and skips the light half on a transparent window, which leaves a
     /// black hairline. So only ask for one when the look needs it.
+    ///
+    /// Blur alone is not a reason: it sits behind the background, so an opaque
+    /// background hides it entirely.
     pub fn wants_transparent_window(&self) -> bool {
-        self.background_opacity < 1.0 || self.blur_enabled
+        self.background_opacity < 1.0
+    }
+
+    /// Blur is only visible through a translucent background.
+    pub fn blur_is_visible(&self) -> bool {
+        self.blur_enabled && self.wants_transparent_window()
     }
 }
 
@@ -344,18 +352,31 @@ mod tests {
     }
 
     #[test]
-    fn translucency_or_blur_each_ask_for_a_transparent_window() {
-        let base = AppConfig::default().theme;
+    fn a_translucent_background_asks_for_a_transparent_window() {
+        let mut theme = AppConfig::default().theme;
+        theme.background_opacity = 0.9;
+        theme.blur_enabled = false;
+        assert!(theme.wants_transparent_window());
+    }
 
-        let mut translucent = base.clone();
-        translucent.background_opacity = 0.9;
-        translucent.blur_enabled = false;
-        assert!(translucent.wants_transparent_window());
+    #[test]
+    fn blur_behind_an_opaque_background_buys_nothing_and_is_skipped() {
+        let mut theme = AppConfig::default().theme;
+        theme.background_opacity = 1.0;
+        theme.blur_enabled = true;
+        assert!(!theme.wants_transparent_window());
+        assert!(!theme.blur_is_visible());
+    }
 
-        let mut blurred = base;
-        blurred.background_opacity = 1.0;
-        blurred.blur_enabled = true;
-        assert!(blurred.wants_transparent_window());
+    #[test]
+    fn blur_applies_once_the_background_lets_it_through() {
+        let mut theme = AppConfig::default().theme;
+        theme.background_opacity = 0.7;
+        theme.blur_enabled = true;
+        assert!(theme.blur_is_visible());
+
+        theme.blur_enabled = false;
+        assert!(!theme.blur_is_visible());
     }
 
     #[test]
