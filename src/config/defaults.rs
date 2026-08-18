@@ -115,6 +115,11 @@ pub const DEFAULT_BOLD_IS_BRIGHT: bool = false;
 
 pub const DEFAULT_WHEEL_ZOOM: bool = true;
 
+pub const DEFAULT_OSC52_WRITE: bool = true;
+/// Reading hands the clipboard to a remote program, so it is off until asked
+/// for, as in xterm.
+pub const DEFAULT_OSC52_READ: bool = false;
+
 /// 1.0 disables it, as in iTerm2.
 pub const DEFAULT_MINIMUM_CONTRAST: f32 = 1.0;
 pub const DEFAULT_ANIMATIONS_ENABLED: bool = true;

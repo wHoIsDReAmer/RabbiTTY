@@ -2,7 +2,9 @@ use crate::config::SshProfile;
 use crate::gui::pane::{Axis, Direction, PaneNode, neighbour};
 use crate::gui::sftp::SftpDrawerState;
 use crate::session::{LaunchSpec, OutputEvent, Session, SessionError};
-use crate::terminal::{CellVisual, Selection, TerminalEngine, TerminalSize, TerminalTheme};
+use crate::terminal::{
+    CellVisual, Selection, TerminalEngine, TerminalSize, TerminalTheme, TitleChange,
+};
 use iced::futures::channel::mpsc;
 use iced::keyboard::{Key, Modifiers, key::Named};
 use serde::{Deserialize, Serialize};
@@ -118,6 +120,18 @@ impl Pane {
         self.pending_title.take()
     }
 
+    pub fn take_clipboard_write(&self) -> Option<String> {
+        self.engine.take_clipboard_write()
+    }
+
+    pub fn take_clipboard_read(&self) -> Option<crate::terminal::ClipboardFormatter> {
+        self.engine.take_clipboard_read()
+    }
+
+    pub fn reply_clipboard(&self, format: &crate::terminal::ClipboardFormatter, text: &str) {
+        self.engine.reply_clipboard(format, text);
+    }
+
     pub fn take_cwd_change(&mut self) -> Option<String> {
         self.lines.take_cwd()
     }
@@ -133,11 +147,15 @@ impl Pane {
             });
         }
         self.engine.feed_bytes(bytes);
-        if let Some(new_title) = self.engine.take_title()
-            && new_title != self.title
-        {
-            self.title = new_title.clone();
-            self.pending_title = Some(new_title);
+        if let Some(change) = self.engine.take_title() {
+            let new_title = match change {
+                TitleChange::Set(title) => title,
+                TitleChange::Reset => self.profile.display_name(),
+            };
+            if new_title != self.title {
+                self.title = new_title.clone();
+                self.pending_title = Some(new_title);
+            }
         }
         self.engine.take_bell()
     }
