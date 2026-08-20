@@ -110,6 +110,7 @@ visual = "시각적 플래시"
 sound = "소리"
 
 [settings.terminal.right_click_action]
+copy_or_paste = "선택 있으면 복사, 없으면 붙여넣기"
 paste = "붙여넣기"
 menu = "메뉴"
 none = "없음"

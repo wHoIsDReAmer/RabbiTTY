@@ -833,6 +833,59 @@ mod tests {
         });
     }
 
+    fn select_first_cell(app: &mut App) {
+        let pane = app.focused_pane_mut().expect("no pane");
+        pane.selection = Some(crate::terminal::Selection {
+            start: crate::terminal::SelectionPoint { row: 0, col: 0 },
+            end: crate::terminal::SelectionPoint { row: 0, col: 0 },
+            anchor_offset: 0,
+        });
+    }
+
+    fn right_click(app: &mut App) {
+        let pane = app.tabs[0].panes[0].id;
+        let _ = app.update(Message::TerminalRightClick(pane));
+    }
+
+    #[test]
+    fn a_right_click_on_a_selection_copies_and_clears_it() {
+        let mut app = zoom_app();
+        app.config.terminal.right_click_action = crate::config::RightClickAction::CopyOrPaste;
+        // A blank cell yields no text, and then there is nothing to copy.
+        feed(&mut app, b"hi");
+        select_first_cell(&mut app);
+
+        right_click(&mut app);
+        assert!(
+            app.focused_pane().unwrap().selection.is_none(),
+            "selection survived the copy"
+        );
+    }
+
+    #[test]
+    fn a_right_click_with_nothing_selected_leaves_the_selection_alone() {
+        let mut app = zoom_app();
+        app.config.terminal.right_click_action = crate::config::RightClickAction::CopyOrPaste;
+        assert!(app.focused_pane().unwrap().selection.is_none());
+
+        right_click(&mut app);
+        assert!(app.focused_pane().unwrap().selection.is_none());
+    }
+
+    #[test]
+    fn the_plain_paste_action_keeps_the_selection() {
+        let mut app = zoom_app();
+        app.config.terminal.right_click_action = crate::config::RightClickAction::Paste;
+        feed(&mut app, b"hi");
+        select_first_cell(&mut app);
+
+        right_click(&mut app);
+        assert!(
+            app.focused_pane().unwrap().selection.is_some(),
+            "paste should not consume the selection"
+        );
+    }
+
     #[test]
     fn osc52_write_reaches_the_clipboard_only_when_allowed() {
         let mut app = zoom_app();

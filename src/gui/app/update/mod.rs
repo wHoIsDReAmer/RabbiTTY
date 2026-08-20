@@ -228,6 +228,16 @@ impl App {
                 self.focus_pane(pane);
                 use crate::config::RightClickAction;
                 match self.config.terminal.right_click_action {
+                    RightClickAction::CopyOrPaste => {
+                        if let Some(pane) = self.focused_pane_mut()
+                            && let Some(text) = pane.selected_text()
+                        {
+                            pane.clear_selection();
+                            return iced::clipboard::write(text);
+                        }
+                        return iced::clipboard::read()
+                            .map(|content| Message::PasteClipboard(content.unwrap_or_default()));
+                    }
                     RightClickAction::Paste => {
                         return iced::clipboard::read()
                             .map(|content| Message::PasteClipboard(content.unwrap_or_default()));
