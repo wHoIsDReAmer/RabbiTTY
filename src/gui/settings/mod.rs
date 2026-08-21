@@ -54,6 +54,7 @@ pub enum SettingsField {
     ThemeBackground,
     ThemeCursor,
     ThemeBackgroundOpacity,
+    TerminalMinimumContrast,
     #[allow(dead_code)]
     ThemeMacosBlurRadius,
     Shortcut(crate::config::ShortcutId),
@@ -373,6 +374,7 @@ pub struct SettingsDraft {
     pub osc52_write: bool,
     pub osc52_read: bool,
     pub bold_is_bright: bool,
+    pub minimum_contrast: String,
     pub bell_mode: BellMode,
     pub right_click_action: RightClickAction,
     pub color_scheme: String,
@@ -418,6 +420,7 @@ impl SettingsDraft {
             osc52_write: config.terminal.osc52_write,
             osc52_read: config.terminal.osc52_read,
             bold_is_bright: config.terminal.bold_is_bright,
+            minimum_contrast: format!("{:.1}", config.terminal.minimum_contrast),
             bell_mode: config.terminal.bell_mode,
             right_click_action: config.terminal.right_click_action,
             color_scheme: config.theme.color_scheme.clone(),
@@ -616,6 +619,7 @@ impl SettingsDraft {
             SettingsField::ThemeBackground => self.background = value,
             SettingsField::ThemeCursor => self.cursor = value,
             SettingsField::ThemeBackgroundOpacity => self.background_opacity = value,
+            SettingsField::TerminalMinimumContrast => self.minimum_contrast = value,
             SettingsField::Shortcut(id) => {
                 self.shortcuts.insert(id, value);
             }
@@ -650,6 +654,7 @@ impl SettingsDraft {
             terminal_osc52_write: Some(self.osc52_write),
             terminal_osc52_read: Some(self.osc52_read),
             terminal_bold_is_bright: Some(self.bold_is_bright),
+            terminal_minimum_contrast: parse_f32(&self.minimum_contrast),
             terminal_bell_mode: Some(self.bell_mode),
             terminal_right_click_action: Some(self.right_click_action),
             color_scheme: Some(self.color_scheme.clone()),
@@ -1081,6 +1086,32 @@ mod tests {
 
     fn ssh_draft(profile: &SshProfile) -> ProfileDraft {
         ProfileDraft::from_profile(&Profile::ssh(profile.clone()))
+    }
+
+    #[test]
+    fn the_contrast_setting_survives_a_round_trip_through_the_draft() {
+        let mut config = AppConfig::default();
+        config.terminal.minimum_contrast = 4.5;
+
+        let draft = SettingsDraft::from_config(&config);
+        assert_eq!(draft.minimum_contrast, "4.5");
+
+        let updates = draft.to_updates();
+        assert_eq!(updates.terminal_minimum_contrast, Some(4.5));
+
+        let mut applied = AppConfig::default();
+        applied.apply_updates(updates);
+        assert_eq!(applied.terminal.minimum_contrast, 4.5);
+    }
+
+    #[test]
+    fn an_out_of_range_contrast_is_clamped_rather_than_taken() {
+        let mut config = AppConfig::default();
+        let mut draft = SettingsDraft::from_config(&config);
+        draft.minimum_contrast = "999".into();
+
+        config.apply_updates(draft.to_updates());
+        assert_eq!(config.terminal.minimum_contrast, 21.0);
     }
 
     #[test]

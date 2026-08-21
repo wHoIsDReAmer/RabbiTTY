@@ -32,6 +32,7 @@ pub struct AppConfigUpdates {
     pub terminal_cursor_shape: Option<CursorShape>,
     pub terminal_cursor_blink: Option<bool>,
     pub terminal_bold_is_bright: Option<bool>,
+    pub terminal_minimum_contrast: Option<f32>,
     pub terminal_wheel_zoom: Option<bool>,
     pub terminal_osc52_write: Option<bool>,
     pub terminal_osc52_read: Option<bool>,
@@ -106,6 +107,9 @@ impl AppConfig {
         }
         if let Some(enabled) = updates.terminal_osc52_read {
             self.terminal.osc52_read = enabled;
+        }
+        if let Some(ratio) = updates.terminal_minimum_contrast {
+            self.terminal.minimum_contrast = ratio.clamp(1.0, 21.0);
         }
         if let Some(enabled) = updates.terminal_bold_is_bright {
             self.terminal.bold_is_bright = enabled;
