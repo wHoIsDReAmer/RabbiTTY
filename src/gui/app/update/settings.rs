@@ -55,6 +55,7 @@ impl App {
             || updates.cursor.is_some()
             || updates.ansi_colors.is_some()
             || updates.terminal_bold_is_bright.is_some()
+            || updates.terminal_minimum_contrast.is_some()
             || updates.background_opacity.is_some()
             || updates.blur_enabled.is_some()
             || updates.macos_blur_radius.is_some();
