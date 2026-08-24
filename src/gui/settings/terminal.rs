@@ -125,14 +125,26 @@ pub fn view<'a>(
 
     let colors_section = section(
         crate::t!("settings.terminal.colors_section"),
-        setting_row(
-            crate::t!("settings.terminal.bold_is_bright"),
-            toggler(draft.bold_is_bright)
-                .on_toggle(|a0| Message::Settings(SettingsMessage::BoldIsBrightToggled(a0)))
-                .size(18)
-                .style(accent_toggler_style(palette)),
-            palette,
-        ),
+        column(vec![
+            setting_row(
+                crate::t!("settings.terminal.bold_is_bright"),
+                toggler(draft.bold_is_bright)
+                    .on_toggle(|a0| Message::Settings(SettingsMessage::BoldIsBrightToggled(a0)))
+                    .size(18)
+                    .style(accent_toggler_style(palette)),
+                palette,
+            ),
+            input_row_with_suffix(
+                crate::t!("settings.terminal.minimum_contrast"),
+                &draft.minimum_contrast,
+                SettingsField::TerminalMinimumContrast,
+                "1.0 ~ 21.0",
+                palette,
+            ),
+        ])
+        .spacing(ROW_SPACING)
+        .width(Length::Fill)
+        .into(),
         palette,
     );
 
