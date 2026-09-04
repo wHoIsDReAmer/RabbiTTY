@@ -870,7 +870,10 @@ impl Primitive for TerminalPrimitive {
             && cell_size == pipeline.last_cell_size
             && (font_size - pipeline.last_font_size).abs() < 0.01
             && self.cursor_shape == pipeline.last_cursor_shape
-            && self.background_opacity == pipeline.last_background_opacity;
+            && self.background_opacity == pipeline.last_background_opacity
+            // A full glyph atlas is recycled at a frame boundary; damage
+            // tracking would starve it.
+            && !pipeline.text.overflowed();
 
         if unchanged {
             return;
@@ -892,6 +895,7 @@ impl Primitive for TerminalPrimitive {
             .bg
             .update_uniforms(queue, cell_size, view, [0.0, 0.0]);
 
+        pipeline.text.recycle_atlas();
         pipeline.bg.begin();
         pipeline.text.begin();
 
