@@ -1538,6 +1538,83 @@ fn a_stalled_source_is_abandoned_at_the_deadline() {
     );
 }
 
+/// The fixture stalls inside `list-profiles` when `slow` is set, which is the
+/// only way to hold a guest past a deadline where no epoch check can reach it.
+fn slow_registry(root: &TempRoot) -> PluginRegistry {
+    let mut settings = crate::config::plugins::PluginsConfig::new();
+    settings.insert(
+        "alpha".to_string(),
+        crate::config::plugins::PluginSettings {
+            enabled: true,
+            consented: Vec::new(),
+            settings: [("slow".to_string(), "true".to_string())]
+                .into_iter()
+                .collect(),
+        },
+    );
+    registry_with(root, settings)
+}
+
+#[test]
+fn a_guest_that_never_answers_is_timed_out_and_retired() {
+    let root = TempRoot::new("worker-timeout");
+    if !install(&root, "alpha") {
+        return;
+    }
+
+    let mut registry = slow_registry(&root);
+    registry.load_all();
+
+    let started = std::time::Instant::now();
+    let plugin = registry.get_mut("alpha").expect("ready");
+    plugin.set_profile_deadline(std::time::Duration::from_millis(200));
+    let outcome = plugin.list_profiles();
+    let waited = started.elapsed();
+
+    assert!(
+        matches!(outcome, Err(PluginError::TimedOut(_))),
+        "a guest asleep in a host call has to be given up on, got {outcome:?}"
+    );
+    assert!(
+        waited < std::time::Duration::from_secs(2),
+        "the caller returned after {waited:?}, so it was still blocked on the guest"
+    );
+
+    let retired = registry.retire_failed();
+    assert_eq!(retired.len(), 1);
+    assert_eq!(retired[0].0, "alpha");
+    assert!(matches!(registry.status("alpha"), Some(Status::Retired(_))));
+}
+
+#[test]
+fn a_call_after_a_timeout_reports_the_latched_failure_instead_of_running() {
+    let root = TempRoot::new("worker-timeout-latched");
+    if !install(&root, "alpha") {
+        return;
+    }
+
+    let mut registry = slow_registry(&root);
+    registry.load_all();
+
+    let plugin = registry.get_mut("alpha").expect("ready");
+    plugin.set_profile_deadline(std::time::Duration::from_millis(200));
+    plugin.drain_requests();
+    plugin
+        .list_profiles()
+        .expect_err("the source stalls well past its deadline");
+
+    let later = plugin.run_command("hello.hi");
+
+    assert!(
+        matches!(later, Err(PluginError::Retired(_))),
+        "a missed deadline latches like a trap, got {later:?}"
+    );
+    assert!(
+        plugin.drain_requests().is_empty(),
+        "the abandoned call still owns the instance, so nothing may reach the guest"
+    );
+}
+
 #[test]
 fn the_declared_abi_version_matches_the_wit_package() {
     let wit = std::fs::read_to_string(Path::new(env!("CARGO_MANIFEST_DIR")).join("wit/world.wit"))
