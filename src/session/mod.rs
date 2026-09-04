@@ -2,7 +2,7 @@ pub mod history;
 mod transport;
 
 use iced::futures::channel::mpsc;
-use std::io::Write;
+use std::io::{ErrorKind, Write};
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
@@ -69,9 +69,7 @@ impl Session {
         let mut guard = writer
             .lock()
             .map_err(|err| SessionError::Io(format!("writer lock failed: {err}")))?;
-        guard
-            .write_all(bytes)
-            .map_err(|err| SessionError::Io(format!("write failed: {err}")))
+        write_all_retrying(&mut **guard, bytes)
     }
 
     pub fn writer(&self) -> Arc<Mutex<Box<dyn Write + Send>>> {
@@ -85,6 +83,46 @@ impl Session {
     pub fn resize(&mut self, rows: u16, cols: u16) -> Result<(), SessionError> {
         self.backend.resize(rows, cols)
     }
+}
+
+/// The local pty master is opened `O_NONBLOCK` and the writer is a `dup` that
+/// shares those flags, so a paste larger than the tty input buffer returns
+/// after a partial write. `write_all` would report that as an error the callers
+/// discard, silently losing the tail of the user's input. Retry while the child
+/// drains, but give up rather than freezing the UI on a child that never reads.
+const WRITE_RETRY_BUDGET: std::time::Duration = std::time::Duration::from_millis(250);
+
+fn write_all_retrying<W: Write + ?Sized>(writer: &mut W, bytes: &[u8]) -> Result<(), SessionError> {
+    let deadline = std::time::Instant::now() + WRITE_RETRY_BUDGET;
+    let mut backoff = std::time::Duration::from_micros(100);
+    let mut written = 0;
+
+    while written < bytes.len() {
+        match writer.write(&bytes[written..]) {
+            Ok(0) => {
+                return Err(SessionError::Io(format!(
+                    "write accepted {written} of {} bytes and then stopped",
+                    bytes.len()
+                )));
+            }
+            Ok(count) => written += count,
+            Err(err) if err.kind() == ErrorKind::Interrupted => {}
+            Err(err) if err.kind() == ErrorKind::WouldBlock => {
+                if std::time::Instant::now() >= deadline {
+                    return Err(SessionError::Io(format!(
+                        "write blocked with {} of {} bytes unsent",
+                        bytes.len() - written,
+                        bytes.len()
+                    )));
+                }
+                std::thread::sleep(backoff);
+                backoff = (backoff * 2).min(std::time::Duration::from_millis(2));
+            }
+            Err(err) => return Err(SessionError::Io(format!("write failed: {err}"))),
+        }
+    }
+
+    Ok(())
 }
 
 pub(super) fn send_output_event(
@@ -178,5 +216,63 @@ mod tests {
             ),
             Some(PathBuf::from(r"C:\Users\rabbitty"))
         );
+    }
+
+    /// Accepts `chunk` bytes per call and reports `WouldBlock` in between, the
+    /// way a nonblocking pty master behaves while the child drains its input.
+    struct StutteringWriter {
+        accepted: Vec<u8>,
+        chunk: usize,
+        block_next: bool,
+    }
+
+    impl Write for StutteringWriter {
+        fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+            if self.block_next {
+                self.block_next = false;
+                return Err(std::io::Error::from(ErrorKind::WouldBlock));
+            }
+            self.block_next = true;
+            let take = self.chunk.min(buf.len());
+            self.accepted.extend_from_slice(&buf[..take]);
+            Ok(take)
+        }
+
+        fn flush(&mut self) -> std::io::Result<()> {
+            Ok(())
+        }
+    }
+
+    #[test]
+    fn a_paste_larger_than_the_tty_buffer_is_written_in_full() {
+        let payload: Vec<u8> = (0..8192u32).map(|i| (i % 251) as u8).collect();
+        let mut writer = StutteringWriter {
+            accepted: Vec::new(),
+            chunk: 4096,
+            block_next: false,
+        };
+
+        write_all_retrying(&mut writer, &payload).expect("a draining pty must not lose bytes");
+
+        assert_eq!(writer.accepted, payload);
+    }
+
+    #[test]
+    fn a_child_that_never_reads_is_reported_instead_of_losing_input_silently() {
+        struct Stalled;
+        impl Write for Stalled {
+            fn write(&mut self, _buf: &[u8]) -> std::io::Result<usize> {
+                Err(std::io::Error::from(ErrorKind::WouldBlock))
+            }
+            fn flush(&mut self) -> std::io::Result<()> {
+                Ok(())
+            }
+        }
+
+        let err = write_all_retrying(&mut Stalled, b"hello").expect_err("must not report success");
+        let SessionError::Io(message) = err else {
+            panic!("expected an io error");
+        };
+        assert!(message.contains("5 of 5 bytes unsent"), "{message}");
     }
 }
