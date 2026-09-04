@@ -164,6 +164,10 @@ impl Pane {
         self.engine.render_cells()
     }
 
+    pub fn render_cells_versioned(&self) -> (std::sync::Arc<Vec<CellVisual>>, u64) {
+        self.engine.render_cells_versioned()
+    }
+
     pub fn set_theme(&mut self, theme: TerminalTheme) {
         self.engine.set_theme(theme);
     }
