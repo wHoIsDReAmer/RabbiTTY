@@ -2,13 +2,20 @@ name: Compile Check (Build & Test)
 
 on:
   pull_request:
+  push:
+    branches: [main]
 
 env:
   CARGO_TERM_COLOR: always
 
+permissions:
+  contents: read
+
 # Cancel superseded runs so stale jobs stop holding the scarce macOS slot.
+# The event name is part of the key so a pull request and a push to the same
+# branch never cancel each other.
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
+  group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
@@ -32,11 +39,11 @@ jobs:
         with:
           key: ${{ matrix.os }}
 
-      - run: cargo build
+      - run: cargo build --locked
 
       # The plugin tests drive a real component and skip themselves when it is
       # missing, so the guest has to be built or they pass without running.
       - run: rustup target add wasm32-wasip2
-      - run: cargo build -p hello --target wasm32-wasip2
+      - run: cargo build --locked -p hello --target wasm32-wasip2
 
-      - run: cargo test --workspace
+      - run: cargo test --locked --workspace
