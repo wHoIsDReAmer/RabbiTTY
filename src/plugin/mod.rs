@@ -16,7 +16,7 @@ pub(crate) use self::rabbitty::plugin::types::{
     Capability, CwdEvent, MatchEvent, MenuContext, MenuEvent, MenuItem, OutputPattern,
     ProfileTarget, SelectionEvent, SettingEvent, SettingField, SettingKind, StatusItem, TitleEvent,
 };
-pub use host::{PLUGIN_ABI_VERSION, PluginError, PluginHost};
+pub use host::{PLUGIN_ABI_VERSION, PROFILE_DEADLINE, PluginError, PluginHost};
 pub use lines::LineReader;
 pub use matcher::span_at;
 pub use policy::{

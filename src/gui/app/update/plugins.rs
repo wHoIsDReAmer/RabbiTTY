@@ -1,10 +1,8 @@
 use super::super::{App, Message};
 use crate::gui::settings::SettingsCategory;
 use crate::gui::settings::plugins::{PluginPermission, PluginState};
-use crate::plugin::{Event, PluginRequest};
+use crate::plugin::{Event, PROFILE_DEADLINE, PluginRequest};
 use iced::Task;
-
-const PROFILE_DEADLINE: std::time::Duration = std::time::Duration::from_secs(5);
 
 impl App {
     pub(in crate::gui) fn dispatch_plugin_event(&mut self, event: Event) {
