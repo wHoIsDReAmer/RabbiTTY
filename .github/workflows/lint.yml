@@ -2,12 +2,19 @@ name: Lint (clippy)
 
 on:
   pull_request:
+  push:
+    branches: [main]
 
 env:
   CARGO_TERM_COLOR: always
 
+permissions:
+  contents: read
+
+# The event name is part of the key so a pull request and a push to the same
+# branch never cancel each other.
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
+  group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
