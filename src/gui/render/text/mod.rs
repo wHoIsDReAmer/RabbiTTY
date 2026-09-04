@@ -68,6 +68,7 @@ pub(super) struct TextPipelineData {
     instance_capacity: usize,
     instance_len: usize,
     requested_font_selection: Option<String>,
+    atlas_overflow: bool,
 }
 
 impl TextPipelineData {
@@ -257,6 +258,7 @@ impl TextPipelineData {
             instance_capacity: 64,
             instance_len: 0,
             requested_font_selection: None,
+            atlas_overflow: false,
         }
     }
 
@@ -511,6 +513,8 @@ impl TextPipelineData {
         self.glyphs.clear();
         self.synthetic.clear();
         self.atlas.packer.reset(self.atlas.size);
+        // A fresh packer and empty caches satisfy any pending recycle request.
+        self.atlas_overflow = false;
     }
 
     fn set_font(&mut self, device: &wgpu::Device, font: FontArc) {
@@ -533,6 +537,7 @@ impl TextPipelineData {
         self.glyphs.clear();
         self.synthetic.clear();
         self.atlas.packer.reset(size);
+        self.atlas_overflow = false;
         self.uniform_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("terminal.text.bind_group"),
             layout: &self.bind_group_layout,
@@ -553,6 +558,30 @@ impl TextPipelineData {
         });
     }
 
+    pub(super) fn overflowed(&self) -> bool {
+        self.atlas_overflow
+    }
+
+    // Deferred recovery for a full atlas. The shelf packer cannot free single
+    // slots and repacking mid-frame would invalidate UVs of instances already
+    // emitted, so the only way back is to drop every cached glyph at a frame
+    // boundary and re-rasterize on demand. The GPU texture is kept: nothing
+    // references the stale texels once both caches are empty.
+    pub(super) fn recycle_atlas(&mut self) {
+        if !self.atlas_overflow {
+            return;
+        }
+        self.atlas_overflow = false;
+        self.glyphs.clear();
+        self.synthetic.clear();
+        self.atlas.packer.reset(self.atlas.size);
+        // One line per recycle, so a pathological session cannot flood stderr.
+        eprintln!(
+            "glyph atlas ({0}x{0}) is full; recycling it and re-rasterizing on demand",
+            self.atlas.size
+        );
+    }
+
     fn allocate_in_atlas(
         &mut self,
         device: &wgpu::Device,
@@ -569,7 +598,17 @@ impl TextPipelineData {
         if self.atlas.size < ATLAS_MAX_SIZE {
             let new_size = (self.atlas.size * 2).min(ATLAS_MAX_SIZE);
             self.rebuild_atlas(device, new_size);
-            return self.atlas.packer.allocate(padded_width, padded_height);
+            if let Some(pos) = self.atlas.packer.allocate(padded_width, padded_height) {
+                return Some(pos);
+            }
+        }
+
+        // Out of shelf space for good: ask for a recycle on the next frame.
+        // Only worth it if the glyph would fit an empty atlas — a glyph larger
+        // than the atlas itself can never be placed, and flagging it would wipe
+        // both caches every frame forever.
+        if padded_width <= self.atlas.size && padded_height <= self.atlas.size {
+            self.atlas_overflow = true;
         }
 
         None

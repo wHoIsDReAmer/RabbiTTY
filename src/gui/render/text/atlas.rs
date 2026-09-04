@@ -85,3 +85,24 @@ impl GlyphAtlas {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_reset_reclaims_a_packer_that_has_run_out_of_shelf_space() {
+        let mut packer = AtlasPacker::new(64);
+        let mut allocated = 0;
+        while packer.allocate(16, 16).is_some() {
+            allocated += 1;
+            assert!(allocated <= 16, "a 64x64 shelf cannot hold 17 16x16 slots");
+        }
+        assert_eq!(allocated, 16);
+        assert_eq!(packer.allocate(16, 16), None);
+
+        let size = packer.size;
+        packer.reset(size);
+        assert_eq!(packer.allocate(16, 16), Some((0, 0)));
+    }
+}
