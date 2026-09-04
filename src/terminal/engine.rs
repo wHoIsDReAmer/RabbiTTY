@@ -22,6 +22,10 @@ pub struct TerminalEngine {
     cells_cache: RefCell<Arc<Vec<CellVisual>>>,
     cache_dirty: Cell<bool>,
     cache_size: Cell<TerminalSize>,
+    /// Bumped once per real cache rebuild. The renderer keys damage detection
+    /// on this instead of the buffer address, because a rebuild reuses the
+    /// same allocation in place and so leaves the pointer unchanged.
+    cells_generation: Cell<u64>,
     title: Arc<Mutex<Option<TitleChange>>>,
     bell_pending: Arc<AtomicBool>,
     osc: Arc<Mutex<OscPending>>,
@@ -81,6 +85,7 @@ impl TerminalEngine {
             cells_cache: RefCell::new(Arc::new(Vec::new())),
             cache_dirty: Cell::new(true),
             cache_size: Cell::new(size),
+            cells_generation: Cell::new(0),
             title,
             bell_pending,
             osc,
@@ -160,6 +165,10 @@ impl TerminalEngine {
     }
 
     pub fn render_cells(&self) -> Arc<Vec<CellVisual>> {
+        self.render_cells_versioned().0
+    }
+
+    pub fn render_cells_versioned(&self) -> (Arc<Vec<CellVisual>>, u64) {
         if self.cache_dirty.get() || self.cache_size.get() != self.size {
             let mut cache = self.cells_cache.borrow_mut();
             if let Some(cells) = Arc::get_mut(&mut cache) {
@@ -170,10 +179,14 @@ impl TerminalEngine {
                 self.build_cells_into(&mut cells);
                 *cache = Arc::new(cells);
             }
+            self.cells_generation.set(self.cells_generation.get() + 1);
             self.cache_dirty.set(false);
             self.cache_size.set(self.size);
         }
-        self.cells_cache.borrow().clone()
+        (
+            self.cells_cache.borrow().clone(),
+            self.cells_generation.get(),
+        )
     }
 
     pub fn scroll(&mut self, delta: i32) {
@@ -563,5 +576,33 @@ mod tests {
         engine.scroll_to_bottom();
 
         assert_eq!(engine.scroll_position().0, 0);
+    }
+
+    #[test]
+    fn repainting_the_same_cells_in_place_still_advances_the_generation() {
+        let mut engine = test_engine();
+
+        engine.feed_bytes(b"\x1b[Haaaa");
+        let (cells, first_gen) = engine.render_cells_versioned();
+        let first_ptr = Arc::as_ptr(&cells);
+        let before: String = cells.iter().map(|cell| cell.ch).collect();
+        // Releasing the clone is what the render loop does between frames, and
+        // it is what lets the rebuild happen in place.
+        drop(cells);
+
+        engine.feed_bytes(b"\x1b[Hbbbb");
+        let (cells, second_gen) = engine.render_cells_versioned();
+        let after: String = cells.iter().map(|cell| cell.ch).collect();
+
+        assert_ne!(before, after, "repaint did not reach the cell buffer");
+        assert_eq!(
+            Arc::as_ptr(&cells),
+            first_ptr,
+            "in-place rebuild expected; the pointer is not a damage signal"
+        );
+        assert!(
+            second_gen > first_gen,
+            "generation did not advance: {first_gen} -> {second_gen}"
+        );
     }
 }

@@ -242,10 +242,14 @@ impl App {
                 .iter()
                 .map(|pane| {
                     let (pane_offset, pane_history) = pane.scroll_position();
+                    // The generation must come from the same call as the
+                    // buffer, or damage detection compares a skewed pair.
+                    let (cells, cells_generation) = pane.render_cells_versioned();
                     crate::gui::render::PaneView {
                         id: pane.id,
                         scroll_history: pane_history,
-                        cells: pane.render_cells(),
+                        cells,
+                        cells_generation,
                         grid_size: pane.size(),
                         selection: pane.selection,
                         display_offset: pane_offset,
