@@ -35,6 +35,38 @@ latest_tag() {
         | head -n1
 }
 
+# The published archives are neither signed nor notarized, so the release
+# SHA256SUMS file is the only integrity check available; treat it as fatal.
+verify_sha256() {
+    dir="$1"
+    name="$2"
+
+    if command -v sha256sum >/dev/null 2>&1; then
+        actual=$(sha256sum "${dir}/${name}" | cut -d' ' -f1)
+    elif command -v shasum >/dev/null 2>&1; then
+        actual=$(shasum -a 256 "${dir}/${name}" | cut -d' ' -f1)
+    else
+        err "no SHA-256 tool found (need sha256sum or shasum); refusing to install an unverified download."
+    fi
+
+    # Conventional "<hex>  <filename>" lines. The name is compared exactly
+    # instead of via a regex so dots in the asset name cannot match loosely.
+    expected=$(awk -v name="$name" \
+        '{ f = $2; sub(/^\*/, "", f); if (f == name) { print $1; exit } }' \
+        "${dir}/SHA256SUMS")
+    [ -n "$expected" ] || err "no SHA256SUMS entry for ${name}; refusing to install an unverified download."
+
+    actual=$(printf '%s' "$actual" | tr 'A-F' 'a-f')
+    expected=$(printf '%s' "$expected" | tr 'A-F' 'a-f')
+
+    if [ "$actual" != "$expected" ]; then
+        err "checksum mismatch for ${name}
+  expected: ${expected}
+  actual:   ${actual}
+The download is corrupt or has been tampered with; nothing was installed."
+    fi
+}
+
 refresh_linux_desktop_databases() {
     if command -v update-desktop-database >/dev/null 2>&1; then
         update-desktop-database "$APPLICATIONS_DIR" >/dev/null 2>&1 || true
@@ -102,12 +134,18 @@ esac
 
 asset="rabbitty-${tag}-${target}.${ext}"
 url="https://github.com/${REPO}/releases/download/${tag}/${asset}"
+sums_url="https://github.com/${REPO}/releases/download/${tag}/SHA256SUMS"
 
 tmp=$(mktemp -d)
 trap 'rm -rf "$tmp"' EXIT
 
 printf 'Downloading %s...\n' "$asset"
 curl -fsSL -o "${tmp}/${asset}" "$url" || err "download failed: $url"
+curl -fsSL -o "${tmp}/SHA256SUMS" "$sums_url" \
+    || err "failed to download release checksums: ${sums_url}"
+
+printf 'Verifying checksum...\n'
+verify_sha256 "$tmp" "$asset"
 
 printf 'Extracting...\n'
 case "$ext" in
@@ -122,11 +160,14 @@ case "$target" in
         mkdir -p "$APP_DIR"
         rm -rf "${APP_DIR}/Rabbitty.app"
         cp -R "$app_src" "$APP_DIR/"
-        xattr -dr com.apple.quarantine "${APP_DIR}/Rabbitty.app" 2>/dev/null || true
         mkdir -p "$BIN_DIR"
         ln -sf "${APP_DIR}/Rabbitty.app/Contents/MacOS/rabbitty" "${BIN_DIR}/rabbitty"
         printf '\nInstalled Rabbitty.app to %s\n' "$APP_DIR"
         printf 'CLI symlink at %s/rabbitty\n' "$BIN_DIR"
+        printf '\nThis build is unsigned and not notarized, so macOS blocks the\n'
+        printf 'first launch. Open it deliberately: right-click Rabbitty.app in\n'
+        printf 'Finder and choose Open, or clear the quarantine flag yourself:\n'
+        printf '  xattr -d -r com.apple.quarantine "%s/Rabbitty.app"\n' "$APP_DIR"
         ;;
     linux-*)
         bin_src=$(find "$tmp" -name 'rabbitty' -type f -maxdepth 4 | head -n1)

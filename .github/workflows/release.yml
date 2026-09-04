@@ -187,7 +187,7 @@ jobs:
             gh release create "${RELEASE_TAG}" --verify-tag --title "${RELEASE_TAG}" --generate-notes
           fi
 
-      - name: Attach artifacts to release
+      - name: Attach artifacts and checksums to release
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
@@ -209,4 +209,15 @@ jobs:
             exit 1
           fi
 
-          gh release upload "${RELEASE_TAG}" "${assets[@]}" --clobber
+          # The installers fetch SHA256SUMS from the release and verify the
+          # archive before extracting. Names are basename-only so that
+          # `sha256sum -c SHA256SUMS` also works from a download directory.
+          sums="${RUNNER_TEMP}/SHA256SUMS"
+          : > "${sums}"
+          for file in "${assets[@]}"; do
+            (cd "$(dirname "${file}")" && sha256sum "$(basename "${file}")") >> "${sums}"
+          done
+          LC_ALL=C sort -k 2 -o "${sums}" "${sums}"
+          cat "${sums}"
+
+          gh release upload "${RELEASE_TAG}" "${assets[@]}" "${sums}" --clobber
