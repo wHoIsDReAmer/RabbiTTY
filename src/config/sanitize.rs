@@ -172,13 +172,18 @@ pub(crate) fn parse_hex_color(value: &str) -> Option<[u8; 3]> {
     let value = value.trim();
     let value = value.strip_prefix('#').unwrap_or(value);
     let value = value.strip_prefix("0x").unwrap_or(value);
-    if value.len() != 6 {
+    // `len` counts bytes, so a two-char multibyte string such as "가나" passes a
+    // naive length check and then splits inside a codepoint. Release builds are
+    // `panic = "abort"`, so that slice would kill every open session.
+    let digits = value.as_bytes();
+    if digits.len() != 6 || !value.is_ascii() {
         return None;
     }
-    let r = u8::from_str_radix(&value[0..2], 16).ok()?;
-    let g = u8::from_str_radix(&value[2..4], 16).ok()?;
-    let b = u8::from_str_radix(&value[4..6], 16).ok()?;
-    Some([r, g, b])
+    let mut rgb = [0u8; 3];
+    for (channel, pair) in rgb.iter_mut().zip(digits.chunks_exact(2)) {
+        *channel = u8::from_str_radix(std::str::from_utf8(pair).ok()?, 16).ok()?;
+    }
+    Some(rgb)
 }
 
 #[cfg(test)]
@@ -197,6 +202,16 @@ mod tests {
         assert_eq!(parse_hex_color("#12345"), None);
         assert_eq!(parse_hex_color("#gg0011"), None);
         assert_eq!(parse_hex_color(""), None);
+    }
+
+    #[test]
+    fn parse_hex_color_refuses_six_byte_multibyte_input_rather_than_panicking() {
+        // Two Hangul syllables are six bytes but two characters; slicing at byte
+        // index 2 would land inside '가'.
+        assert_eq!(parse_hex_color("가나"), None);
+        assert_eq!(parse_hex_color("#가나"), None);
+        assert_eq!(parse_hex_color("日本"), None);
+        assert_eq!(parse_hex_color("€abc"), None);
     }
 
     #[test]
