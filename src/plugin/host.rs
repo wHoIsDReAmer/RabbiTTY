@@ -1,5 +1,8 @@
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::time::Duration;
 
 use wasmtime::component::{Component, Linker, ResourceTable};
 use wasmtime::{Config, Engine, Store, StoreLimitsBuilder};
@@ -18,11 +21,22 @@ const MAX_MEMORY: usize = 64 * 1024 * 1024;
 const MAX_TABLE_ELEMENTS: usize = 100_000;
 const MAX_INSTANCES: usize = 64;
 
+/// Epoch tick, and so the resolution of every budget below.
+const EPOCH_TICK_MS: u64 = 10;
+
+/// Wall-clock budget per guest call.
+pub(super) const START_DEADLINE: Duration = Duration::from_secs(2);
+pub(super) const EVENT_DEADLINE: Duration = Duration::from_millis(250);
+pub(super) const COMMAND_DEADLINE: Duration = Duration::from_secs(2);
+pub const PROFILE_DEADLINE: Duration = Duration::from_secs(5);
+pub(super) const SHUTDOWN_DEADLINE: Duration = Duration::from_millis(500);
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum PluginError {
     Trapped(String),
     Reported(String),
     Retired(String),
+    TimedOut(String),
 }
 
 impl std::fmt::Display for PluginError {
@@ -31,6 +45,7 @@ impl std::fmt::Display for PluginError {
             Self::Trapped(reason) => write!(f, "trapped: {reason}"),
             Self::Reported(reason) => write!(f, "{reason}"),
             Self::Retired(reason) => write!(f, "retired earlier: {reason}"),
+            Self::TimedOut(reason) => write!(f, "timed out: {reason}"),
         }
     }
 }
@@ -42,6 +57,8 @@ pub struct PluginHost {
     /// Compiling a component is far more expensive than instantiating one, and
     /// profile enumeration instantiates on every refresh.
     components: std::sync::RwLock<HashMap<PathBuf, Component>>,
+    /// Cleared on drop so the epoch ticker stops with the host that owns it.
+    ticking: Arc<AtomicBool>,
 }
 
 impl PluginHost {
@@ -53,6 +70,7 @@ impl PluginHost {
         let mut config = Config::new();
         config.wasm_component_model(true);
         config.consume_fuel(true);
+        config.epoch_interruption(true);
 
         // The mach port handler thread aborts on any interrupted receive, and every
         // PTY registers a SIGCHLD handler. Signals have no such thread.
@@ -65,11 +83,15 @@ impl PluginHost {
         wasmtime_wasi::p2::add_to_linker_sync(&mut linker)?;
         Plugin::add_to_linker::<_, wasmtime::component::HasSelf<_>>(&mut linker, |state| state)?;
 
+        let ticking = Arc::new(AtomicBool::new(true));
+        spawn_ticker(engine.clone(), Arc::clone(&ticking))?;
+
         Ok(Self {
             engine,
             linker,
             root,
             components: std::sync::RwLock::new(HashMap::new()),
+            ticking,
         })
     }
 
@@ -93,6 +115,12 @@ impl PluginHost {
         if let Ok(mut cache) = self.components.write() {
             cache.clear();
         }
+    }
+
+    /// Keeps Cranelift compile time out of the caller's start deadline.
+    pub fn precompile(&self, path: &Path) -> wasmtime::Result<()> {
+        self.component(path)?;
+        Ok(())
     }
 
     pub fn load(
@@ -147,6 +175,8 @@ impl PluginHost {
     fn read_manifest(&self, component: &Component) -> wasmtime::Result<PluginInfo> {
         let mut store = self.store(WasiCtxBuilder::new().build(), Vec::new(), HashMap::new())?;
         let bindings = Plugin::instantiate(&mut store, component, &self.linker)?;
+        // Re-armed so the budget covers the call, not the setup.
+        arm(&mut store, START_DEADLINE)?;
         bindings.call_manifest(&mut store)
     }
 
@@ -176,11 +206,11 @@ impl PluginHost {
 
         let mut store = self.store(builder.build(), granted, config)?;
         let bindings = Plugin::instantiate(&mut store, component, &self.linker)?;
-
+        arm(&mut store, START_DEADLINE)?;
         bindings
             .call_init(&mut store)?
             .map_err(wasmtime::Error::msg)?;
-        refuel(&mut store)?;
+        arm(&mut store, START_DEADLINE)?;
         let contributions = bindings
             .call_contributions(&mut store)?
             .map_err(wasmtime::Error::msg)?;
@@ -217,7 +247,7 @@ impl PluginHost {
             },
         );
         store.limiter(|state| &mut state.limits);
-        store.set_fuel(CALL_FUEL)?;
+        arm(&mut store, START_DEADLINE)?;
         Ok(store)
     }
 
@@ -227,6 +257,25 @@ impl PluginHost {
 
     pub fn root(&self) -> &Path {
         &self.root
+    }
+}
+
+/// One ticker per host, detached so a drop never waits a tick to join.
+fn spawn_ticker(engine: Engine, ticking: Arc<AtomicBool>) -> wasmtime::Result<()> {
+    std::thread::Builder::new()
+        .name("plugin-epoch".to_string())
+        .spawn(move || {
+            while ticking.load(Ordering::Relaxed) {
+                std::thread::sleep(Duration::from_millis(EPOCH_TICK_MS));
+                engine.increment_epoch();
+            }
+        })?;
+    Ok(())
+}
+
+impl Drop for PluginHost {
+    fn drop(&mut self) {
+        self.ticking.store(false, Ordering::Relaxed);
     }
 }
 
@@ -271,9 +320,16 @@ pub(super) fn dir_name(plugin_name: &str) -> Option<String> {
     (!trimmed.is_empty()).then(|| trimmed.to_string())
 }
 
-fn refuel(store: &mut Store<PluginState>) -> wasmtime::Result<()> {
+/// Fuel bounds instructions, the epoch deadline bounds time.
+fn arm(store: &mut Store<PluginState>, deadline: Duration) -> wasmtime::Result<()> {
     store.set_fuel(CALL_FUEL)?;
+    store.set_epoch_deadline(epoch_ticks(deadline));
     Ok(())
+}
+
+/// Rounded up: a sub-tick budget would expire before the ticker ran.
+fn epoch_ticks(deadline: Duration) -> u64 {
+    (deadline.as_millis() as u64).div_ceil(EPOCH_TICK_MS).max(1)
 }
 
 pub struct LoadedPlugin {
@@ -305,18 +361,24 @@ impl LoadedPlugin {
         if self.failure.is_some() {
             return Ok(());
         }
-        self.settle(|bindings, store| bindings.call_shutdown(store))
+        self.settle(SHUTDOWN_DEADLINE, |bindings, store| {
+            bindings.call_shutdown(store)
+        })
     }
 
     pub fn run_command(&mut self, id: &str) -> Result<(), PluginError> {
         self.guard()?;
         let id = id.to_string();
-        self.settle(move |bindings, store| bindings.call_run_command(store, &id))
+        self.settle(COMMAND_DEADLINE, move |bindings, store| {
+            bindings.call_run_command(store, &id)
+        })
     }
 
     pub fn on_event(&mut self, event: Event) -> Result<(), PluginError> {
         self.guard()?;
-        self.settle(move |bindings, store| bindings.call_on_event(store, &event))
+        self.settle(EVENT_DEADLINE, move |bindings, store| {
+            bindings.call_on_event(store, &event)
+        })
     }
 
     fn guard(&self) -> Result<(), PluginError> {
@@ -326,18 +388,18 @@ impl LoadedPlugin {
         }
     }
 
-    fn settle<F>(&mut self, call: F) -> Result<(), PluginError>
+    fn settle<F>(&mut self, deadline: Duration, call: F) -> Result<(), PluginError>
     where
         F: FnOnce(&Plugin, &mut Store<PluginState>) -> wasmtime::Result<Result<(), String>>,
     {
-        self.settle_with(call)
+        self.settle_with(deadline, call)
     }
 
-    fn settle_with<T, F>(&mut self, call: F) -> Result<T, PluginError>
+    fn settle_with<T, F>(&mut self, deadline: Duration, call: F) -> Result<T, PluginError>
     where
         F: FnOnce(&Plugin, &mut Store<PluginState>) -> wasmtime::Result<Result<T, String>>,
     {
-        if let Err(err) = refuel(&mut self.store) {
+        if let Err(err) = arm(&mut self.store, deadline) {
             return Err(PluginError::Trapped(err.to_string()));
         }
         match call(&self.bindings, &mut self.store) {
@@ -353,7 +415,9 @@ impl LoadedPlugin {
 
     pub fn list_profiles(&mut self) -> Result<Vec<PluginProfile>, PluginError> {
         self.guard()?;
-        self.settle_with(move |bindings, store| bindings.call_list_profiles(store))
+        self.settle_with(PROFILE_DEADLINE, move |bindings, store| {
+            bindings.call_list_profiles(store)
+        })
     }
 
     pub fn drain_requests(&mut self) -> Vec<PluginRequest> {
