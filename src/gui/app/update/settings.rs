@@ -396,12 +396,15 @@ impl App {
             }
             SettingsMessage::Osc52WriteToggled(enabled) => {
                 self.settings_draft.osc52_write = enabled;
+                return self.apply_settings(true);
             }
             SettingsMessage::Osc52ReadToggled(enabled) => {
                 self.settings_draft.osc52_read = enabled;
+                return self.apply_settings(true);
             }
             SettingsMessage::WheelZoomToggled(enabled) => {
                 self.settings_draft.wheel_zoom = enabled;
+                return self.apply_settings(true);
             }
             SettingsMessage::CursorBlinkToggled(enabled) => {
                 self.settings_draft.cursor_blink = enabled;
