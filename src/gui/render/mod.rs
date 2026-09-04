@@ -25,6 +25,7 @@ pub struct PaneView {
     pub id: u64,
     pub scroll_history: usize,
     pub cells: Arc<Vec<CellVisual>>,
+    pub cells_generation: u64,
     pub grid_size: TerminalSize,
     pub selection: Option<Selection>,
     pub display_offset: usize,
@@ -694,6 +695,7 @@ impl ShaderProgram<Message> for TerminalProgram {
                 });
                 Some(PanePrimitive {
                     cells: Arc::clone(&pane.cells),
+                    cells_generation: pane.cells_generation,
                     origin: [inner.x, inner.y],
                     rect: [rect.x, rect.y, rect.width, rect.height],
                     scrollbar,
@@ -774,7 +776,7 @@ impl Pipeline for TerminalPipeline {
 
 #[derive(Debug, Clone, PartialEq)]
 struct PaneSignature {
-    cells_ptr: usize,
+    cells_generation: u64,
     cells_len: usize,
     origin: [f32; 2],
     rect: [f32; 4],
@@ -790,6 +792,7 @@ struct PaneSignature {
 #[derive(Debug)]
 pub struct PanePrimitive {
     cells: Arc<Vec<CellVisual>>,
+    cells_generation: u64,
     origin: [f32; 2],
     rect: [f32; 4],
     scrollbar: Option<[f32; 2]>,
@@ -804,7 +807,7 @@ pub struct PanePrimitive {
 impl PanePrimitive {
     fn signature(&self, scale: f32) -> PaneSignature {
         PaneSignature {
-            cells_ptr: Arc::as_ptr(&self.cells) as usize,
+            cells_generation: self.cells_generation,
             cells_len: self.cells.len(),
             origin: [self.origin[0] * scale, self.origin[1] * scale],
             rect: [
