@@ -155,14 +155,21 @@ impl Default for AppConfig {
 impl AppConfig {
     pub fn load() -> Self {
         let mut config = Self::default();
-        if let Some(path) = config_path() {
-            let _ = ensure_config_file(&path);
-            if let Ok(contents) = fs::read_to_string(&path)
-                && let Ok(file) = toml::from_str::<FileConfig>(&contents)
-            {
-                config.apply_file(file);
+        let Some(path) = config_path() else {
+            return config;
+        };
+        let _ = ensure_config_file(&path);
+
+        match fs::read_to_string(&path) {
+            Ok(contents) => match toml::from_str::<FileConfig>(&contents) {
+                Ok(file) => config.apply_file(file),
+                Err(err) => report_unusable_config(&path, &err.to_string()),
+            },
+            Err(err) => {
+                eprintln!("rabbitty: could not read {}: {err}", path.display());
             }
         }
+
         config
     }
 
@@ -177,7 +184,16 @@ impl AppConfig {
 
         let file = FileConfig::from(self);
         let contents = toml::to_string_pretty(&file).map_err(std::io::Error::other)?;
-        fs::write(path, contents.as_bytes())
+
+        // Truncating in place leaves a half-written file behind on a crash or a
+        // full disk, and `load` cannot tell that apart from a corrupt config.
+        let staging = path.with_extension("toml.new");
+        fs::write(&staging, contents.as_bytes())?;
+        if let Err(err) = fs::rename(&staging, &path) {
+            let _ = fs::remove_file(&staging);
+            return Err(err);
+        }
+        Ok(())
     }
 
     fn apply_file(&mut self, file: FileConfig) {
@@ -344,6 +360,34 @@ impl AppConfig {
     }
 }
 
+/// Moves an unparsable config aside. Booting on defaults is otherwise silently
+/// destructive: the next settings change saves those defaults over the user's
+/// profiles, themes and shortcuts.
+fn quarantine_config(path: &std::path::Path) -> Option<std::path::PathBuf> {
+    let stamp = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |since| since.as_secs());
+    let mut name = path.file_name()?.to_os_string();
+    name.push(format!(".corrupt-{stamp}"));
+    let target = path.with_file_name(name);
+    fs::rename(path, &target).ok()?;
+    Some(target)
+}
+
+fn report_unusable_config(path: &std::path::Path, reason: &str) {
+    match quarantine_config(path) {
+        Some(kept) => eprintln!(
+            "rabbitty: {} is not valid config ({reason}); kept a copy at {} and started with defaults",
+            path.display(),
+            kept.display()
+        ),
+        None => eprintln!(
+            "rabbitty: {} is not valid config ({reason}); could not move it aside, so the next settings change will overwrite it",
+            path.display()
+        ),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -389,5 +433,25 @@ mod tests {
         let config = AppConfig::default();
 
         assert_eq!(config.terminal.bell_mode, BellMode::Sound);
+    }
+
+    #[test]
+    fn an_unusable_config_is_moved_aside_instead_of_being_overwritten() {
+        let dir = std::env::temp_dir().join(format!("rabbitty-quarantine-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).expect("temp dir");
+        let path = dir.join("config.toml");
+        fs::write(&path, b"window_width = \"not a number\"").expect("seed");
+
+        let kept = quarantine_config(&path).expect("config should be moved aside");
+
+        assert!(!path.exists(), "the unusable config was left in place");
+        assert_eq!(
+            fs::read(&kept).expect("kept copy"),
+            b"window_width = \"not a number\"",
+            "the moved copy lost the user's bytes"
+        );
+
+        let _ = fs::remove_dir_all(&dir);
     }
 }
