@@ -3,12 +3,15 @@ use std::path::{Path, PathBuf};
 
 use crate::config::plugins::{PluginSettings, PluginsConfig};
 
-use super::host::{LoadedPlugin, PluginHost};
+use super::host::{
+    COMMAND_DEADLINE, EVENT_DEADLINE, LoadedPlugin, PROFILE_DEADLINE, PluginError, PluginHost,
+    SHUTDOWN_DEADLINE, START_DEADLINE,
+};
 use super::matcher::OutputMatcher;
 use super::policy::{capability_from_name, capability_name, grant_with_consent, requires_consent};
 use super::{
-    Capability, MatchEvent, MenuContext, MenuItem, PluginInfo, PluginProfile, SettingEvent,
-    SettingField, StatusItem,
+    Capability, Contributions, Event, MatchEvent, MenuContext, MenuItem, PluginInfo, PluginProfile,
+    PluginRequest, SettingEvent, SettingField, StatusItem,
 };
 
 pub const COMPONENT_FILE: &str = "plugin.wasm";
@@ -37,7 +40,7 @@ pub enum Status {
 }
 
 enum Slot {
-    Ready(Box<LoadedPlugin>, Box<OutputMatcher>),
+    Ready(Box<PluginWorker>, Box<OutputMatcher>),
     Disabled,
     Retired(String),
 }
@@ -54,14 +57,14 @@ struct Entry {
 }
 
 impl Entry {
-    fn remember(&mut self, host: &PluginHost) {
+    fn remember(&mut self, host: &std::sync::Arc<PluginHost>) {
         if let Slot::Ready(plugin, _) = &mut self.slot {
             self.info = Some(plugin.info().clone());
             self.fields = plugin.contributions().settings.clone();
             self.status = plugin.contributions().status_items.clone();
             self.menu = plugin.contributions().menu_items.clone();
         } else if self.info.is_none()
-            && let Ok((info, fields)) = host.inspect(&self.path)
+            && let Ok((info, fields)) = PluginWorker::inspect(host, &self.path)
         {
             self.info = Some(info);
             self.fields = fields;
@@ -84,12 +87,242 @@ pub struct PluginRegistry {
 }
 
 impl Slot {
-    fn ready(plugin: LoadedPlugin) -> Self {
+    fn ready(plugin: PluginWorker) -> Self {
         let (matcher, rejected) = OutputMatcher::compile(&plugin.contributions().output_patterns);
         for (id, reason) in rejected {
             eprintln!("plugin pattern {id} rejected: {reason}");
         }
         Self::Ready(Box::new(plugin), Box::new(matcher))
+    }
+}
+
+/// One job outstanding at a time; every call takes `&mut self`.
+enum Job {
+    Command(String),
+    Event(Event),
+    Profiles,
+    Shutdown,
+}
+
+enum Answer {
+    Done(Result<(), PluginError>),
+    Profiles(Result<Vec<PluginProfile>, PluginError>),
+}
+
+/// Carries the drained requests and the latched failure, so no second round trip.
+struct Reply {
+    answer: Answer,
+    requests: Vec<PluginRequest>,
+    failure: Option<String>,
+}
+
+struct Boot {
+    info: PluginInfo,
+    contributions: Contributions,
+    granted: Vec<Capability>,
+    requests: Vec<PluginRequest>,
+}
+
+/// A `LoadedPlugin` on its own thread. A guest parked in a host call reaches no
+/// epoch check, so only refusing to wait keeps the UI thread moving.
+pub struct PluginWorker {
+    id: String,
+    /// Dropped once the worker is unusable, releasing the thread when its job returns.
+    jobs: Option<std::sync::mpsc::Sender<Job>>,
+    replies: std::sync::mpsc::Receiver<Reply>,
+    pending: Vec<PluginRequest>,
+    info: PluginInfo,
+    contributions: Contributions,
+    granted: Vec<Capability>,
+    failure: Option<String>,
+    profile_deadline: std::time::Duration,
+}
+
+impl PluginWorker {
+    pub(super) fn load(
+        host: &std::sync::Arc<PluginHost>,
+        id: &str,
+        path: &Path,
+        config: HashMap<String, String>,
+        consented: Vec<Capability>,
+    ) -> Result<Self, String> {
+        host.precompile(path).map_err(|err| err.to_string())?;
+
+        let (boot_tx, boot_rx) = std::sync::mpsc::channel::<Result<Boot, String>>();
+        let (jobs_tx, jobs_rx) = std::sync::mpsc::channel::<Job>();
+        let (reply_tx, reply_rx) = std::sync::mpsc::channel::<Reply>();
+
+        let host = std::sync::Arc::clone(host);
+        let owned_id = id.to_string();
+        let owned_path = path.to_path_buf();
+        std::thread::Builder::new()
+            .name(format!("plugin-{id}"))
+            .spawn(move || {
+                let policy = |info: &PluginInfo| grant_with_consent(info, &consented);
+                let mut plugin = match host.load(&owned_id, &owned_path, config, &policy) {
+                    Ok(plugin) => plugin,
+                    Err(err) => {
+                        let _ = boot_tx.send(Err(err.to_string()));
+                        return;
+                    }
+                };
+                let boot = Boot {
+                    info: plugin.info().clone(),
+                    contributions: plugin.contributions().clone(),
+                    granted: plugin.granted().to_vec(),
+                    requests: plugin.drain_requests(),
+                };
+                if boot_tx.send(Ok(boot)).is_ok() {
+                    serve(&mut plugin, &jobs_rx, &reply_tx);
+                }
+            })
+            .map_err(|err| err.to_string())?;
+
+        let boot = match boot_rx.recv_timeout(START_DEADLINE) {
+            Ok(boot) => boot?,
+            Err(_) => {
+                return Err(format!("did not start within {START_DEADLINE:?}"));
+            }
+        };
+
+        Ok(Self {
+            id: id.to_string(),
+            jobs: Some(jobs_tx),
+            replies: reply_rx,
+            pending: boot.requests,
+            info: boot.info,
+            contributions: boot.contributions,
+            granted: boot.granted,
+            failure: None,
+            profile_deadline: PROFILE_DEADLINE,
+        })
+    }
+
+    /// Inspection runs guest code, so it gets a worker too.
+    pub(super) fn inspect(
+        host: &std::sync::Arc<PluginHost>,
+        path: &Path,
+    ) -> Result<(PluginInfo, Vec<SettingField>), String> {
+        let probe = Self::load(host, "", path, HashMap::new(), Vec::new())?;
+        Ok((probe.info().clone(), probe.contributions().settings.clone()))
+    }
+
+    pub fn info(&self) -> &PluginInfo {
+        &self.info
+    }
+
+    pub fn contributions(&self) -> &Contributions {
+        &self.contributions
+    }
+
+    pub fn granted(&self) -> &[Capability] {
+        &self.granted
+    }
+
+    pub fn failure(&self) -> Option<&str> {
+        self.failure.as_deref()
+    }
+
+    pub(super) fn set_profile_deadline(&mut self, deadline: std::time::Duration) {
+        self.profile_deadline = deadline;
+    }
+
+    pub fn run_command(&mut self, id: &str) -> Result<(), PluginError> {
+        self.settle(Job::Command(id.to_string()), COMMAND_DEADLINE)
+    }
+
+    pub fn on_event(&mut self, event: Event) -> Result<(), PluginError> {
+        self.settle(Job::Event(event), EVENT_DEADLINE)
+    }
+
+    pub fn list_profiles(&mut self) -> Result<Vec<PluginProfile>, PluginError> {
+        let deadline = self.profile_deadline;
+        match self.dispatch(Job::Profiles, deadline)? {
+            Answer::Profiles(listed) => listed,
+            Answer::Done(other) => other.map(|()| Vec::new()),
+        }
+    }
+
+    pub fn shutdown(&mut self) -> Result<(), PluginError> {
+        if self.failure.is_some() || self.jobs.is_none() {
+            return Ok(());
+        }
+        let outcome = self.settle(Job::Shutdown, SHUTDOWN_DEADLINE);
+        // Already shut down; the channel is closed.
+        self.jobs = None;
+        outcome
+    }
+
+    pub fn drain_requests(&mut self) -> Vec<PluginRequest> {
+        std::mem::take(&mut self.pending)
+    }
+
+    fn settle(&mut self, job: Job, deadline: std::time::Duration) -> Result<(), PluginError> {
+        match self.dispatch(job, deadline)? {
+            Answer::Done(outcome) => outcome,
+            Answer::Profiles(listed) => listed.map(|_| ()),
+        }
+    }
+
+    fn dispatch(&mut self, job: Job, deadline: std::time::Duration) -> Result<Answer, PluginError> {
+        if let Some(reason) = &self.failure {
+            return Err(PluginError::Retired(reason.clone()));
+        }
+        let sent = match &self.jobs {
+            Some(jobs) => jobs.send(job).is_ok(),
+            None => false,
+        };
+        if !sent {
+            let reason = format!("{} stopped answering", self.id);
+            self.retire(reason.clone());
+            return Err(PluginError::Retired(reason));
+        }
+
+        match self.replies.recv_timeout(deadline) {
+            Ok(reply) => {
+                self.pending.extend(reply.requests);
+                self.failure = reply.failure;
+                Ok(reply.answer)
+            }
+            // Retire rather than reuse: the abandoned call is still running, and a
+            // guest parked in a host call cannot be killed.
+            Err(_) => {
+                let reason = format!("{} did not answer within {deadline:?}", self.id);
+                self.retire(reason.clone());
+                Err(PluginError::TimedOut(reason))
+            }
+        }
+    }
+
+    /// Latched like a trap so `retire_failed` demotes it the same way.
+    fn retire(&mut self, reason: String) {
+        self.failure = Some(reason);
+        self.jobs = None;
+    }
+}
+
+/// The whole of the guest's working life runs here, one job at a time.
+fn serve(
+    plugin: &mut LoadedPlugin,
+    jobs: &std::sync::mpsc::Receiver<Job>,
+    replies: &std::sync::mpsc::Sender<Reply>,
+) {
+    while let Ok(job) = jobs.recv() {
+        let last = matches!(job, Job::Shutdown);
+        let answer = match job {
+            Job::Command(id) => Answer::Done(plugin.run_command(&id)),
+            Job::Event(event) => Answer::Done(plugin.on_event(event)),
+            Job::Profiles => Answer::Profiles(plugin.list_profiles()),
+            Job::Shutdown => Answer::Done(plugin.shutdown()),
+        };
+        let reply = Reply {
+            answer,
+            requests: plugin.drain_requests(),
+            failure: plugin.failure().map(str::to_string),
+        };
+        if replies.send(reply).is_err() || last {
+            break;
+        }
     }
 }
 
@@ -136,17 +369,21 @@ impl PluginRegistry {
         }
     }
 
-    fn instantiate(host: &PluginHost, id: &str, path: &Path, settings: &PluginSettings) -> Slot {
+    fn instantiate(
+        host: &std::sync::Arc<PluginHost>,
+        id: &str,
+        path: &Path,
+        settings: &PluginSettings,
+    ) -> Slot {
         let consented = consented_capabilities(settings);
-        let policy = |info: &PluginInfo| grant_with_consent(info, &consented);
         let values: HashMap<String, String> = settings
             .settings
             .iter()
             .map(|(key, value)| (key.clone(), value.clone()))
             .collect();
-        match host.load(id, path, values, &policy) {
+        match PluginWorker::load(host, id, path, values, consented) {
             Ok(plugin) => Slot::ready(plugin),
-            Err(err) => Slot::Retired(err.to_string()),
+            Err(reason) => Slot::Retired(reason),
         }
     }
 
@@ -261,14 +498,11 @@ impl PluginRegistry {
     /// Validates the file first: an unreadable or wrong-ABI component is
     /// rejected before anything lands in the plugin directory.
     pub fn preview(&self, source: &Path) -> Result<PluginInfo, String> {
-        self.host
-            .inspect(source)
-            .map(|(info, _)| info)
-            .map_err(|err| err.to_string())
+        PluginWorker::inspect(&self.host, source).map(|(info, _)| info)
     }
 
     pub fn install(&mut self, source: &Path) -> Result<String, String> {
-        let (info, _) = self.host.inspect(source).map_err(|err| err.to_string())?;
+        let (info, _) = PluginWorker::inspect(&self.host, source)?;
         let dir = super::host::dir_name(&info.name)
             .ok_or_else(|| format!("{} is not a usable plugin name", info.name))?;
 
@@ -464,14 +698,14 @@ impl PluginRegistry {
             .collect()
     }
 
-    pub fn get_mut(&mut self, id: &str) -> Option<&mut LoadedPlugin> {
+    pub fn get_mut(&mut self, id: &str) -> Option<&mut PluginWorker> {
         match &mut self.entry_mut(id)?.slot {
             Slot::Ready(plugin, _) if plugin.failure().is_none() => Some(plugin),
             _ => None,
         }
     }
 
-    pub fn ready_mut(&mut self) -> impl Iterator<Item = (&str, &mut LoadedPlugin)> {
+    pub fn ready_mut(&mut self) -> impl Iterator<Item = (&str, &mut PluginWorker)> {
         self.entries
             .iter_mut()
             .filter_map(|entry| match &mut entry.slot {
@@ -592,8 +826,7 @@ fn consented_capabilities(settings: &PluginSettings) -> Vec<Capability> {
         .collect()
 }
 
-/// Runs on a worker thread: the live instance's `Store` is `!Sync`, so profile
-/// enumeration gets an instance of its own that is dropped when it answers.
+/// Its own instance, so enumeration never contends with the UI's. Unbounded by design.
 pub fn fetch_profiles_blocking(
     host: &PluginHost,
     source: &ProfileSource,
@@ -604,30 +837,34 @@ pub fn fetch_profiles_blocking(
         .map_err(|err| err.to_string())
 }
 
-/// A source that never answers would otherwise pin the caller forever, so the
-/// call is handed to a thread we are willing to abandon. Fuel cannot help here:
-/// it counts instructions, and a guest blocked in host I/O burns none.
+/// Enumeration gets its own worker; its deadline bounds a source that never answers.
 pub fn fetch_profiles_with_deadline(
     host: &std::sync::Arc<PluginHost>,
     source: &ProfileSource,
     deadline: std::time::Duration,
 ) -> Option<Vec<PluginProfile>> {
-    let (tx, rx) = std::sync::mpsc::channel();
-    let host = std::sync::Arc::clone(host);
-    let worker = source.clone();
-    let id = source.id.clone();
-    std::thread::spawn(move || {
-        let _ = tx.send(fetch_profiles_blocking(&host, &worker));
-    });
-
-    match rx.recv_timeout(deadline) {
-        Ok(Ok(profiles)) => Some(profiles),
-        Ok(Err(reason)) => {
-            eprintln!("plugin {id} failed to list profiles: {reason}");
-            None
+    let id = &source.id;
+    let mut worker = match PluginWorker::load(
+        host,
+        id,
+        &source.path,
+        source.config.clone(),
+        source.consented.clone(),
+    ) {
+        Ok(worker) => worker,
+        Err(reason) => {
+            eprintln!("plugin {id} failed to start for profile enumeration: {reason}");
+            return None;
         }
-        Err(_) => {
-            eprintln!("plugin {id} did not list profiles in time; abandoning the call");
+    };
+    worker.set_profile_deadline(deadline);
+
+    let listed = worker.list_profiles();
+    let _ = worker.shutdown();
+    match listed {
+        Ok(profiles) => Some(profiles),
+        Err(reason) => {
+            eprintln!("plugin {id} failed to list profiles: {reason}");
             None
         }
     }
