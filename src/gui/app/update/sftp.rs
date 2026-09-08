@@ -64,7 +64,7 @@ impl App {
                 if let Some(path) = finished_path {
                     return Task::perform(
                         async {
-                            std::thread::sleep(std::time::Duration::from_millis(1500));
+                            tokio::time::sleep(std::time::Duration::from_millis(1500)).await;
                         },
                         move |()| {
                             Message::Sftp(SftpMessage::DismissTransfer {

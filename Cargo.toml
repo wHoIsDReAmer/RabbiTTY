@@ -57,7 +57,7 @@ russh-sftp = "2.3"
 ssh2-config = "0.7"
 async-trait = "0.1"
 rfd = { version = "0.15", default-features = false, features = ["xdg-portal", "tokio"] }
-tokio = { version = "1", default-features = false, features = ["io-util", "process", "sync", "fs", "rt"] }
+tokio = { version = "1", default-features = false, features = ["io-util", "process", "sync", "fs", "rt", "time"] }
 wasmtime = { version = "44", default-features = false, features = ["component-model", "cranelift", "runtime", "std"] }
 wasmtime-wasi = { version = "44", default-features = false, features = ["p2"] }
 regex = { version = "1.13.1", default-features = false, features = ["std", "perf", "unicode-case", "unicode-perl"] }

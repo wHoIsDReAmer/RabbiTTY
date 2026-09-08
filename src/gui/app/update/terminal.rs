@@ -120,7 +120,7 @@ impl App {
         self.resize_debounce_spawned_seq = self.resize_debounce_seq;
         Task::perform(
             async {
-                std::thread::sleep(std::time::Duration::from_millis(50));
+                tokio::time::sleep(std::time::Duration::from_millis(50)).await;
             },
             |()| Message::ResizeDebounce,
         )

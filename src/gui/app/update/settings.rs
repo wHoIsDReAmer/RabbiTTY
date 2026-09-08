@@ -343,7 +343,7 @@ impl App {
                 self.settings_debounce_spawned_seq = self.settings_debounce_seq;
                 return Task::perform(
                     async {
-                        std::thread::sleep(std::time::Duration::from_millis(500));
+                        tokio::time::sleep(std::time::Duration::from_millis(500)).await;
                     },
                     |()| Message::Settings(SettingsMessage::CommitDebounce),
                 );
@@ -362,7 +362,7 @@ impl App {
                     self.settings_debounce_spawned_seq = self.settings_debounce_seq;
                     return Task::perform(
                         async {
-                            std::thread::sleep(std::time::Duration::from_millis(500));
+                            tokio::time::sleep(std::time::Duration::from_millis(500)).await;
                         },
                         |()| Message::Settings(SettingsMessage::CommitDebounce),
                     );
