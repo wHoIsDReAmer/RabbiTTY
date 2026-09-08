@@ -175,7 +175,7 @@ fn parse_shortcut(value: &str) -> Option<ParsedShortcut<'static>> {
     })
 }
 
-pub(super) fn physical_key_token(physical: &Physical) -> Option<Cow<'static, str>> {
+pub(in crate::gui) fn physical_key_token(physical: &Physical) -> Option<Cow<'static, str>> {
     let Physical::Code(code) = physical else {
         return None;
     };
