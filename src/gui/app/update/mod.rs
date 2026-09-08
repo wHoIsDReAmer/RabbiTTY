@@ -675,7 +675,7 @@ impl App {
         // Clear selection on actual key input
         if let Some(pane) = self.focused_pane_mut() {
             pane.clear_selection();
-            pane.handle_key(&key, modifiers, text.as_deref());
+            pane.handle_key(&key, &physical_key, modifiers, text.as_deref());
             pane.scroll_to_bottom();
         }
         self.scroll_follow_bottom = true;

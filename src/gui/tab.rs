@@ -6,7 +6,7 @@ use crate::terminal::{
     CellVisual, Selection, TerminalEngine, TerminalSize, TerminalTheme, TitleChange,
 };
 use iced::futures::channel::mpsc;
-use iced::keyboard::{Key, Modifiers, key::Named};
+use iced::keyboard::{Key, Modifiers, key::Named, key::Physical};
 use serde::{Deserialize, Serialize};
 use std::borrow::Cow;
 use std::fmt::{Display, Formatter};
@@ -325,9 +325,15 @@ impl Pane {
         }
     }
 
-    pub fn handle_key(&mut self, key: &Key, modifiers: Modifiers, text: Option<&str>) {
+    pub fn handle_key(
+        &mut self,
+        key: &Key,
+        physical: &Physical,
+        modifiers: Modifiers,
+        text: Option<&str>,
+    ) {
         if let TerminalSession::Active(session) = &self.session
-            && let Some(bytes) = self.key_to_bytes(key, modifiers, text)
+            && let Some(bytes) = self.key_to_bytes(key, physical, modifiers, text)
             && let Err(err) = session.send_bytes(&bytes)
         {
             eprintln!("Failed to send key to session: {err}")
@@ -337,6 +343,7 @@ impl Pane {
     fn key_to_bytes<'a>(
         &self,
         key: &Key,
+        physical: &Physical,
         modifiers: Modifiers,
         text: Option<&'a str>,
     ) -> Option<Cow<'a, [u8]>> {
@@ -394,19 +401,53 @@ impl Pane {
                 _ => None,
             },
 
-            Key::Character(c) if modifiers.control() => c.chars().next().and_then(|ch| {
-                let upper = ch.to_ascii_uppercase();
-                if upper.is_ascii_alphabetic() {
-                    Some(Cow::Owned(vec![(upper as u8) - b'A' + 1]))
-                } else {
-                    None
-                }
-            }),
+            _ if modifiers.control() => {
+                control_byte(key, physical, text).map(|byte| Cow::Owned(vec![byte]))
+            }
 
             Key::Character(_) => text.map(|t| Cow::Borrowed(t.as_bytes())),
             _ => None,
         }
     }
+}
+
+/// An IME rewrites the logical key, so fall back to the physical key and then
+/// to whatever control character the platform resolved.
+fn control_byte(key: &Key, physical: &Physical, text: Option<&str>) -> Option<u8> {
+    // Latin relayouts mean the letter they show, not QWERTY's.
+    if let Key::Character(c) = key
+        && let Some(byte) = c.chars().next().and_then(ascii_control_byte)
+    {
+        return Some(byte);
+    }
+
+    crate::gui::app::shortcuts::physical_key_token(physical)
+        // "Enter" is not Ctrl+E.
+        .filter(|token| token.chars().count() == 1)
+        .and_then(|token| token.chars().next())
+        .and_then(ascii_control_byte)
+        .or_else(|| sole_control_char(text))
+}
+
+fn ascii_control_byte(ch: char) -> Option<u8> {
+    let upper = ch.to_ascii_uppercase();
+    match upper {
+        'A'..='Z' => Some(upper as u8 - b'A' + 1),
+        '@' => Some(0x00),
+        '[' => Some(0x1b),
+        '\\' => Some(0x1c),
+        ']' => Some(0x1d),
+        '^' => Some(0x1e),
+        '_' => Some(0x1f),
+        '?' => Some(0x7f),
+        _ => None,
+    }
+}
+
+fn sole_control_char(text: Option<&str>) -> Option<u8> {
+    let mut chars = text?.chars();
+    let ch = chars.next()?;
+    (chars.next().is_none() && ch.is_ascii() && ch.is_control()).then_some(ch as u8)
 }
 
 fn csi_modifier(m: Modifiers) -> u8 {
@@ -808,6 +849,65 @@ mod tests {
     fn editing_keys_encode_modifiers() {
         assert_eq!(&*tilde_seq(b"3", Modifiers::empty()), b"\x1b[3~");
         assert_eq!(&*tilde_seq(b"3", Modifiers::SHIFT), b"\x1b[3;2~");
+    }
+
+    fn ctrl(key: &str, code: iced::keyboard::key::Code, text: Option<&str>) -> Option<u8> {
+        control_byte(&Key::Character(key.into()), &Physical::Code(code), text)
+    }
+
+    #[test]
+    fn a_hangul_input_source_still_sends_the_control_byte() {
+        use iced::keyboard::key::Code;
+        assert_eq!(ctrl("ㅊ", Code::KeyC, Some("\u{3}")), Some(0x03));
+        assert_eq!(ctrl("ㅇ", Code::KeyD, Some("\u{4}")), Some(0x04));
+        assert_eq!(ctrl("ㅋ", Code::KeyZ, None), Some(0x1a));
+    }
+
+    #[test]
+    fn a_latin_relayout_follows_the_letter_the_user_sees() {
+        use iced::keyboard::key::Code;
+        assert_eq!(ctrl("j", Code::KeyC, None), Some(0x0a));
+        assert_eq!(ctrl("C", Code::KeyI, None), Some(0x03));
+    }
+
+    #[test]
+    fn control_punctuation_maps_to_its_c0_byte() {
+        use iced::keyboard::key::Code;
+        assert_eq!(ctrl("[", Code::BracketLeft, None), Some(0x1b));
+        assert_eq!(ctrl("]", Code::BracketRight, None), Some(0x1d));
+        assert_eq!(ctrl("\\", Code::Backslash, None), Some(0x1c));
+        assert_eq!(ctrl("_", Code::Minus, None), Some(0x1f));
+        assert_eq!(ctrl("?", Code::Slash, None), Some(0x7f));
+    }
+
+    #[test]
+    fn a_named_physical_token_is_never_read_as_its_first_letter() {
+        use iced::keyboard::key::Code;
+        assert_eq!(
+            control_byte(&Key::Unidentified, &Physical::Code(Code::Enter), None),
+            None
+        );
+        assert_eq!(
+            control_byte(&Key::Unidentified, &Physical::Code(Code::Comma), None),
+            None
+        );
+    }
+
+    #[test]
+    fn an_unmappable_key_falls_back_to_the_resolved_control_character() {
+        use iced::keyboard::key::Code;
+        assert_eq!(
+            control_byte(
+                &Key::Unidentified,
+                &Physical::Code(Code::Comma),
+                Some("\u{1c}")
+            ),
+            Some(0x1c)
+        );
+        assert_eq!(
+            control_byte(&Key::Unidentified, &Physical::Code(Code::Comma), Some("ㅊ")),
+            None
+        );
     }
 
     #[test]
