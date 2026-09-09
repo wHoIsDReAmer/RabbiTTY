@@ -389,7 +389,7 @@ pub fn system_view<'a>(
         overview.installed,
         crate::t!("settings.plugins.installed"),
         overview.disabled,
-        crate::t!("settings.plugins.disabled"),
+        crate::t!("settings.plugins.disabled_count"),
     );
 
     let path = container(
