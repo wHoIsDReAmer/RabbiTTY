@@ -507,8 +507,20 @@ impl PluginRegistry {
             .ok_or_else(|| format!("{} is not a usable plugin name", info.name))?;
 
         let target = self.host.root().join(&dir);
+        let component = target.join(COMPONENT_FILE);
+        // `fs::copy` truncates when both sides are the same file.
+        if same_file(source, &component) {
+            return Err(format!("{} is already installed from that file", info.name));
+        }
+
         std::fs::create_dir_all(&target).map_err(|err| err.to_string())?;
-        std::fs::copy(source, target.join(COMPONENT_FILE)).map_err(|err| err.to_string())?;
+        std::fs::copy(source, &component).map_err(|err| err.to_string())?;
+
+        // A replacement is a different binary under the same id. Carrying the
+        // old entry's consent over would grant it capabilities nobody approved.
+        if let Some(settings) = self.settings.get_mut(&dir) {
+            settings.consented.clear();
+        }
 
         self.load_all();
         Ok(info.name)
@@ -799,6 +811,13 @@ impl PluginRegistry {
 
     fn entry_mut(&mut self, id: &str) -> Option<&mut Entry> {
         self.entries.iter_mut().find(|entry| entry.id == id)
+    }
+}
+
+fn same_file(a: &Path, b: &Path) -> bool {
+    match (a.canonicalize(), b.canonicalize()) {
+        (Ok(a), Ok(b)) => a == b,
+        _ => false,
     }
 }
 
