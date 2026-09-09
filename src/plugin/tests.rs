@@ -1683,6 +1683,69 @@ fn the_fixture_loads_under_the_current_abi() {
 }
 
 #[test]
+fn reinstalling_over_a_plugin_drops_the_consent_the_old_binary_earned() {
+    let Some(source) = hello_component() else {
+        return;
+    };
+    let root = TempRoot::new("install-consent");
+    std::fs::create_dir_all(&root.0).expect("root");
+    let mut registry = registry_in(&root);
+    registry.install(&source).expect("installed");
+
+    for (id, caps) in registry.pending_consent() {
+        for cap in caps {
+            registry.consent(&id, cap);
+        }
+    }
+    // Consent is recorded in settings; the instance picks it up on reload.
+    registry.load_all();
+    let granted = registry.granted("hello").len();
+    assert!(registry.pending_consent().is_empty(), "nothing left to ask");
+    assert!(
+        granted > 0,
+        "the fixture requests at least one gated capability"
+    );
+
+    registry.install(&source).expect("reinstalled");
+
+    assert!(
+        registry
+            .pending_consent()
+            .iter()
+            .any(|(id, _)| id == "hello"),
+        "the replacement inherited consent instead of asking again"
+    );
+    assert!(
+        registry.granted("hello").len() < granted,
+        "the replacement kept capabilities nobody approved for it"
+    );
+}
+
+#[test]
+fn installing_a_plugin_from_its_own_installed_file_is_refused() {
+    let Some(source) = hello_component() else {
+        return;
+    };
+    let root = TempRoot::new("install-self");
+    std::fs::create_dir_all(&root.0).expect("root");
+    let mut registry = registry_in(&root);
+    registry.install(&source).expect("installed");
+    let installed = root.0.join("hello").join(registry::COMPONENT_FILE);
+    let size = std::fs::metadata(&installed).expect("metadata").len();
+
+    let err = registry
+        .install(&installed)
+        .expect_err("copying a file onto itself truncates it");
+
+    assert!(err.contains("already installed"), "{err}");
+    assert_eq!(
+        std::fs::metadata(&installed).expect("metadata").len(),
+        size,
+        "the installed component was truncated"
+    );
+}
+
+#[test]
 fn installing_a_component_makes_it_discoverable() {
     let Some(source) = hello_component() else {
         return;
