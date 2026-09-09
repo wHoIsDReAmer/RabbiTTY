@@ -3,6 +3,7 @@ use super::{CellVisual, TerminalSize, TerminalTheme};
 use alacritty_terminal::event::{Event, EventListener, WindowSize};
 use alacritty_terminal::grid::Dimensions;
 use alacritty_terminal::grid::Scroll;
+use alacritty_terminal::index::{Column, Line, Point};
 use alacritty_terminal::term::cell::Flags;
 use alacritty_terminal::term::color::Colors;
 use alacritty_terminal::term::{
@@ -206,6 +207,35 @@ impl TerminalEngine {
         let offset = self.term.grid().display_offset();
         let history = self.term.grid().history_size();
         (offset, history)
+    }
+
+    /// Text under a selection, read from the grid rather than the viewport
+    /// cache so rows scrolled out of view are still included.
+    pub fn selection_text(&self, selection: &super::Selection) -> Option<String> {
+        let grid = self.term.grid();
+        let (top, bottom) = (
+            grid.topmost_line().0 as i64,
+            grid.bottommost_line().0 as i64,
+        );
+        let last_col = grid.last_column().0;
+        // A selection row is a viewport row in the frame it was anchored in, so
+        // subtracting that frame's offset gives a scroll-independent grid line.
+        let anchor = selection.anchor_offset as i64;
+        let point = |p: super::SelectionPoint| {
+            Point::new(
+                Line((p.row - anchor).clamp(top, bottom) as i32),
+                Column(p.col.min(last_col)),
+            )
+        };
+
+        let (start, end) = selection.ordered();
+        let (start, end) = (point(start), point(end));
+        if start > end {
+            return None;
+        }
+
+        let text = self.term.bounds_to_string(start, end);
+        (!text.is_empty()).then_some(text)
     }
 
     /// Scroll to a relative position (0.0 = top of history, 1.0 = bottom/latest).
@@ -458,6 +488,7 @@ impl EventListener for PtyEventProxy {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::terminal::{Selection, SelectionPoint};
 
     fn test_engine() -> TerminalEngine {
         TerminalEngine::new(
@@ -599,6 +630,72 @@ mod tests {
         assert!(
             second_gen > first_gen,
             "generation did not advance: {first_gen} -> {second_gen}"
+        );
+    }
+
+    fn sel(
+        start_row: i64,
+        start_col: usize,
+        end_row: i64,
+        end_col: usize,
+        anchor: usize,
+    ) -> Selection {
+        Selection {
+            start: SelectionPoint {
+                row: start_row,
+                col: start_col,
+            },
+            end: SelectionPoint {
+                row: end_row,
+                col: end_col,
+            },
+            anchor_offset: anchor,
+        }
+    }
+
+    #[test]
+    fn a_selection_scrolled_out_of_view_still_copies_its_text() {
+        // Three screen lines, so "one".."three" are pushed into history.
+        let mut engine = test_engine();
+        engine.feed_bytes(b"one\r\ntwo\r\nthree\r\nfour\r\nfive\r\n");
+
+        assert_eq!(
+            engine.selection_text(&sel(0, 0, 0, 3, 0)).as_deref(),
+            Some("four")
+        );
+        // Negative rows are scrollback and are not in the viewport cache at all.
+        assert_eq!(
+            engine.selection_text(&sel(-3, 0, -3, 2, 0)).as_deref(),
+            Some("one")
+        );
+        assert_eq!(
+            engine.selection_text(&sel(-2, 0, -2, 2, 0)).as_deref(),
+            Some("two")
+        );
+    }
+
+    #[test]
+    fn a_selection_taller_than_the_screen_keeps_every_line() {
+        let mut engine = test_engine();
+        engine.feed_bytes(b"one\r\ntwo\r\nthree\r\nfour\r\nfive\r\n");
+
+        let text = engine.selection_text(&sel(-3, 0, 1, 3, 0)).expect("text");
+        let lines: Vec<&str> = text.lines().collect();
+        assert_eq!(lines, vec!["one", "two", "three", "four", "five"]);
+    }
+
+    #[test]
+    fn selection_rows_are_read_in_the_frame_they_were_anchored_in() {
+        let mut engine = test_engine();
+        engine.feed_bytes(b"one\r\ntwo\r\nthree\r\nfour\r\nfive\r\n");
+        engine.scroll(2);
+        let (offset, _) = engine.scroll_position();
+        assert_eq!(offset, 2, "expected the viewport to be two lines back");
+
+        // Row 0 of a selection anchored here is two lines above the live bottom.
+        assert_eq!(
+            engine.selection_text(&sel(0, 0, 0, 2, offset)).as_deref(),
+            Some("two")
         );
     }
 }

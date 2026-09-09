@@ -198,46 +198,7 @@ impl Pane {
     }
 
     pub fn selected_text(&self) -> Option<String> {
-        let sel = self.selection.as_ref()?;
-        let cells = self.engine.render_cells();
-        let size = self.engine.size();
-        let (current_offset, _) = self.engine.scroll_position();
-        let delta = sel.delta(current_offset);
-        let (start, end) = sel.ordered();
-        let mut result = String::new();
-        for row in start.row..=end.row {
-            // Selection rows live in the anchor frame; translate to the
-            // current viewport before reading cells.
-            let viewport_row = row + delta;
-            let row_in_view = (0..size.lines as i64).contains(&viewport_row);
-            if row_in_view {
-                let viewport_row = viewport_row as usize;
-                let col_start = if row == start.row { start.col } else { 0 };
-                let col_end = if row == end.row {
-                    end.col
-                } else {
-                    size.columns.saturating_sub(1)
-                };
-                for col in col_start..=col_end {
-                    let idx = viewport_row * size.columns + col;
-                    if let Some(cell) = cells.get(idx) {
-                        result.push(cell.ch);
-                    }
-                }
-                let trimmed_len = result.trim_end_matches(' ').len();
-                result.truncate(trimmed_len);
-            }
-            if row != end.row {
-                result.push('\n');
-            }
-        }
-        let trimmed_len = result.trim_end_matches(' ').len();
-        result.truncate(trimmed_len);
-        if result.is_empty() {
-            None
-        } else {
-            Some(result)
-        }
+        self.engine.selection_text(self.selection.as_ref()?)
     }
 
     pub fn clear_selection(&mut self) {
