@@ -18,7 +18,7 @@ fn main() {
             let path = entry.path();
             let locale = path.file_stem().unwrap().to_str().unwrap().to_string();
             let src = std::fs::read_to_string(&path).unwrap();
-            let mut map = parse_toml(&src);
+            let mut map = parse_toml(&src, &path.display().to_string());
             let native_label = map.remove("meta.name").unwrap_or_else(|| locale.clone());
             map.retain(|k, _| !k.starts_with("meta."));
             locales.push((locale, native_label, map));
@@ -98,14 +98,21 @@ fn main() {
     }
 }
 
-fn parse_toml(src: &str) -> HashMap<String, String> {
+fn parse_toml(src: &str, origin: &str) -> HashMap<String, String> {
     let mut map = HashMap::new();
+    let mut sections: Vec<String> = Vec::new();
     let mut section = String::new();
 
     for line in src.lines() {
         let line = line.trim();
         if line.starts_with('[') && line.ends_with(']') {
             section = line[1..line.len() - 1].to_string();
+            // The generated matcher is a HashMap, so a redefined table would
+            // silently overwrite the earlier one instead of failing to parse.
+            if sections.contains(&section) {
+                panic!("{origin}: [{section}] is defined more than once");
+            }
+            sections.push(section.clone());
         } else if let Some(eq) = line.find('=') {
             let key = line[..eq].trim();
             let val = line[eq + 1..].trim();
@@ -114,9 +121,11 @@ fn parse_toml(src: &str) -> HashMap<String, String> {
                 let full_key = if section.is_empty() {
                     key.to_string()
                 } else {
-                    format!("{}.{}", section, key)
+                    format!("{section}.{key}")
                 };
-                map.insert(full_key, val);
+                if map.insert(full_key.clone(), val).is_some() {
+                    panic!("{origin}: {full_key} is defined more than once");
+                }
             }
         }
     }

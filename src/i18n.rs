@@ -98,4 +98,16 @@ mod tests {
         set_locale(Some("en"));
         assert_eq!(t("shell_picker.title"), "Start New Session");
     }
+
+    #[test]
+    fn the_disabled_count_word_is_distinct_from_the_status_label() {
+        assert_eq!(
+            get_translation("en", "settings.plugins.disabled_count"),
+            Some("disabled")
+        );
+        assert_eq!(
+            get_translation("en", "settings.plugins.disabled"),
+            Some("Disabled")
+        );
+    }
 }
