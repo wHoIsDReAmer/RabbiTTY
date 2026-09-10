@@ -60,6 +60,11 @@ impl App {
                     self.match_output_lines(tab_id, lines);
                 }
             }
+            OutputEvent::Disconnected { tab_id } => {
+                if let Some(pane) = self.pane_mut_by_id(tab_id) {
+                    pane.leave_application_modes();
+                }
+            }
             OutputEvent::Closed { tab_id } => {
                 if let Some(index) = self
                     .tabs

@@ -232,6 +232,10 @@ impl Pane {
         self.engine.bracketed_paste()
     }
 
+    pub fn leave_application_modes(&mut self) {
+        self.engine.leave_application_modes();
+    }
+
     /// Send scroll as arrow key sequences (for alt screen without mouse mode).
     pub fn send_scroll_as_arrows(&self, lines: i32) {
         let TerminalSession::Active(session) = &self.session else {

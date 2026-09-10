@@ -31,8 +31,17 @@ pub enum SessionError {
 
 #[derive(Debug, Clone)]
 pub enum OutputEvent {
-    Data { tab_id: u64, bytes: Vec<u8> },
-    Closed { tab_id: u64 },
+    Data {
+        tab_id: u64,
+        bytes: Vec<u8>,
+    },
+    /// The remote side went away but the pane stays open to reconnect.
+    Disconnected {
+        tab_id: u64,
+    },
+    Closed {
+        tab_id: u64,
+    },
 }
 
 impl Session {
