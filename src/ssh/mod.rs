@@ -265,6 +265,9 @@ pub fn spawn_ssh_session(
                 *guard = None;
             }
 
+            // Ordered before the status text so it lands on the main screen.
+            let _ = otx.unbounded_send(OutputEvent::Disconnected { tab_id });
+
             let msg = match &result {
                 Ok(()) => format!(
                     "\r\n  {badge}  {}\r\n  {badge}  {}\r\n",

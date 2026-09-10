@@ -9,7 +9,9 @@ use alacritty_terminal::term::color::Colors;
 use alacritty_terminal::term::{
     Config as TermConfig, Osc52, RenderableContent, Term, TermMode, point_to_viewport,
 };
-use alacritty_terminal::vte::ansi::{CursorShape, NamedColor, Processor, Rgb};
+use alacritty_terminal::vte::ansi::{
+    CursorShape, Handler, NamedColor, NamedPrivateMode, PrivateMode, Processor, Rgb,
+};
 use std::cell::{Cell, RefCell};
 use std::io::Write;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -284,6 +286,27 @@ impl TerminalEngine {
     /// (`\e[?2004h`).
     pub fn bracketed_paste(&self) -> bool {
         self.term.mode().contains(TermMode::BRACKETED_PASTE)
+    }
+
+    /// Undoes what a program leaves switched on when session disconnected.
+    pub fn leave_application_modes(&mut self) {
+        const LEFT_ON_BY_A_DEAD_PROGRAM: [NamedPrivateMode; 8] = [
+            NamedPrivateMode::SwapScreenAndSetRestoreCursor,
+            NamedPrivateMode::CursorKeys,
+            NamedPrivateMode::BracketedPaste,
+            NamedPrivateMode::ReportMouseClicks,
+            NamedPrivateMode::ReportCellMouseMotion,
+            NamedPrivateMode::ReportAllMouseMotion,
+            NamedPrivateMode::SgrMouse,
+            NamedPrivateMode::ReportFocusInOut,
+        ];
+        for mode in LEFT_ON_BY_A_DEAD_PROGRAM {
+            self.term.unset_private_mode(PrivateMode::Named(mode));
+        }
+
+        self.term
+            .set_private_mode(PrivateMode::Named(NamedPrivateMode::ShowCursor));
+        self.cache_dirty.set(true);
     }
 
     /// Current text cursor as `(col, row)` in viewport coordinates.
@@ -696,6 +719,36 @@ mod tests {
         assert_eq!(
             engine.selection_text(&sel(0, 0, 0, 2, offset)).as_deref(),
             Some("two")
+        );
+    }
+
+    #[test]
+    fn a_dead_session_leaves_no_application_modes_behind_but_keeps_history() {
+        let mut engine = test_engine();
+        engine.feed_bytes(b"one\r\ntwo\r\nthree\r\nfour\r\nfive\r\n");
+        let (_, history_before) = engine.scroll_position();
+
+        // What vim switches on, then dies without switching off.
+        engine.feed_bytes(b"\x1b[?1049h\x1b[?1h\x1b[?2004h\x1b[?1000h\x1b[?1006h\x1b[?25l");
+        assert!(engine.alt_screen() && engine.app_cursor() && engine.bracketed_paste());
+        assert!(engine.mouse_mode() && engine.sgr_mouse());
+        assert!(engine.cursor_cell().is_none(), "cursor should be hidden");
+
+        engine.leave_application_modes();
+
+        assert!(!engine.alt_screen(), "still on the alternate screen");
+        assert!(!engine.app_cursor(), "arrows would still be sent as SS3");
+        assert!(!engine.bracketed_paste());
+        assert!(!engine.mouse_mode() && !engine.sgr_mouse());
+        assert!(engine.cursor_cell().is_some(), "cursor stayed hidden");
+        assert_eq!(
+            engine.scroll_position().1,
+            history_before,
+            "scrollback was dropped"
+        );
+        assert_eq!(
+            engine.selection_text(&sel(-3, 0, -3, 2, 0)).as_deref(),
+            Some("one")
         );
     }
 }

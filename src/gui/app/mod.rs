@@ -899,6 +899,23 @@ mod tests {
     }
 
     #[test]
+    fn a_dropped_session_resets_the_modes_the_program_left_on() {
+        let mut app = zoom_app();
+        feed(&mut app, b"\x1b[?1h\x1b[?1049h");
+        assert!(app.tabs[0].panes[0].app_cursor());
+
+        let tab_id = app.tabs[0].panes[0].id;
+        app.handle_pty_event(crate::session::OutputEvent::Disconnected { tab_id });
+
+        assert!(
+            !app.tabs[0].panes[0].app_cursor(),
+            "arrows would go out as SS3 to a fresh shell"
+        );
+        assert!(!app.tabs[0].panes[0].alt_screen());
+        assert_eq!(app.tabs[0].panes.len(), 1, "a disconnect is not a close");
+    }
+
+    #[test]
     fn osc52_read_is_refused_by_default() {
         let mut app = zoom_app();
         assert!(!app.config.terminal.osc52_read, "read defaults to on");
