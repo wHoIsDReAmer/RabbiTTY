@@ -916,6 +916,31 @@ mod tests {
     }
 
     #[test]
+    fn a_dropped_session_lets_the_sftp_drawer_open_again() {
+        let mut app = zoom_app();
+        let (tx, mut rx) = iced::futures::channel::mpsc::unbounded();
+        {
+            let sftp = &mut app.tabs[0].panes[0].sftp;
+            sftp.open = true;
+            sftp.command_tx = Some(tx);
+        }
+
+        let tab_id = app.tabs[0].panes[0].id;
+        app.handle_pty_event(crate::session::OutputEvent::Disconnected { tab_id });
+
+        let sftp = &app.tabs[0].panes[0].sftp;
+        assert!(
+            sftp.command_tx.is_none(),
+            "the dead worker's channel was kept"
+        );
+        assert!(!sftp.open);
+        assert!(
+            rx.try_recv().is_err_and(|err| err.is_closed()),
+            "a sender is still alive somewhere"
+        );
+    }
+
+    #[test]
     fn osc52_read_is_refused_by_default() {
         let mut app = zoom_app();
         assert!(!app.config.terminal.osc52_read, "read defaults to on");
