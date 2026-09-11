@@ -9,7 +9,6 @@ name = "rabbitty"
 version = "0.2.0"
 edition = "2024"
 authors = ["neverprogrammer@gmail.com"]
-rust-version = "1.92"
 description = "Fast, lean, cross-platform terminal emulator."
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/wHoIsDReAmer/RabbiTTY"
@@ -61,6 +60,7 @@ tokio = { version = "1", default-features = false, features = ["io-util", "proce
 wasmtime = { version = "44", default-features = false, features = ["component-model", "cranelift", "runtime", "std"] }
 wasmtime-wasi = { version = "44", default-features = false, features = ["p2"] }
 regex = { version = "1.13.1", default-features = false, features = ["std", "perf", "unicode-case", "unicode-perl"] }
+unicode-normalization = "0.1"
 
 # Windows-specific (custom titlebar with resize border)
 [target.'cfg(target_os = "windows")'.dependencies]
