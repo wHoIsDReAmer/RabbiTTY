@@ -16,6 +16,7 @@ use std::cell::{Cell, RefCell};
 use std::io::Write;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
+use unicode_normalization::UnicodeNormalization;
 
 pub struct TerminalEngine {
     term: Term<PtyEventProxy>,
@@ -426,7 +427,7 @@ impl TerminalEngine {
                         fg = bg;
                     }
 
-                    slot.ch = indexed.cell.c;
+                    slot.ch = composed(indexed.cell.c, indexed.cell.zerowidth().unwrap_or(&[]));
                     slot.col = col;
                     slot.row = row;
                     slot.fg = fg;
@@ -450,6 +451,17 @@ struct PtyEventProxy {
     title: Arc<Mutex<Option<TitleChange>>>,
     bell_pending: Arc<AtomicBool>,
     osc: Arc<Mutex<OscPending>>,
+}
+
+fn composed(lead: char, trailing: &[char]) -> char {
+    if trailing.is_empty() {
+        return lead;
+    }
+    let mut nfc = std::iter::once(lead).chain(trailing.iter().copied()).nfc();
+    match (nfc.next(), nfc.next()) {
+        (Some(single), None) => single,
+        _ => lead,
+    }
 }
 
 impl EventListener for PtyEventProxy {
@@ -750,5 +762,31 @@ mod tests {
             engine.selection_text(&sel(-3, 0, -3, 2, 0)).as_deref(),
             Some("one")
         );
+    }
+
+    #[test]
+    fn decomposed_text_renders_as_composed_characters() {
+        let mut engine = test_engine();
+        engine.feed_bytes("\u{1112}\u{1161}\u{11AB}e\u{0301}x".as_bytes());
+
+        let cells = engine.render_cells();
+        let row: String = cells.iter().take(4).map(|c| c.ch).collect();
+        assert_eq!(row, "한 éx", "wide cells keep their spacer");
+        assert!(cells[0].wide);
+    }
+
+    #[test]
+    fn precomposed_text_is_untouched() {
+        let mut engine = test_engine();
+        engine.feed_bytes("한éx".as_bytes());
+
+        let row: String = engine.render_cells().iter().take(4).map(|c| c.ch).collect();
+        assert_eq!(row, "한 éx");
+    }
+
+    #[test]
+    fn marks_that_do_not_compose_leave_the_base_character() {
+        assert_eq!(composed('x', &['\u{0301}']), 'x');
+        assert_eq!(composed('\u{1112}', &['\u{11AB}']), '\u{1112}');
     }
 }
