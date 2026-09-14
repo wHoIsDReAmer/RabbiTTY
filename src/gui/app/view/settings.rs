@@ -1,7 +1,7 @@
 use super::super::{App, Message, SettingsMessage};
 use crate::gui::settings::{self, SettingsCategory};
 use crate::gui::theme::{RADIUS_NORMAL, SPACING_LARGE, SPACING_NORMAL, SPACING_SMALL};
-use iced::widget::{button, column, container, row, scrollable, stack, text};
+use iced::widget::{button, column, container, row, scrollable, text};
 use iced::{Background, Border, Color, Element, Length};
 
 const CONTENT_MAX_WIDTH: f32 = 820.0;
@@ -116,34 +116,10 @@ impl App {
         .max_width(CONTENT_MAX_WIDTH)
         .width(Length::Fill);
 
-        let body_scroll: Element<Message> = scrollable(body_content)
+        let body: Element<Message> = scrollable(body_content)
             .height(Length::Fill)
             .width(Length::Fill)
             .into();
-
-        // Cross-fade overlay confined to the body area (sidebar stays put).
-        let body: Element<Message> = if let Some(alpha) = self
-            .settings_category_transition
-            .overlay_alpha(iced::time::Instant::now())
-        {
-            let overlay_color = Color {
-                a: alpha,
-                ..palette.background
-            };
-            let overlay = container("")
-                .width(Length::Fill)
-                .height(Length::Fill)
-                .style(move |_theme: &iced::Theme| container::Style {
-                    background: Some(Background::Color(overlay_color)),
-                    ..Default::default()
-                });
-            stack![body_scroll, overlay]
-                .width(Length::Fill)
-                .height(Length::Fill)
-                .into()
-        } else {
-            body_scroll
-        };
 
         let content = container(body)
             .width(Length::Fill)

@@ -311,7 +311,6 @@ pub struct App {
     pub(super) settings_open: bool,
     pub(super) settings_category: SettingsCategory,
     pub(super) settings_draft: SettingsDraft,
-    pub(super) settings_category_transition: crate::gui::components::CategoryTransition,
     pub(super) font_combo_state: combo_box::State<TerminalFontOption>,
     pub(super) show_all_fonts: bool,
     pub(super) all_font_options: Vec<TerminalFontOption>,
@@ -480,7 +479,6 @@ impl App {
             settings_open: false,
             settings_category: SettingsCategory::Appearance,
             settings_draft,
-            settings_category_transition: crate::gui::components::CategoryTransition::new(),
             font_combo_state,
             show_all_fonts,
             all_font_options,
@@ -693,6 +691,19 @@ mod tests {
 
         assert!(!app.show_shell_picker);
         assert!(!app.modal_anim.value());
+    }
+
+    #[test]
+    fn selecting_a_settings_category_switches_immediately() {
+        use crate::gui::settings::SettingsCategory;
+        let mut config = AppConfig::default();
+        config.ui.animations_enabled = true;
+        let mut app = App::new(config);
+        let _ = app.update(Message::Settings(SettingsMessage::SelectCategory(
+            SettingsCategory::Theme,
+        )));
+
+        assert_eq!(app.settings_category, SettingsCategory::Theme);
     }
 
     #[test]

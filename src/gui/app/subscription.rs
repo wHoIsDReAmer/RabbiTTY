@@ -24,7 +24,6 @@ impl App {
                 .iter()
                 .flat_map(|tab| tab.panes.iter())
                 .any(|pane| pane.sftp.anim.is_animating(now))
-            || self.settings_category_transition.is_animating(now)
             || bell_flashing;
 
         let animation_tick = if has_animation {
