@@ -173,6 +173,7 @@ font_size_increase = "Increase font size"
 font_size_decrease = "Decrease font size"
 font_size_reset = "Reset font size"
 [settings.ssh]
+default_profile = "New tab opens"
 profiles = "Profiles"
 no_profiles = "No profiles yet"
 empty_hint = "Add a local shell or SSH connection to launch it quickly"

@@ -382,6 +382,16 @@ impl App {
                 self.settings_draft.tab_bar_position = pos;
                 return self.apply_settings(true);
             }
+            SettingsMessage::OpenDefaultProfilePicker => {
+                self.settings_draft.open_default_profile_picker();
+                self.modal_anim.go_mut(true, Instant::now());
+            }
+            SettingsMessage::DefaultProfileSelected(name) => {
+                self.settings_draft.default_profile = name;
+                self.settings_draft.close_profile_modal();
+                self.modal_anim.go_mut(false, Instant::now());
+                return self.apply_settings(true);
+            }
             SettingsMessage::BracketedPasteToggled(enabled) => {
                 self.settings_draft.bracketed_paste = enabled;
                 return self.apply_settings(true);

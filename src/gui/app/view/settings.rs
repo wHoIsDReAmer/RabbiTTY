@@ -109,6 +109,7 @@ impl App {
             self.show_all_fonts,
             &self.all_font_options,
             self.plugins_overview(),
+            self.shell_picker_entries(),
             palette,
         ))
         .padding([SPACING_LARGE, 12.0])
@@ -160,6 +161,7 @@ impl App {
                 settings_layout,
                 &self.settings_draft,
                 self.profile_templates(),
+                self.shell_picker_entries(),
                 self.modal_anim
                     .interpolate(0.0f32, 1.0f32, iced::time::Instant::now()),
                 palette,

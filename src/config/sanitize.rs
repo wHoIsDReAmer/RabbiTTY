@@ -35,6 +35,11 @@ pub(super) fn sanitize_language(value: &str) -> Option<String> {
     }
 }
 
+pub(super) fn sanitize_profile_name(value: &str) -> Option<String> {
+    let trimmed = value.trim();
+    (!trimmed.is_empty()).then(|| trimmed.to_string())
+}
+
 pub(super) fn sanitize_terminal_font_selection(value: &str) -> Option<String> {
     let selection = value.trim();
     if selection.is_empty() {

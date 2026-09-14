@@ -1,7 +1,6 @@
 use super::super::{App, Message};
 use crate::gui::app::update::tab::PickerSection;
 use crate::gui::icons::{self, ShellIcon};
-use crate::gui::tab::{Profile, ProfileKind};
 use crate::gui::theme::{Palette, RADIUS_NORMAL, RADIUS_SMALL, SPACING_SMALL};
 use iced::time::Instant;
 use iced::widget::{button, column, container, mouse_area, row, scrollable, stack, svg, text};
@@ -138,17 +137,6 @@ impl PickerStyle {
     }
 }
 
-fn icon_for_shell(shell: &Profile) -> ShellIcon {
-    if let Some(name) = shell.icon.as_deref().filter(|n| !n.trim().is_empty()) {
-        return icons::by_name(name);
-    }
-    match &shell.kind {
-        ProfileKind::Ssh(_) => icons::ssh(),
-        ProfileKind::Local { program: None, .. } => icons::by_name(&icons::default_shell_name()),
-        ProfileKind::Local { .. } => icons::by_name(&shell.name),
-    }
-}
-
 const PICKER_WIDTH: f32 = 280.0;
 
 impl App {
@@ -200,7 +188,7 @@ impl App {
                 previous = Some(entry.section);
             }
             let selected = self.shell_picker_selected == option_index;
-            let icon = style.icon(icon_for_shell(&entry.profile));
+            let icon = style.icon(icons::for_profile(&entry.profile));
             items.push(style.item_button(
                 icon,
                 entry.label.clone(),

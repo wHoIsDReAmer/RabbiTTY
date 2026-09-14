@@ -54,6 +54,7 @@ pub struct UiConfig {
     pub animations_enabled: bool,
     /// Where the tab bar / title bar is anchored.
     pub tab_bar_position: TabBarPosition,
+    pub default_profile: Option<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -113,6 +114,7 @@ impl Default for AppConfig {
                 language: None,
                 animations_enabled: DEFAULT_ANIMATIONS_ENABLED,
                 tab_bar_position: TabBarPosition::default(),
+                default_profile: None,
             },
             terminal: TerminalConfig {
                 cell_width,
@@ -211,6 +213,9 @@ impl AppConfig {
             }
             if let Some(position) = ui.tab_bar_position {
                 self.ui.tab_bar_position = position;
+            }
+            if let Some(name) = ui.default_profile {
+                self.ui.default_profile = sanitize_profile_name(&name);
             }
         }
 
