@@ -63,6 +63,7 @@ impl App {
             OutputEvent::Disconnected { tab_id } => {
                 if let Some(pane) = self.pane_mut_by_id(tab_id) {
                     pane.leave_application_modes();
+                    pane.sftp.reset();
                 }
             }
             OutputEvent::Closed { tab_id } => {
