@@ -712,6 +712,7 @@ fn profile_subtitle(profile: &ProfileDraft) -> String {
             let auth = match profile.auth_method {
                 SshAuthMethod::KeyFile => crate::t!("settings.ssh.key_file"),
                 SshAuthMethod::Password => crate::t!("settings.ssh.password"),
+                SshAuthMethod::Agent => crate::t!("settings.ssh.agent"),
             };
             let proxy = if profile.proxy_command.trim().is_empty() {
                 ""
@@ -1119,38 +1120,51 @@ fn ssh_connection_fields<'a>(
                 palette,
                 animations_enabled,
             ),
+            auth_method_button(
+                crate::t!("settings.ssh.agent"),
+                matches!(profile.auth_method, SshAuthMethod::Agent),
+                "agent",
+                palette,
+                animations_enabled,
+            ),
         ]
         .spacing(SPACING_SMALL)
         .width(Length::Fill)
         .into(),
     );
 
-    if matches!(profile.auth_method, SshAuthMethod::KeyFile) {
-        items.push(
-            modal_input(
-                crate::t!("settings.ssh.key_file_input_placeholder"),
-                &profile.identity_file,
-                |next| {
-                    Message::Settings(SettingsMessage::ProfileModalFieldChanged(
-                        ProfileField::IdentityFile,
-                        next,
-                    ))
-                },
-                palette,
-            )
-            .into(),
-        );
-        items.push(hint(crate::t!("settings.ssh.auth_hint_key_file"), palette));
-    } else {
-        items.push(
-            modal_password(
-                crate::t!("settings.ssh.password"),
-                &profile.password,
-                palette,
-            )
-            .into(),
-        );
-        items.push(hint(crate::t!("settings.ssh.auth_hint_password"), palette));
+    match profile.auth_method {
+        SshAuthMethod::KeyFile => {
+            items.push(
+                modal_input(
+                    crate::t!("settings.ssh.key_file_input_placeholder"),
+                    &profile.identity_file,
+                    |next| {
+                        Message::Settings(SettingsMessage::ProfileModalFieldChanged(
+                            ProfileField::IdentityFile,
+                            next,
+                        ))
+                    },
+                    palette,
+                )
+                .into(),
+            );
+            items.push(hint(crate::t!("settings.ssh.auth_hint_key_file"), palette));
+        }
+        SshAuthMethod::Password => {
+            items.push(
+                modal_password(
+                    crate::t!("settings.ssh.password"),
+                    &profile.password,
+                    palette,
+                )
+                .into(),
+            );
+            items.push(hint(crate::t!("settings.ssh.auth_hint_password"), palette));
+        }
+        SshAuthMethod::Agent => {
+            items.push(hint(crate::t!("settings.ssh.auth_hint_agent"), palette));
+        }
     }
 }
 
