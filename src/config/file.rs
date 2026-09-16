@@ -27,6 +27,7 @@ pub(super) struct UiFileConfig {
     pub(super) language: Option<String>,
     pub(super) animations_enabled: Option<bool>,
     pub(super) tab_bar_position: Option<TabBarPosition>,
+    pub(super) default_profile: Option<String>,
 }
 
 #[derive(Debug, Deserialize, Serialize)]
@@ -77,6 +78,7 @@ impl From<&AppConfig> for FileConfig {
                 language: config.ui.language.clone(),
                 animations_enabled: Some(config.ui.animations_enabled),
                 tab_bar_position: Some(config.ui.tab_bar_position),
+                default_profile: config.ui.default_profile.clone(),
             }),
             terminal: Some(TerminalFileConfig {
                 cell_width: None,
@@ -376,5 +378,20 @@ mod plugin_tests {
         restored.apply_file(parsed);
 
         assert!(restored.plugins.is_empty());
+    }
+
+    #[test]
+    fn the_default_profile_survives_a_round_trip_and_blank_means_none() {
+        let mut config = AppConfig::default();
+        config.ui.default_profile = Some("prod".into());
+        let text = toml::to_string_pretty(&FileConfig::from(&config)).expect("serialize");
+        let mut restored = AppConfig::default();
+        restored.apply_file(toml::from_str::<FileConfig>(&text).expect("parse"));
+        assert_eq!(restored.ui.default_profile.as_deref(), Some("prod"));
+
+        let blank =
+            toml::from_str::<FileConfig>("[ui]\ndefault_profile = \"  \"\n").expect("parse");
+        restored.apply_file(blank);
+        assert_eq!(restored.ui.default_profile, None);
     }
 }

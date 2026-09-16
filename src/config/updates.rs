@@ -12,6 +12,7 @@ pub struct AppConfigUpdates {
     pub language: Option<String>,
     pub animations_enabled: Option<bool>,
     pub tab_bar_position: Option<TabBarPosition>,
+    pub default_profile: Option<String>,
     pub terminal_font_selection: Option<String>,
     pub terminal_font_size: Option<f32>,
     pub terminal_padding_x: Option<f32>,
@@ -56,6 +57,9 @@ impl AppConfig {
         }
         if let Some(position) = updates.tab_bar_position {
             self.ui.tab_bar_position = position;
+        }
+        if let Some(name) = updates.default_profile.as_deref() {
+            self.ui.default_profile = sanitize_profile_name(name);
         }
         let old_font = self.terminal.font_selection.clone();
         if let Some(selection) = updates.terminal_font_selection {

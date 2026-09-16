@@ -281,7 +281,8 @@ impl App {
             Message::PtySenderReady(sender) => {
                 self.pty_sender = Some(sender);
                 if self.take_initial_shell_request() {
-                    return self.create_tab(Profile::default_shell());
+                    let profile = self.default_profile();
+                    return self.launch_profile(profile);
                 }
             }
             Message::PtyOutput(event) => {
@@ -490,10 +491,6 @@ impl App {
                     if !pane.sftp.anim.is_animating(now) && !pane.sftp.anim.value() {
                         pane.sftp.open = false;
                     }
-                }
-                if let Some(cat) = self.settings_category_transition.tick(now) {
-                    self.settings_category = cat;
-                    self.refresh_plugin_settings();
                 }
                 if let Some(start) = self.bell_flash_start
                     && start.elapsed() >= super::BELL_FLASH_DURATION

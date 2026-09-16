@@ -323,14 +323,7 @@ impl App {
                     self.active_tab = SETTINGS_TAB_INDEX;
                     self.settings_draft = SettingsDraft::from_config(&self.config);
                 }
-                if let Some(immediate) = self.settings_category_transition.request_switch(
-                    category,
-                    self.settings_category,
-                    self.config.ui.animations_enabled,
-                    Instant::now(),
-                ) {
-                    self.settings_category = immediate;
-                }
+                self.settings_category = category;
                 self.refresh_plugin_settings();
             }
             SettingsMessage::InputChanged(field, value) => {
@@ -380,6 +373,16 @@ impl App {
             }
             SettingsMessage::TabBarPositionSelected(pos) => {
                 self.settings_draft.tab_bar_position = pos;
+                return self.apply_settings(true);
+            }
+            SettingsMessage::OpenDefaultProfilePicker => {
+                self.settings_draft.open_default_profile_picker();
+                self.modal_anim.go_mut(true, Instant::now());
+            }
+            SettingsMessage::DefaultProfileSelected(name) => {
+                self.settings_draft.default_profile = name;
+                self.settings_draft.close_profile_modal();
+                self.modal_anim.go_mut(false, Instant::now());
                 return self.apply_settings(true);
             }
             SettingsMessage::BracketedPasteToggled(enabled) => {

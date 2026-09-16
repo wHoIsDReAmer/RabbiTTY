@@ -175,6 +175,7 @@ pub struct ProfileDraft {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ProfileModalMode {
     TemplatePicker,
+    DefaultProfilePicker,
     Create,
     Edit(usize),
 }
@@ -385,6 +386,7 @@ pub struct SettingsDraft {
     pub blur_enabled: bool,
     pub animations_enabled: bool,
     pub tab_bar_position: TabBarPosition,
+    pub default_profile: String,
     pub macos_blur_radius: String,
     pub shortcuts: std::collections::BTreeMap<crate::config::ShortcutId, String>,
     pub plugin_shortcuts: Vec<PluginShortcutDraft>,
@@ -431,6 +433,7 @@ impl SettingsDraft {
             blur_enabled: config.theme.blur_enabled,
             animations_enabled: config.ui.animations_enabled,
             tab_bar_position: config.ui.tab_bar_position,
+            default_profile: config.ui.default_profile.clone().unwrap_or_default(),
             macos_blur_radius: format!("{}", config.theme.macos_blur_radius),
             shortcuts: crate::config::ShortcutId::ALL
                 .into_iter()
@@ -490,6 +493,11 @@ impl SettingsDraft {
         self.profile_modal_draft = ProfileDraft::default();
         self.profile_modal_tab = ProfileModalTab::default();
         self.ssh_connection_test_status = SshConnectionTestStatus::Idle;
+    }
+
+    pub fn open_default_profile_picker(&mut self) {
+        self.profiles_error = None;
+        self.profile_modal_mode = Some(ProfileModalMode::DefaultProfilePicker);
     }
 
     pub fn start_from_template(&mut self, draft: ProfileDraft) {
@@ -569,7 +577,9 @@ impl SettingsDraft {
             Some(ProfileModalMode::Create) => {
                 self.profiles.push(self.profile_modal_draft.clone());
             }
-            Some(ProfileModalMode::TemplatePicker) | None => {}
+            Some(ProfileModalMode::TemplatePicker)
+            | Some(ProfileModalMode::DefaultProfilePicker)
+            | None => {}
             Some(ProfileModalMode::Edit(index)) => {
                 if let Some(slot) = self.profiles.get_mut(index) {
                     *slot = self.profile_modal_draft.clone();
@@ -640,6 +650,7 @@ impl SettingsDraft {
             language: Some(self.language.clone()),
             animations_enabled: Some(self.animations_enabled),
             tab_bar_position: Some(self.tab_bar_position),
+            default_profile: Some(self.default_profile.clone()),
             terminal_font_selection: Some(self.terminal_font_selection.clone()),
             terminal_font_size: parse_f32(&self.terminal_font_size),
             terminal_padding_x: parse_f32(&self.terminal_padding_x),
@@ -708,7 +719,7 @@ fn update_profile_draft(draft: &mut ProfileDraft, field: ProfileField, value: St
 }
 
 #[allow(clippy::too_many_arguments)]
-pub fn view_category<'a>(
+pub(in crate::gui) fn view_category<'a>(
     category: SettingsCategory,
     plugin_state: &'a plugins::PluginSettingsState,
     config: &'a AppConfig,
@@ -717,6 +728,7 @@ pub fn view_category<'a>(
     show_all_fonts: bool,
     all_font_options: &'a [TerminalFontOption],
     plugins_overview: plugins::PluginsOverview,
+    profile_entries: Vec<crate::gui::app::update::tab::PickerEntry>,
     palette: Palette,
 ) -> Element<'a, Message> {
     let animations_enabled = config.ui.animations_enabled;
@@ -737,7 +749,7 @@ pub fn view_category<'a>(
         SettingsCategory::Terminal => terminal::view(config, draft, palette),
         SettingsCategory::Theme => theme::view(config, draft, palette),
         SettingsCategory::Shortcuts => shortcuts::view(config, draft, palette),
-        SettingsCategory::Ssh => ssh::view(draft, palette, animations_enabled),
+        SettingsCategory::Ssh => ssh::view(draft, profile_entries, palette, animations_enabled),
         SettingsCategory::Plugins => {
             plugins::system_view(plugins_overview, animations_enabled, palette)
         }

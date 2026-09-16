@@ -1,4 +1,5 @@
 use crate::config::SshAuthMethod;
+use crate::gui::app::update::tab::{PickerEntry, PickerSection};
 use crate::gui::app::{Message, SettingsMessage};
 use crate::gui::components::{
     HoverStyle, button_icon, hover_fade, icon_content, icon_toggle_content, primary, secondary,
@@ -6,8 +7,9 @@ use crate::gui::components::{
 use crate::gui::icons;
 use crate::gui::settings::{
     ProfileDraft, ProfileDraftKind, ProfileField, ProfileModalMode, ProfileModalTab,
-    ProfileTemplate, SettingsDraft, SshConnectionTestStatus,
+    ProfileTemplate, SettingsDraft, SshConnectionTestStatus, setting_row,
 };
+use crate::gui::tab::Profile;
 use crate::gui::theme::{
     Palette, RADIUS_NORMAL, RADIUS_SMALL, SPACING_LARGE, SPACING_NORMAL, SPACING_SMALL,
 };
@@ -17,18 +19,242 @@ use iced::widget::{
 };
 use iced::{Alignment, Background, Border, Color, Element, Length};
 
-pub fn view<'a>(
+pub(in crate::gui) fn view<'a>(
     draft: &'a SettingsDraft,
+    entries: Vec<PickerEntry>,
     palette: Palette,
     animations_enabled: bool,
 ) -> Element<'a, Message> {
-    content(draft, palette, animations_enabled)
+    content(draft, entries, palette, animations_enabled)
 }
 
-pub fn modal_overlay<'a>(
+fn default_entry<'a>(current: &str, entries: &'a [PickerEntry]) -> Option<&'a PickerEntry> {
+    let system = Profile::default_shell().display_name();
+    entries
+        .iter()
+        .find(|entry| entry.label == current)
+        .or_else(|| entries.iter().find(|entry| entry.label == system))
+}
+
+fn default_profile_row<'a>(
+    current: &str,
+    entries: &[PickerEntry],
+    palette: Palette,
+    animations_enabled: bool,
+) -> Element<'a, Message> {
+    let (icon, label) = match default_entry(current, entries) {
+        Some(entry) => (icons::for_profile(&entry.profile), entry.label.clone()),
+        None => {
+            let shell = Profile::default_shell();
+            (icons::for_profile(&shell), shell.display_name())
+        }
+    };
+
+    let inner = button(
+        row![
+            container(icons::view(icon, 16.0, 1.0))
+                .width(Length::Fixed(22.0))
+                .align_x(Alignment::Center),
+            text(label).size(13).color(palette.text).width(Length::Fill),
+        ]
+        .spacing(SPACING_SMALL)
+        .align_y(Alignment::Center),
+    )
+    .padding([6, 10])
+    .width(Length::Fixed(220.0))
+    .on_press(Message::Settings(SettingsMessage::OpenDefaultProfilePicker))
+    .style(move |_theme: &iced::Theme, _status| button::Style {
+        background: Some(Background::Color(Color::TRANSPARENT)),
+        text_color: palette.text,
+        border: Border {
+            radius: RADIUS_SMALL.into(),
+            ..Default::default()
+        },
+        ..Default::default()
+    });
+
+    let rest = HoverStyle {
+        background: Color {
+            a: 0.06,
+            ..palette.text
+        },
+        border_color: Color {
+            a: 0.16,
+            ..palette.text
+        },
+        border_width: 1.0,
+        radius: RADIUS_SMALL,
+    };
+    let hover = HoverStyle {
+        background: Color {
+            a: 0.12,
+            ..palette.text
+        },
+        ..rest
+    };
+
+    setting_row(
+        crate::t!("settings.ssh.default_profile"),
+        hover_fade(inner, rest, hover, animations_enabled),
+        palette,
+    )
+}
+
+fn default_profile_overlay<'a>(
+    base: Element<'a, Message>,
+    current: &str,
+    entries: Vec<PickerEntry>,
+    progress: f32,
+    palette: Palette,
+    animations_enabled: bool,
+) -> Element<'a, Message> {
+    let selected = default_entry(current, &entries).map(|entry| entry.label.clone());
+    let backdrop = mouse_area(backdrop(palette, progress))
+        .on_press(Message::Settings(SettingsMessage::CloseProfileModal));
+
+    let mut items: Vec<Element<'a, Message>> = vec![
+        row![
+            text(crate::t!("settings.ssh.default_profile"))
+                .size(16)
+                .color(palette.text),
+            container("").width(Length::Fill),
+            icon_content(
+                icons::ui_hover(icons::Ui::Close, 13.0, palette.text_secondary, palette.text),
+                Message::Settings(SettingsMessage::CloseProfileModal),
+                palette,
+                animations_enabled
+            ),
+        ]
+        .align_y(Alignment::Center)
+        .width(Length::Fill)
+        .into(),
+    ];
+
+    let mut previous: Option<PickerSection> = None;
+    for entry in entries {
+        if previous != Some(entry.section) {
+            items.push(
+                text(entry.section.label())
+                    .size(11)
+                    .color(palette.text_secondary)
+                    .into(),
+            );
+        }
+        previous = Some(entry.section);
+        let is_selected = selected.as_deref() == Some(entry.label.as_str());
+        items.push(default_profile_entry_row(
+            entry,
+            is_selected,
+            palette,
+            animations_enabled,
+        ));
+    }
+
+    let modal = container(
+        scrollable(
+            column(items)
+                .spacing(SPACING_SMALL)
+                .padding(20)
+                .width(Length::Fill),
+        )
+        .height(Length::Shrink),
+    )
+    .max_height(460.0)
+    .width(Length::Fixed(420.0))
+    .style(move |_theme: &iced::Theme| container::Style {
+        background: Some(Background::Color(palette.surface)),
+        border: Border {
+            radius: RADIUS_NORMAL.into(),
+            width: 1.0,
+            color: Color {
+                a: 0.16,
+                ..palette.text
+            },
+        },
+        ..Default::default()
+    });
+
+    let modal_layer = mouse_area(modal).on_press(Message::Noop);
+
+    stack![
+        base,
+        backdrop,
+        center(modal_layer).width(Length::Fill).height(Length::Fill)
+    ]
+    .width(Length::Fill)
+    .height(Length::Fill)
+    .into()
+}
+
+fn default_profile_entry_row<'a>(
+    entry: PickerEntry,
+    is_selected: bool,
+    palette: Palette,
+    animations_enabled: bool,
+) -> Element<'a, Message> {
+    let icon = icons::for_profile(&entry.profile);
+    let title_color = if is_selected {
+        palette.accent
+    } else {
+        palette.text
+    };
+    let mut labels = column![text(entry.label.clone()).size(13).color(title_color)]
+        .spacing(2)
+        .width(Length::Fill);
+    if let Some(subtitle) = entry.subtitle {
+        labels = labels.push(text(subtitle).size(11).color(palette.text_secondary));
+    }
+
+    let mut line = row![
+        container(icons::view(icon, 16.0, 1.0))
+            .width(Length::Fixed(22.0))
+            .align_x(Alignment::Center),
+        labels,
+    ]
+    .spacing(SPACING_NORMAL)
+    .align_y(Alignment::Center)
+    .width(Length::Fill);
+    if is_selected {
+        line = line.push(icons::ui(icons::Ui::Check, 13.0, palette.accent));
+    }
+
+    let inner = button(line)
+        .padding([8, 10])
+        .width(Length::Fill)
+        .on_press(Message::Settings(SettingsMessage::DefaultProfileSelected(
+            entry.label,
+        )))
+        .style(move |_theme: &iced::Theme, _status| button::Style {
+            background: Some(Background::Color(Color::TRANSPARENT)),
+            text_color: palette.text,
+            border: Border {
+                radius: RADIUS_SMALL.into(),
+                ..Default::default()
+            },
+            ..Default::default()
+        });
+
+    let rest = HoverStyle {
+        background: Color::TRANSPARENT,
+        border_color: Color::TRANSPARENT,
+        border_width: 0.0,
+        radius: RADIUS_SMALL,
+    };
+    let hover = HoverStyle {
+        background: Color {
+            a: 0.10,
+            ..palette.text
+        },
+        ..rest
+    };
+    hover_fade(inner, rest, hover, animations_enabled).into()
+}
+
+pub(in crate::gui) fn modal_overlay<'a>(
     base: Element<'a, Message>,
     draft: &'a SettingsDraft,
     templates: Vec<ProfileTemplate>,
+    entries: Vec<PickerEntry>,
     progress: f32,
     palette: Palette,
     animations_enabled: bool,
@@ -39,11 +265,21 @@ pub fn modal_overlay<'a>(
         return delete_confirm_overlay(base, profile, palette, animations_enabled);
     }
 
-    if matches!(
-        draft.profile_modal_mode,
-        Some(ProfileModalMode::TemplatePicker)
-    ) {
-        return template_overlay(base, templates, progress, palette, animations_enabled);
+    match draft.profile_modal_mode {
+        Some(ProfileModalMode::TemplatePicker) => {
+            return template_overlay(base, templates, progress, palette, animations_enabled);
+        }
+        Some(ProfileModalMode::DefaultProfilePicker) => {
+            return default_profile_overlay(
+                base,
+                &draft.default_profile,
+                entries,
+                progress,
+                palette,
+                animations_enabled,
+            );
+        }
+        _ => {}
     }
 
     if let Some(mode) = draft.profile_modal_mode {
@@ -260,10 +496,18 @@ fn template_title(template: &ProfileTemplate) -> String {
 
 fn content<'a>(
     draft: &'a SettingsDraft,
+    entries: Vec<PickerEntry>,
     palette: Palette,
     animations_enabled: bool,
 ) -> Element<'a, Message> {
     let mut items: Vec<Element<Message>> = Vec::new();
+
+    items.push(default_profile_row(
+        &draft.default_profile,
+        &entries,
+        palette,
+        animations_enabled,
+    ));
 
     items.push(
         row![

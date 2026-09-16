@@ -64,6 +64,18 @@ pub fn default_shell_name() -> String {
         .to_string()
 }
 
+pub fn for_profile(profile: &crate::gui::tab::Profile) -> ShellIcon {
+    use crate::gui::tab::ProfileKind;
+    if let Some(name) = profile.icon.as_deref().filter(|n| !n.trim().is_empty()) {
+        return by_name(name);
+    }
+    match &profile.kind {
+        ProfileKind::Ssh(_) => ssh(),
+        ProfileKind::Local { program: None, .. } => by_name(&default_shell_name()),
+        ProfileKind::Local { .. } => by_name(&profile.name),
+    }
+}
+
 pub fn view<'a, Message: 'a>(icon: ShellIcon, size: f32, opacity: f32) -> Element<'a, Message> {
     let color = icon.color;
     svg(icon.handle)

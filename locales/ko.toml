@@ -173,6 +173,7 @@ font_size_increase = "글자 크게"
 font_size_decrease = "글자 작게"
 font_size_reset = "글자 크기 초기화"
 [settings.ssh]
+default_profile = "새 탭 기본"
 profiles = "프로필"
 no_profiles = "프로필이 없습니다"
 empty_hint = "로컬 셸이나 SSH 연결을 추가하면 빠르게 실행할 수 있습니다"

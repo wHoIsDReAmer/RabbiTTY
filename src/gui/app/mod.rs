@@ -153,6 +153,8 @@ pub enum SettingsMessage {
     BlurToggled(bool),
     AnimationsToggled(bool),
     TabBarPositionSelected(crate::config::TabBarPosition),
+    DefaultProfileSelected(String),
+    OpenDefaultProfilePicker,
     BracketedPasteToggled(bool),
     MultilinePasteConfirmToggled(bool),
     CursorShapeSelected(crate::config::CursorShape),
@@ -309,7 +311,6 @@ pub struct App {
     pub(super) settings_open: bool,
     pub(super) settings_category: SettingsCategory,
     pub(super) settings_draft: SettingsDraft,
-    pub(super) settings_category_transition: crate::gui::components::CategoryTransition,
     pub(super) font_combo_state: combo_box::State<TerminalFontOption>,
     pub(super) show_all_fonts: bool,
     pub(super) all_font_options: Vec<TerminalFontOption>,
@@ -478,7 +479,6 @@ impl App {
             settings_open: false,
             settings_category: SettingsCategory::Appearance,
             settings_draft,
-            settings_category_transition: crate::gui::components::CategoryTransition::new(),
             font_combo_state,
             show_all_fonts,
             all_font_options,
@@ -694,6 +694,19 @@ mod tests {
     }
 
     #[test]
+    fn selecting_a_settings_category_switches_immediately() {
+        use crate::gui::settings::SettingsCategory;
+        let mut config = AppConfig::default();
+        config.ui.animations_enabled = true;
+        let mut app = App::new(config);
+        let _ = app.update(Message::Settings(SettingsMessage::SelectCategory(
+            SettingsCategory::Theme,
+        )));
+
+        assert_eq!(app.settings_category, SettingsCategory::Theme);
+    }
+
+    #[test]
     fn profile_templates_start_with_blank_ssh_and_local() {
         let app = App::new(AppConfig::default());
         let templates = app.profile_templates();
@@ -807,6 +820,57 @@ mod tests {
             app.shell_picker_entries()[app.shell_picker_selected].label,
             expected
         );
+    }
+
+    #[test]
+    fn the_default_profile_resolves_by_picker_label_and_falls_back_to_the_shell() {
+        let mut app = App::new(AppConfig {
+            profiles: vec![Profile::ssh(ssh("prod"))],
+            ..Default::default()
+        });
+        app.ssh_config_profiles = vec![ssh("kube-1")];
+
+        app.config.ui.default_profile = Some("prod".into());
+        assert_eq!(
+            app.default_profile().ssh_profile().map(|s| s.host.as_str()),
+            Some("prod.example.com")
+        );
+
+        app.config.ui.default_profile = Some("kube-1".into());
+        assert_eq!(
+            app.default_profile().ssh_profile().map(|s| s.host.as_str()),
+            Some("kube-1.example.com")
+        );
+
+        app.config.ui.default_profile = Some("gone".into());
+        assert!(
+            app.default_profile().ssh_profile().is_none(),
+            "a missing name must fall back to the system shell"
+        );
+
+        app.config.ui.default_profile = None;
+        assert!(app.default_profile().ssh_profile().is_none());
+    }
+
+    #[test]
+    fn the_new_tab_shortcut_opens_the_default_profile_without_the_picker() {
+        let mut app = app_with_pty();
+        let modifiers = if cfg!(target_os = "macos") {
+            Modifiers::LOGO
+        } else {
+            Modifiers::CTRL
+        };
+
+        let _ = app.update(Message::KeyPressed {
+            key: Key::Character("t".into()),
+            physical_key: iced::keyboard::key::Physical::Code(iced::keyboard::key::Code::KeyT),
+            modifiers,
+            text: None,
+            repeat: false,
+        });
+
+        assert_eq!(app.tabs.len(), 1, "no tab was opened");
+        assert!(!app.show_shell_picker, "the picker opened instead");
     }
 
     fn app_with_pty() -> App {

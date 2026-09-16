@@ -306,6 +306,20 @@ impl App {
             .collect()
     }
 
+    pub(in crate::gui) fn default_profile(&self) -> Profile {
+        self.config
+            .ui
+            .default_profile
+            .as_deref()
+            .and_then(|name| {
+                self.shell_picker_entries()
+                    .into_iter()
+                    .find(|entry| entry.label == name)
+            })
+            .map(|entry| entry.profile)
+            .unwrap_or_else(Profile::default_shell)
+    }
+
     pub(in crate::gui) fn shell_picker_entries(&self) -> Vec<PickerEntry> {
         let mut entries = Vec::new();
         let push_ssh = |section, profiles: Vec<SshProfile>, entries: &mut Vec<PickerEntry>| {
@@ -473,7 +487,10 @@ impl App {
                 }
                 Task::none()
             }
-            ShortcutAction::NewTab => self.update(Message::OpenShellPicker),
+            ShortcutAction::NewTab => {
+                let profile = self.default_profile();
+                self.launch_profile(profile)
+            }
             ShortcutAction::CloseTab => {
                 self.close_active_target();
                 Task::none()
