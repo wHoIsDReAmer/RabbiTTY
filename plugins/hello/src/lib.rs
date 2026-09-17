@@ -195,6 +195,10 @@ impl Plugin for HelloPlugin {
                 "hello plugin saw {} change to {}",
                 setting.key, setting.value
             ))],
+            Event::CommandFinished(command) => vec![status(match command.exit {
+                Some(code) => format!("exit {code}: {} lines", command.output.count),
+                None => format!("done: {} lines", command.output.count),
+            })],
             Event::Timer(PING_TIMER) => vec![notify("pong".to_string())],
             Event::Panes(list) => vec![status(format!("{} panes", list.len()))],
             Event::Timer(_)

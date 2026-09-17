@@ -1,9 +1,10 @@
 mod engine;
 pub mod font;
+pub mod osc;
 pub mod theme;
 pub mod url;
 
-pub use engine::{ClipboardFormatter, TerminalEngine, TitleChange};
+pub use engine::{ClipboardFormatter, CommandFinished, LineSpan, TerminalEngine, TitleChange};
 pub use theme::TerminalTheme;
 
 use alacritty_terminal::grid::Dimensions;

@@ -1,3 +1,4 @@
+use super::osc::{Mark, Notification, Osc, OscDecoder, OscScanner, Step};
 use super::theme::{enforce_min_contrast, resolve_rgb, rgb_to_rgba};
 use super::{CellVisual, TerminalSize, TerminalTheme};
 use alacritty_terminal::event::{Event, EventListener, WindowSize};
@@ -21,6 +22,11 @@ use unicode_normalization::UnicodeNormalization;
 pub struct TerminalEngine {
     term: Term<PtyEventProxy>,
     processor: Processor,
+    scanner: OscScanner,
+    decoder: OscDecoder,
+    marks: ShellMarks,
+    reported_cwd: Option<String>,
+    notifications: Vec<Notification>,
     size: TerminalSize,
     theme: TerminalTheme,
     cells_cache: RefCell<Arc<Vec<CellVisual>>>,
@@ -41,6 +47,35 @@ pub enum TitleChange {
 }
 
 pub type ClipboardFormatter = Arc<dyn Fn(&str) -> String + Send + Sync>;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct LineSpan {
+    pub from: usize,
+    pub count: usize,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct CommandFinished {
+    pub exit: Option<u32>,
+    pub input: LineSpan,
+    pub input_col: usize,
+    pub output: LineSpan,
+}
+
+#[derive(Debug, Default)]
+struct ShellMarks {
+    input: Option<(usize, usize)>,
+    output: Option<usize>,
+    finished: Vec<Command>,
+}
+
+#[derive(Debug, Clone, Copy)]
+struct Command {
+    input: Option<(usize, usize)>,
+    output_start: usize,
+    output_end: usize,
+    exit: Option<u32>,
+}
 type ColorFormatter = Arc<dyn Fn(Rgb) -> String + Send + Sync>;
 
 /// OSC work the pty thread cannot finish on its own.
@@ -82,6 +117,11 @@ impl TerminalEngine {
         Self {
             term,
             processor: Processor::new(),
+            scanner: OscScanner::default(),
+            decoder: OscDecoder::default(),
+            marks: ShellMarks::default(),
+            reported_cwd: None,
+            notifications: Vec::new(),
             size,
             theme,
             cells_cache: RefCell::new(Arc::new(Vec::new())),
@@ -109,9 +149,88 @@ impl TerminalEngine {
     }
 
     pub fn feed_bytes(&mut self, bytes: &[u8]) {
-        self.processor.advance(&mut self.term, bytes);
+        let mut start = 0;
+        for (index, &byte) in bytes.iter().enumerate() {
+            if self.scanner.step(byte) != Step::Osc {
+                continue;
+            }
+            match self.decoder.decode(self.scanner.payload()) {
+                Some(Osc::Mark(mark)) => {
+                    self.processor
+                        .advance(&mut self.term, &bytes[start..=index]);
+                    start = index + 1;
+                    self.mark(mark);
+                }
+                Some(Osc::Cwd(path)) => self.reported_cwd = Some(path),
+                Some(Osc::Notification(notification)) => self.notifications.push(notification),
+                None => {}
+            }
+        }
+        self.processor.advance(&mut self.term, &bytes[start..]);
         self.answer_color_requests();
         self.cache_dirty.set(true);
+    }
+
+    fn mark(&mut self, mark: Mark) {
+        if self.term.mode().contains(TermMode::ALT_SCREEN) {
+            return;
+        }
+        let cursor = self.term.grid().cursor.point;
+        let line = self.term.grid().history_size() + cursor.line.0.max(0) as usize;
+        match mark {
+            Mark::PromptStart => {
+                self.marks.input = None;
+                self.marks.output = None;
+            }
+            Mark::InputStart => self.marks.input = Some((line, cursor.column.0)),
+            Mark::OutputStart => self.marks.output = Some(line),
+            Mark::Finished(exit) => {
+                if let Some(output_start) = self.marks.output.take() {
+                    self.marks.finished.push(Command {
+                        input: self.marks.input.take(),
+                        output_start,
+                        output_end: line.max(output_start),
+                        exit,
+                    });
+                }
+            }
+        }
+    }
+
+    pub fn take_reported_cwd(&mut self) -> Option<String> {
+        self.reported_cwd.take()
+    }
+
+    pub fn take_notifications(&mut self) -> Vec<Notification> {
+        std::mem::take(&mut self.notifications)
+    }
+
+    pub fn take_finished_commands(&mut self) -> Vec<CommandFinished> {
+        if self.marks.finished.is_empty() {
+            return Vec::new();
+        }
+        let grid = self.term.grid();
+        let bottom = grid.history_size() + grid.screen_lines() - 1;
+        let span = |start: usize, end: usize| {
+            let end = end.min(bottom + 1);
+            let start = start.min(end);
+            LineSpan {
+                from: bottom + 1 - end,
+                count: end - start,
+            }
+        };
+        std::mem::take(&mut self.marks.finished)
+            .into_iter()
+            .map(|command| {
+                let (input_line, input_col) = command.input.unwrap_or((command.output_start, 0));
+                CommandFinished {
+                    exit: command.exit,
+                    input: span(input_line, command.output_start),
+                    input_col,
+                    output: span(command.output_start, command.output_end),
+                }
+            })
+            .collect()
     }
 
     /// Answered from the live palette, so an OSC 4 override wins over the theme.
@@ -807,5 +926,71 @@ mod tests {
     fn marks_that_do_not_compose_leave_the_base_character() {
         assert_eq!(composed('x', &['\u{0301}']), 'x');
         assert_eq!(composed('\u{1112}', &['\u{11AB}']), '\u{1112}');
+    }
+
+    fn wide_engine(lines: usize, history: usize) -> TerminalEngine {
+        TerminalEngine::new(
+            TerminalSize::new(40, lines),
+            history,
+            Arc::new(Mutex::new(Box::new(std::io::sink()))),
+            TerminalTheme::default(),
+        )
+    }
+
+    fn lines_of(engine: &TerminalEngine, span: LineSpan) -> Vec<String> {
+        engine.recent_lines(span.from, span.count)
+    }
+
+    #[test]
+    fn a_finished_command_is_located_even_when_the_whole_exchange_arrives_in_one_chunk() {
+        let mut engine = wide_engine(5, 100);
+        engine.feed_bytes(
+            b"\x1b]133;A\x07$ \x1b]133;B\x07ls -l\r\n\x1b]133;C\x07one\r\ntwo\r\n\x1b]133;D;2\x07\x1b]133;A\x07$ \x1b]133;B\x07",
+        );
+
+        let finished = engine.take_finished_commands();
+        assert_eq!(finished.len(), 1);
+        let command = finished[0];
+        assert_eq!(command.exit, Some(2));
+        assert_eq!(command.input_col, 2, "input starts after the prompt");
+        assert_eq!(lines_of(&engine, command.input), vec!["$ ls -l"]);
+        assert_eq!(lines_of(&engine, command.output), vec!["one", "two"]);
+        assert!(engine.take_finished_commands().is_empty(), "taken once");
+    }
+
+    #[test]
+    fn spans_stay_correct_once_output_has_scrolled_into_history() {
+        let mut engine = wide_engine(3, 100);
+        engine.feed_bytes(
+            b"\x1b]133;B\x07cmd\r\n\x1b]133;C\x07a\r\nb\r\nc\r\nd\r\n\x1b]133;D;0\x07after\r\n",
+        );
+
+        let command = engine.take_finished_commands()[0];
+        assert_eq!(lines_of(&engine, command.output), vec!["a", "b", "c", "d"]);
+        assert_eq!(lines_of(&engine, command.input), vec!["cmd"]);
+    }
+
+    #[test]
+    fn a_finish_without_an_output_start_and_marks_on_the_alt_screen_are_ignored() {
+        let mut engine = wide_engine(3, 100);
+        engine.feed_bytes(b"\x1b]133;D;0\x07");
+        assert!(engine.take_finished_commands().is_empty());
+
+        engine.feed_bytes(b"\x1b[?1049h\x1b]133;C\x07x\r\n\x1b]133;D;0\x07\x1b[?1049l");
+        assert!(engine.take_finished_commands().is_empty());
+    }
+
+    #[test]
+    fn shell_reported_cwd_and_notifications_are_collected_without_touching_the_grid() {
+        let mut engine = wide_engine(1, 100);
+        engine.feed_bytes(b"\x1b]7;file://box/srv\x07\x1b]777;notify;Job;done\x07text");
+
+        assert_eq!(engine.take_reported_cwd(), Some("/srv".to_string()));
+        assert_eq!(engine.take_reported_cwd(), None);
+        let notes = engine.take_notifications();
+        assert_eq!(notes.len(), 1);
+        assert_eq!(notes[0].title.as_deref(), Some("Job"));
+        assert_eq!(notes[0].body, "done");
+        assert_eq!(engine.recent_lines(0, 1), vec!["text"]);
     }
 }
