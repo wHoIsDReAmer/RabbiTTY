@@ -292,8 +292,11 @@ pub(crate) fn capability_label(name: &str) -> &str {
     match name {
         "write-pty" => crate::t!("settings.plugins.capability.write_pty"),
         "read-config" => crate::t!("settings.plugins.capability.read_config"),
+        "read-screen" => crate::t!("settings.plugins.capability.read_screen"),
         "notify" => crate::t!("settings.plugins.capability.notify"),
         "network" => crate::t!("settings.plugins.capability.network"),
+        "local-ipc" => crate::t!("settings.plugins.capability.local_ipc"),
+        "control" => crate::t!("settings.plugins.capability.control"),
         "filesystem" => crate::t!("settings.plugins.capability.filesystem"),
         "open-url" => crate::t!("settings.plugins.capability.open_url"),
         other => other,

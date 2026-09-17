@@ -10,8 +10,8 @@ use super::host::{
 use super::matcher::OutputMatcher;
 use super::policy::{capability_from_name, capability_name, grant_with_consent, requires_consent};
 use super::{
-    Capability, Contributions, Event, MatchEvent, MenuContext, MenuItem, PluginInfo, PluginProfile,
-    PluginRequest, SettingEvent, SettingField, StatusItem,
+    Action, Capability, Contributions, Event, MatchEvent, MenuContext, MenuItem, PluginInfo,
+    PluginProfile, SettingEvent, SettingField, StatusItem,
 };
 
 pub const COMPONENT_FILE: &str = "plugin.wasm";
@@ -84,6 +84,7 @@ pub struct PluginRegistry {
     host: std::sync::Arc<PluginHost>,
     settings: PluginsConfig,
     entries: Vec<Entry>,
+    parting: Vec<(String, Vec<Action>)>,
 }
 
 impl Slot {
@@ -105,14 +106,12 @@ enum Job {
 }
 
 enum Answer {
-    Done(Result<(), PluginError>),
+    Done(Result<Vec<Action>, PluginError>),
     Profiles(Result<Vec<PluginProfile>, PluginError>),
 }
 
-/// Carries the drained requests and the latched failure, so no second round trip.
 struct Reply {
     answer: Answer,
-    requests: Vec<PluginRequest>,
     failure: Option<String>,
 }
 
@@ -120,7 +119,7 @@ struct Boot {
     info: PluginInfo,
     contributions: Contributions,
     granted: Vec<Capability>,
-    requests: Vec<PluginRequest>,
+    startup: Vec<Action>,
 }
 
 /// A `LoadedPlugin` on its own thread. A guest parked in a host call reaches no
@@ -130,7 +129,7 @@ pub struct PluginWorker {
     /// Dropped once the worker is unusable, releasing the thread when its job returns.
     jobs: Option<std::sync::mpsc::Sender<Job>>,
     replies: std::sync::mpsc::Receiver<Reply>,
-    pending: Vec<PluginRequest>,
+    pending: Vec<Action>,
     info: PluginInfo,
     contributions: Contributions,
     granted: Vec<Capability>,
@@ -170,7 +169,7 @@ impl PluginWorker {
                     info: plugin.info().clone(),
                     contributions: plugin.contributions().clone(),
                     granted: plugin.granted().to_vec(),
-                    requests: plugin.drain_requests(),
+                    startup: plugin.take_actions(),
                 };
                 if boot_tx.send(Ok(boot)).is_ok() {
                     serve(&mut plugin, &jobs_rx, &reply_tx);
@@ -189,7 +188,7 @@ impl PluginWorker {
             id: id.to_string(),
             jobs: Some(jobs_tx),
             replies: reply_rx,
-            pending: boot.requests,
+            pending: boot.startup,
             info: boot.info,
             contributions: boot.contributions,
             granted: boot.granted,
@@ -227,11 +226,11 @@ impl PluginWorker {
         self.profile_deadline = deadline;
     }
 
-    pub fn run_command(&mut self, id: &str) -> Result<(), PluginError> {
+    pub fn run_command(&mut self, id: &str) -> Result<Vec<Action>, PluginError> {
         self.settle(Job::Command(id.to_string()), COMMAND_DEADLINE)
     }
 
-    pub fn on_event(&mut self, event: Event) -> Result<(), PluginError> {
+    pub fn on_event(&mut self, event: Event) -> Result<Vec<Action>, PluginError> {
         self.settle(Job::Event(event), EVENT_DEADLINE)
     }
 
@@ -239,28 +238,31 @@ impl PluginWorker {
         let deadline = self.profile_deadline;
         match self.dispatch(Job::Profiles, deadline)? {
             Answer::Profiles(listed) => listed,
-            Answer::Done(other) => other.map(|()| Vec::new()),
+            Answer::Done(other) => other.map(|_| Vec::new()),
         }
     }
 
-    pub fn shutdown(&mut self) -> Result<(), PluginError> {
+    pub fn shutdown(&mut self) -> Result<Vec<Action>, PluginError> {
         if self.failure.is_some() || self.jobs.is_none() {
-            return Ok(());
+            return Ok(Vec::new());
         }
         let outcome = self.settle(Job::Shutdown, SHUTDOWN_DEADLINE);
-        // Already shut down; the channel is closed.
         self.jobs = None;
         outcome
     }
 
-    pub fn drain_requests(&mut self) -> Vec<PluginRequest> {
+    pub fn take_startup_actions(&mut self) -> Vec<Action> {
         std::mem::take(&mut self.pending)
     }
 
-    fn settle(&mut self, job: Job, deadline: std::time::Duration) -> Result<(), PluginError> {
+    fn settle(
+        &mut self,
+        job: Job,
+        deadline: std::time::Duration,
+    ) -> Result<Vec<Action>, PluginError> {
         match self.dispatch(job, deadline)? {
             Answer::Done(outcome) => outcome,
-            Answer::Profiles(listed) => listed.map(|_| ()),
+            Answer::Profiles(listed) => listed.map(|_| Vec::new()),
         }
     }
 
@@ -280,7 +282,6 @@ impl PluginWorker {
 
         match self.replies.recv_timeout(deadline) {
             Ok(reply) => {
-                self.pending.extend(reply.requests);
                 self.failure = reply.failure;
                 Ok(reply.answer)
             }
@@ -317,7 +318,6 @@ fn serve(
         };
         let reply = Reply {
             answer,
-            requests: plugin.drain_requests(),
             failure: plugin.failure().map(str::to_string),
         };
         if replies.send(reply).is_err() || last {
@@ -332,6 +332,7 @@ impl PluginRegistry {
             host: std::sync::Arc::new(host),
             settings,
             entries: Vec::new(),
+            parting: Vec::new(),
         }
     }
 
@@ -731,27 +732,37 @@ impl PluginRegistry {
     pub fn shutdown_all(&mut self) -> Vec<(String, String)> {
         let mut failures = Vec::new();
         for entry in &mut self.entries {
-            if let Slot::Ready(plugin, _) = &mut entry.slot
-                && let Err(err) = plugin.shutdown()
-            {
-                failures.push((entry.id.clone(), err.to_string()));
+            if let Slot::Ready(plugin, _) = &mut entry.slot {
+                match plugin.shutdown() {
+                    Ok(actions) => self.parting.push((entry.id.clone(), actions)),
+                    Err(err) => failures.push((entry.id.clone(), err.to_string())),
+                }
             }
         }
         failures
     }
 
-    pub fn disable(&mut self, id: &str) -> bool {
-        match self.entry_mut(id) {
-            Some(entry) => {
-                if let Slot::Ready(plugin, _) = &mut entry.slot {
-                    let _ = plugin.shutdown();
-                }
-                entry.slot = Slot::Disabled;
-                self.settings.entry(id.to_string()).or_default().enabled = false;
-                true
-            }
-            None => false,
+    pub fn take_parting_actions(&mut self) -> Vec<(String, Vec<Action>)> {
+        std::mem::take(&mut self.parting)
+    }
+
+    fn part(&mut self, index: usize) {
+        let entry = &mut self.entries[index];
+        if let Slot::Ready(plugin, _) = &mut entry.slot
+            && let Ok(actions) = plugin.shutdown()
+        {
+            self.parting.push((entry.id.clone(), actions));
         }
+    }
+
+    pub fn disable(&mut self, id: &str) -> bool {
+        let Some(index) = self.entries.iter().position(|entry| entry.id == id) else {
+            return false;
+        };
+        self.part(index);
+        self.entries[index].slot = Slot::Disabled;
+        self.settings.entry(id.to_string()).or_default().enabled = false;
+        true
     }
 
     pub fn enable(&mut self, id: &str) -> Result<(), String> {
@@ -762,9 +773,7 @@ impl PluginRegistry {
         settings.enabled = true;
         let settings = settings.clone();
 
-        if let Slot::Ready(plugin, _) = &mut self.entries[index].slot {
-            let _ = plugin.shutdown();
-        }
+        self.part(index);
         let entry = &self.entries[index];
         let slot = Self::instantiate(&self.host, &entry.id, &entry.path, &settings);
         let outcome = match &slot {

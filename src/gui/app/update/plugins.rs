@@ -1,8 +1,14 @@
+use super::super::plugin_runtime::LinkKey;
 use super::super::{App, Message};
 use crate::gui::settings::SettingsCategory;
 use crate::gui::settings::plugins::{PluginPermission, PluginState};
-use crate::plugin::{Event, PROFILE_DEADLINE, PluginRequest};
+use crate::plugin::{
+    Action, Event, PROFILE_DEADLINE, PaneInfo, PluginError, Query, ScrollbackChunk,
+    ScrollbackRange, SelectionEvent,
+};
 use iced::Task;
+
+const MAX_SCROLLBACK_QUERY: u32 = 10_000;
 
 impl App {
     pub(in crate::gui) fn dispatch_plugin_event(&mut self, event: Event) {
@@ -10,32 +16,25 @@ impl App {
             return;
         };
 
-        let mut requests: Vec<(String, PluginRequest)> = Vec::new();
+        let mut actions: Vec<(String, Action)> = Vec::new();
         let mut reported: Vec<(String, String)> = Vec::new();
         for (id, plugin) in registry.ready_mut() {
-            if let Err(crate::plugin::PluginError::Reported(reason)) =
-                plugin.on_event(event.clone())
-            {
-                reported.push((id.to_string(), reason));
+            match plugin.on_event(event.clone()) {
+                Ok(returned) => {
+                    actions.extend(returned.into_iter().map(|action| (id.to_string(), action)));
+                }
+                Err(PluginError::Reported(reason)) => reported.push((id.to_string(), reason)),
+                Err(_) => {}
             }
-            requests.extend(
-                plugin
-                    .drain_requests()
-                    .into_iter()
-                    .map(|request| (id.to_string(), request)),
-            );
         }
 
         for (id, reason) in reported {
             eprintln!("plugin {id} reported an error handling an event: {reason}");
         }
+        self.retire_failed_plugins();
 
-        for (id, reason) in registry.retire_failed() {
-            eprintln!("plugin {id} retired: {reason}");
-        }
-
-        for (source, request) in requests {
-            self.apply_plugin_request(&source, request);
+        for (source, action) in actions {
+            self.apply_action(&source, action);
         }
     }
 
@@ -48,16 +47,59 @@ impl App {
         };
 
         let outcome = plugin.on_event(event);
-        let requests = plugin.drain_requests();
-
-        if let Err(crate::plugin::PluginError::Reported(reason)) = outcome {
-            eprintln!("plugin {id} reported an error handling an event: {reason}");
+        self.retire_failed_plugins();
+        match outcome {
+            Ok(actions) => self.apply_actions(id, actions),
+            Err(PluginError::Reported(reason)) => {
+                eprintln!("plugin {id} reported an error handling an event: {reason}");
+            }
+            Err(_) => {}
         }
+    }
+
+    pub(in crate::gui) fn settle_plugin_lifecycle(&mut self) {
+        let Some(registry) = self.plugins.as_mut() else {
+            return;
+        };
+        let parting = registry.take_parting_actions();
+        let startup: Vec<(String, Vec<Action>)> = registry
+            .ready_mut()
+            .map(|(id, plugin)| (id.to_string(), plugin.take_startup_actions()))
+            .collect();
+        for (id, actions) in parting {
+            self.apply_actions(&id, actions);
+            self.plugin_runtime.drop_plugin(&id);
+        }
+        for (id, actions) in startup {
+            self.apply_actions(&id, actions);
+        }
+    }
+
+    pub(in crate::gui) fn fire_due_plugin_timers(&mut self) {
+        let now = std::time::Instant::now();
+        for (plugin, id) in self.plugin_runtime.fire_due(now) {
+            self.dispatch_to_plugin(&plugin, Event::Timer(id));
+        }
+        self.arm_next_plugin_timer();
+    }
+
+    fn arm_next_plugin_timer(&mut self) {
+        let Some(due) = self.plugin_runtime.next_due() else {
+            return;
+        };
+        self.plugin_tasks.push(Task::perform(
+            async move { tokio::time::sleep_until(due.into()).await },
+            |()| Message::PluginTimerDue,
+        ));
+    }
+
+    fn retire_failed_plugins(&mut self) {
+        let Some(registry) = self.plugins.as_mut() else {
+            return;
+        };
         for (id, reason) in registry.retire_failed() {
             eprintln!("plugin {id} retired: {reason}");
-        }
-        for request in requests {
-            self.apply_plugin_request(id, request);
+            self.plugin_runtime.drop_plugin(&id);
         }
     }
 
@@ -218,17 +260,11 @@ impl App {
         };
 
         let outcome = instance.run_command(command);
-        let requests = instance.drain_requests();
-        let retired = registry.retire_failed();
-
-        if let Err(crate::plugin::PluginError::Reported(reason)) = outcome {
-            self.notify_from(plugin, &reason);
-        }
-        for (id, reason) in retired {
-            eprintln!("plugin {id} retired: {reason}");
-        }
-        for request in requests {
-            self.apply_plugin_request(plugin, request);
+        self.retire_failed_plugins();
+        match outcome {
+            Ok(actions) => self.apply_actions(plugin, actions),
+            Err(PluginError::Reported(reason)) => self.notify_from(plugin, &reason),
+            Err(_) => {}
         }
     }
 
@@ -242,26 +278,163 @@ impl App {
         crate::platform::notify(name, message);
     }
 
-    fn apply_plugin_request(&mut self, source: &str, request: PluginRequest) {
-        match request {
-            PluginRequest::WritePty { pane, data } => {
-                if let Some(target) = self.pane_mut_by_id(pane)
-                    && !target.send_bytes(&data)
+    fn apply_actions(&mut self, source: &str, actions: Vec<Action>) {
+        for action in actions {
+            self.apply_action(source, action);
+        }
+    }
+
+    fn apply_action(&mut self, source: &str, action: Action) {
+        match action {
+            Action::WritePty(write) => {
+                if let Some(target) = self.pane_mut_by_id(write.pane)
+                    && !target.send_bytes(&write.data)
                 {
-                    eprintln!("plugin write to pane {pane} failed");
+                    eprintln!("plugin write to pane {} failed", write.pane);
                 }
             }
-            PluginRequest::Notify { message } => {
-                self.notify_from(source, &message);
-            }
-            PluginRequest::OpenUrl { url } => crate::platform::open_url(&url),
-            PluginRequest::SetStatus { id, text } => {
+            Action::Notify(message) => self.notify_from(source, &message),
+            Action::OpenUrl(url) => crate::platform::open_url(&url),
+            Action::SetStatus(item) => {
                 if let Some(registry) = self.plugins.as_mut()
-                    && !registry.set_status(source, &id, text)
+                    && !registry.set_status(source, &item.id, item.text)
                 {
-                    eprintln!("plugin {source} set an undeclared status item: {id}");
+                    eprintln!("plugin {source} set an undeclared status item: {}", item.id);
                 }
             }
+            Action::Schedule(timer) => {
+                self.plugin_runtime
+                    .schedule(source, timer, std::time::Instant::now());
+                self.arm_next_plugin_timer();
+            }
+            Action::CancelTimer(id) => self.plugin_runtime.cancel(source, id),
+            Action::OpenTab(target) => {
+                let name = target_name(&target);
+                let profile = into_profile(crate::plugin::PluginProfile {
+                    id: name.clone(),
+                    name,
+                    subtitle: None,
+                    icon: None,
+                    target,
+                });
+                let task = self.create_tab(profile);
+                self.plugin_tasks.push(task);
+                if let Some(tab) = self.tabs.last() {
+                    self.dispatch_to_plugin(source, Event::TabOpened(tab.id));
+                }
+            }
+            Action::FocusPane(pane) => {
+                if let Some(index) = self.tab_index_of_pane(pane) {
+                    self.active_tab = index;
+                    self.focus_pane(pane);
+                }
+            }
+            Action::ClosePane(pane) => self.close_pane_by_id(pane),
+            Action::Query(query) => {
+                let answer = self.answer_query(query);
+                self.dispatch_to_plugin(source, answer);
+            }
+            Action::Connect(request) => {
+                let key = LinkKey {
+                    plugin: source.to_string(),
+                    id: request.id,
+                };
+                let task = self.plugin_runtime.connect(key, request.target);
+                self.plugin_tasks.push(task);
+            }
+            Action::Send(frame) => {
+                let key = LinkKey {
+                    plugin: source.to_string(),
+                    id: frame.id,
+                };
+                self.plugin_runtime.send(&key, frame.data);
+            }
+            Action::Close(id) => {
+                let key = LinkKey {
+                    plugin: source.to_string(),
+                    id,
+                };
+                self.plugin_runtime.close(&key);
+            }
+        }
+    }
+
+    pub(in crate::gui) fn deliver_plugin_io(&mut self, plugin: &str, event: Event) {
+        if let Event::Closed(closed) = &event {
+            self.plugin_runtime.close(&LinkKey {
+                plugin: plugin.to_string(),
+                id: closed.id,
+            });
+        }
+        self.dispatch_to_plugin(plugin, event);
+    }
+
+    fn answer_query(&self, query: Query) -> Event {
+        match query {
+            Query::Panes => Event::Panes(self.pane_infos()),
+            Query::Scrollback(ScrollbackRange { pane, from, count }) => {
+                let lines = self
+                    .pane_by_id(pane)
+                    .map(|target| {
+                        target.recent_lines(from as usize, count.min(MAX_SCROLLBACK_QUERY) as usize)
+                    })
+                    .unwrap_or_default();
+                Event::Scrollback(ScrollbackChunk { pane, from, lines })
+            }
+            Query::Selection(pane) => Event::Selection(SelectionEvent {
+                pane,
+                text: self
+                    .pane_by_id(pane)
+                    .and_then(|target| target.selected_text())
+                    .unwrap_or_default(),
+            }),
+        }
+    }
+
+    fn pane_infos(&self) -> Vec<PaneInfo> {
+        let focused = self.focused_pane().map(|pane| pane.id);
+        self.tabs
+            .iter()
+            .flat_map(|tab| {
+                tab.panes.iter().map(move |pane| PaneInfo {
+                    id: pane.id,
+                    tab: tab.id,
+                    title: pane.title.clone(),
+                    cwd: pane
+                        .working_directory()
+                        .map(|path| path.to_string_lossy().into_owned()),
+                    focused: focused == Some(pane.id),
+                })
+            })
+            .collect()
+    }
+
+    fn pane_by_id(&self, id: u64) -> Option<&crate::gui::tab::Pane> {
+        self.tabs
+            .iter()
+            .flat_map(|tab| tab.panes.iter())
+            .find(|pane| pane.id == id)
+    }
+
+    fn tab_index_of_pane(&self, id: u64) -> Option<usize> {
+        self.tabs
+            .iter()
+            .position(|tab| tab.panes.iter().any(|pane| pane.id == id))
+    }
+
+    fn close_pane_by_id(&mut self, id: u64) {
+        let Some(index) = self.tab_index_of_pane(id) else {
+            return;
+        };
+        let emptied = match self.tabs.get_mut(index) {
+            Some(tab) => tab.close_pane(id) && tab.panes.is_empty(),
+            None => return,
+        };
+        if emptied {
+            self.handle_close_tab(index);
+        } else {
+            self.resize_panes();
+            self.dispatch_plugin_event(Event::SessionClose(id));
         }
     }
 
@@ -412,6 +585,7 @@ impl App {
         } else {
             registry.disable(plugin);
         }
+        self.settle_plugin_lifecycle();
         self.persist_plugin_settings();
         self.adopt_plugin_shortcuts();
         self.sync_output_capture();
@@ -451,6 +625,7 @@ impl App {
         if let Err(reason) = registry.enable(plugin) {
             eprintln!("plugin {plugin} failed to start: {reason}");
         }
+        self.settle_plugin_lifecycle();
         self.persist_plugin_settings();
         self.adopt_plugin_shortcuts();
         self.sync_output_capture();
@@ -576,6 +751,7 @@ impl App {
             return;
         };
         registry.load_all();
+        self.settle_plugin_lifecycle();
         self.persist_plugin_settings();
         self.adopt_plugin_shortcuts();
         self.sync_output_capture();
@@ -615,6 +791,10 @@ impl App {
         for (id, reason) in registry.shutdown_all() {
             eprintln!("plugin {id} failed to shut down cleanly: {reason}");
         }
+        self.settle_plugin_lifecycle();
+        let Some(registry) = self.plugins.as_ref() else {
+            return;
+        };
         if self.config.plugins != *registry.settings() {
             self.config.plugins = registry.settings().clone();
             if let Err(err) = self.config.save() {
@@ -651,6 +831,17 @@ fn into_profile(declared: crate::plugin::PluginProfile) -> crate::gui::tab::Prof
         name: declared.name,
         icon: declared.icon,
         kind,
+    }
+}
+
+fn target_name(target: &crate::plugin::ProfileTarget) -> String {
+    match target {
+        crate::plugin::ProfileTarget::Local(local) => local
+            .program
+            .clone()
+            .filter(|program| !program.trim().is_empty())
+            .unwrap_or_else(|| "shell".to_string()),
+        crate::plugin::ProfileTarget::Ssh(ssh) => format!("{}@{}", ssh.user, ssh.host),
     }
 }
 

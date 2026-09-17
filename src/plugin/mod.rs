@@ -10,11 +10,14 @@ mod tests;
 wasmtime::component::bindgen!({
     path: "wit",
     world: "plugin",
+    additional_derives: [PartialEq],
 });
 
 pub(crate) use self::rabbitty::plugin::types::{
-    Capability, CwdEvent, MatchEvent, MenuContext, MenuEvent, MenuItem, OutputPattern,
-    ProfileTarget, SelectionEvent, SettingEvent, SettingField, SettingKind, StatusItem, TitleEvent,
+    Capability, ConnectTarget, CwdEvent, IoClosed, IoFrame, MatchEvent, MenuContext, MenuEvent,
+    MenuItem, OutputPattern, PaneInfo, ProfileTarget, Query, ScrollbackChunk, ScrollbackRange,
+    SelectionEvent, SettingEvent, SettingField, SettingKind, StatusItem, TcpTarget, Timer,
+    TitleEvent,
 };
 pub use host::{PLUGIN_ABI_VERSION, PROFILE_DEADLINE, PluginError, PluginHost};
 pub use lines::LineReader;
@@ -26,4 +29,3 @@ pub use registry::{
     ClickablePattern, PluginRegistry, ProfileSource, Status, fetch_profiles_blocking,
     fetch_profiles_with_deadline,
 };
-pub use state::PluginRequest;

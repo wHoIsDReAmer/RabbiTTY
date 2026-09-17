@@ -15,6 +15,7 @@ use iced::widget::combo_box;
 use std::sync::mpsc as std_mpsc;
 
 mod command_palette;
+mod plugin_runtime;
 pub(in crate::gui) mod shortcuts;
 mod subscription;
 pub(crate) mod update;
@@ -47,6 +48,11 @@ pub enum Message {
     PluginProfilesFetched {
         plugin: String,
         profiles: Option<Vec<crate::plugin::PluginProfile>>,
+    },
+    PluginTimerDue,
+    PluginIo {
+        plugin: String,
+        event: crate::plugin::Event,
     },
     ActivatePluginMatch {
         plugin: String,
@@ -361,6 +367,8 @@ pub struct App {
     pub(super) plugin_notice: Option<String>,
     pub(super) plugin_pending_removal: Option<String>,
     pub(super) plugin_pending_install: Option<PendingInstall>,
+    pub(super) plugin_runtime: plugin_runtime::PluginRuntime,
+    pub(super) plugin_tasks: Vec<iced::Task<Message>>,
 }
 
 pub(super) const BELL_FLASH_DURATION: std::time::Duration = std::time::Duration::from_millis(150);
@@ -519,7 +527,10 @@ impl App {
             plugin_notice: None,
             plugin_pending_removal: None,
             plugin_pending_install: None,
+            plugin_runtime: plugin_runtime::PluginRuntime::default(),
+            plugin_tasks: Vec::new(),
         };
+        app.settle_plugin_lifecycle();
         app.adopt_plugin_shortcuts();
         app
     }
@@ -1344,6 +1355,68 @@ mod plugin_wiring_tests {
 
         app.dispatch_plugin_event(crate::plugin::Event::SessionStart(1));
         app.shutdown_plugins();
+    }
+
+    fn hello_component() -> Option<std::path::PathBuf> {
+        ["debug", "release"]
+            .iter()
+            .map(|profile| {
+                std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+                    .join("target/wasm32-wasip2")
+                    .join(profile)
+                    .join("hello.wasm")
+            })
+            .find(|path| path.exists())
+    }
+
+    fn app_with_hello() -> Option<(App, std::path::PathBuf)> {
+        let component = hello_component()?;
+        let root = std::env::temp_dir().join(format!(
+            "rabbitty-app-plugin-{}-{:?}",
+            std::process::id(),
+            std::thread::current().id()
+        ));
+        let _ = std::fs::remove_dir_all(&root);
+        let dir = root.join("hello");
+        std::fs::create_dir_all(&dir).expect("install dir");
+        std::fs::copy(component, dir.join("plugin.wasm")).expect("copy component");
+
+        let host = crate::plugin::PluginHost::with_root(root.clone()).expect("engine");
+        let mut registry =
+            crate::plugin::PluginRegistry::new(host, crate::config::plugins::PluginsConfig::new());
+        registry.load_all();
+        let mut app = App::new(AppConfig::default());
+        app.plugins = Some(registry);
+        Some((app, root))
+    }
+
+    fn status_text(app: &App, id: &str) -> Option<String> {
+        app.plugins
+            .as_ref()?
+            .status_items()
+            .into_iter()
+            .find(|(_, item)| item.id == id)
+            .map(|(_, item)| item.text)
+    }
+
+    #[test]
+    fn a_query_is_answered_as_an_event_in_the_same_dispatch() {
+        let Some((mut app, root)) = app_with_hello() else {
+            return;
+        };
+
+        app.dispatch_plugin_event(crate::plugin::Event::SessionStart(1));
+
+        let expected = format!(
+            "{} panes",
+            app.tabs.iter().map(|tab| tab.panes.len()).sum::<usize>()
+        );
+        assert_eq!(
+            status_text(&app, "hello.counter").as_deref(),
+            Some(expected.as_str()),
+            "the guest's query(panes) must come back as event::panes before the dispatch ends"
+        );
+        let _ = std::fs::remove_dir_all(root);
     }
 }
 

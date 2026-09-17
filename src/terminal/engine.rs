@@ -241,6 +241,25 @@ impl TerminalEngine {
         (!text.is_empty()).then_some(text)
     }
 
+    pub fn recent_lines(&self, from: usize, count: usize) -> Vec<String> {
+        let grid = self.term.grid();
+        let top = grid.topmost_line().0 as i64;
+        let bottom = grid.bottommost_line().0 as i64;
+        let last_col = grid.last_column();
+        let end = bottom - from as i64;
+        let start = (end - count as i64 + 1).max(top);
+        if end < top || count == 0 {
+            return Vec::new();
+        }
+        (start..=end)
+            .map(|line| {
+                let line = Line(line as i32);
+                self.term
+                    .bounds_to_string(Point::new(line, Column(0)), Point::new(line, last_col))
+            })
+            .collect()
+    }
+
     /// Scroll to a relative position (0.0 = top of history, 1.0 = bottom/latest).
     pub fn scroll_to_relative(&mut self, rel: f32) {
         let history = self.term.grid().history_size();

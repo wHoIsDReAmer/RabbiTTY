@@ -1,0 +1,11 @@
+[package]
+name = "rabbitty-plugin-sdk"
+version = "0.5.0"
+edition = "2024"
+publish = false
+
+[lib]
+crate-type = ["rlib"]
+
+[dependencies]
+wit-bindgen = "0.60.0"

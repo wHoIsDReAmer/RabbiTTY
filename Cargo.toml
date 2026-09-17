@@ -1,5 +1,5 @@
 [workspace]
-members = ["plugins/hello"]
+members = ["plugins/hello", "plugins/sdk"]
 # Host builds default to just the app; wasm guest crates are built explicitly
 # with `cargo build -p <name> --target wasm32-wasip2`.
 default-members = ["."]
@@ -56,7 +56,7 @@ russh-sftp = "2.3"
 ssh2-config = "0.7"
 async-trait = "0.1"
 rfd = { version = "0.15", default-features = false, features = ["xdg-portal", "tokio"] }
-tokio = { version = "1", default-features = false, features = ["io-util", "process", "sync", "fs", "rt", "time"] }
+tokio = { version = "1", default-features = false, features = ["io-util", "process", "sync", "fs", "rt", "time", "net", "macros"] }
 wasmtime = { version = "44", default-features = false, features = ["component-model", "cranelift", "runtime", "std"] }
 wasmtime-wasi = { version = "44", default-features = false, features = ["p2"] }
 regex = { version = "1.13.1", default-features = false, features = ["std", "perf", "unicode-case", "unicode-perl"] }
@@ -65,7 +65,6 @@ unicode-normalization = "0.1"
 # Windows-specific (custom titlebar with resize border)
 [target.'cfg(target_os = "windows")'.dependencies]
 keyring = { version = "3", default-features = false, features = ["windows-native"] }
-tokio = { version = "1", default-features = false, features = ["net"] }
 windows = { version = "0.62", default-features = false, features = [
     "std",
     "Win32_Foundation",
