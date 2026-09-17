@@ -29,6 +29,9 @@ impl App {
                     let lines = pane.take_output_lines();
                     let title = pane.take_title_change();
                     let cwd = pane.take_cwd_change();
+                    let notifications = pane.take_notifications();
+                    let commands = pane.take_finished_commands();
+                    let pane_title = pane.title.clone();
                     let clipboard_write = pane.take_clipboard_write();
                     let clipboard_read = pane.take_clipboard_read();
                     if bell {
@@ -46,6 +49,29 @@ impl App {
                     if let Some(path) = cwd {
                         self.dispatch_plugin_event(crate::plugin::Event::CwdChanged(
                             crate::plugin::CwdEvent { pane: tab_id, path },
+                        ));
+                    }
+                    for notification in notifications {
+                        let title = notification.title.as_deref().unwrap_or(&pane_title);
+                        crate::platform::notify(title, &notification.body);
+                    }
+                    for command in commands {
+                        self.dispatch_plugin_event(crate::plugin::Event::CommandFinished(
+                            crate::plugin::CommandEvent {
+                                pane: tab_id,
+                                exit: command.exit,
+                                input: crate::plugin::ScrollbackRange {
+                                    pane: tab_id,
+                                    from: command.input.from as u32,
+                                    count: command.input.count as u32,
+                                },
+                                input_col: command.input_col as u32,
+                                output: crate::plugin::ScrollbackRange {
+                                    pane: tab_id,
+                                    from: command.output.from as u32,
+                                    count: command.output.count as u32,
+                                },
+                            },
                         ));
                     }
                     // Drained either way so a refused request cannot pile up.
