@@ -1,11 +1,14 @@
-package rabbitty:plugin@0.4.0;
+package rabbitty:plugin@0.5.0;
 
 interface types {
     enum capability {
         write-pty,
         read-config,
+        read-screen,
         notify,
         network,
+        local-ipc,
+        control,
         filesystem,
         open-url,
     }
@@ -135,6 +138,30 @@ interface types {
         value: string,
     }
 
+    record pane-info {
+        id: u64,
+        tab: u64,
+        title: string,
+        cwd: option<string>,
+        focused: bool,
+    }
+
+    record scrollback-chunk {
+        pane: u64,
+        %from: u32,
+        lines: list<string>,
+    }
+
+    record io-frame {
+        id: u32,
+        data: list<u8>,
+    }
+
+    record io-closed {
+        id: u32,
+        reason: option<string>,
+    }
+
     variant event {
         session-start(u64),
         session-close(u64),
@@ -144,34 +171,97 @@ interface types {
         title-changed(title-event),
         pane-focused(u64),
         active-tab-changed(u64),
-        selection-changed(selection-event),
+        selection-changed(u64),
         menu-activated(menu-event),
         bell(u64),
         setting-changed(setting-event),
+        timer(u32),
+        panes(list<pane-info>),
+        scrollback(scrollback-chunk),
+        selection(selection-event),
+        connected(u32),
+        data(io-frame),
+        closed(io-closed),
+        tab-opened(u64),
+    }
+
+    record pane-write {
+        pane: u64,
+        data: list<u8>,
+    }
+
+    record status-text {
+        id: string,
+        text: string,
+    }
+
+    record timer {
+        id: u32,
+        after-ms: u64,
+        repeat: bool,
+    }
+
+    record scrollback-range {
+        pane: u64,
+        %from: u32,
+        count: u32,
+    }
+
+    variant query {
+        panes,
+        scrollback(scrollback-range),
+        selection(u64),
+    }
+
+    record tcp-target {
+        host: string,
+        port: u16,
+    }
+
+    variant connect-target {
+        tcp(tcp-target),
+        local(string),
+    }
+
+    record connect-request {
+        id: u32,
+        target: connect-target,
+    }
+
+    variant action {
+        write-pty(pane-write),
+        notify(string),
+        open-url(string),
+        set-status(status-text),
+        schedule(timer),
+        cancel-timer(u32),
+        open-tab(profile-target),
+        focus-pane(u64),
+        close-pane(u64),
+        query(query),
+        connect(connect-request),
+        send(io-frame),
+        close(u32),
     }
 }
 
 interface host {
-    write-pty: func(pane: u64, data: list<u8>);
-    notify: func(message: string);
     read-config: func(key: string) -> option<string>;
-    open-url: func(url: string);
-    set-status: func(id: string, text: string);
 }
 
 world plugin {
-    use types.{plugin-info, contributions, event, plugin-profile};
+    use types.{plugin-info, contributions, event, action, plugin-profile};
 
     import host;
 
     export manifest: func() -> plugin-info;
 
-    export init: func() -> result<_, string>;
+    export init: func() -> result<list<action>, string>;
 
-    export shutdown: func() -> result<_, string>;
+    export shutdown: func() -> result<list<action>, string>;
 
     export contributions: func() -> result<contributions, string>;
-    export on-event: func(ev: event) -> result<_, string>;
-    export run-command: func(id: string) -> result<_, string>;
+    export on-event: func(ev: event) -> result<list<action>, string>;
+    export run-command: func(id: string) -> result<list<action>, string>;
     export list-profiles: func() -> result<list<plugin-profile>, string>;
 }

@@ -1,21 +1,29 @@
 #![cfg(target_arch = "wasm32")]
 
-//! Minimal example plugin exercising the Rabbitty plugin ABI (`wit/world.wit`).
-
-wit_bindgen::generate!({
-    path: "../../wit",
-    world: "plugin",
-});
-
-use crate::rabbitty::plugin::host;
-use crate::rabbitty::plugin::types::{
-    Capability, Command, LocalTarget, MenuContext, MenuItem, OutputPattern, ProfileTarget,
-    SettingField, SettingKind, SshTarget, StatusItem,
+use rabbitty_plugin_sdk::{
+    Action, Capability, Command, Contributions, Event, LocalTarget, MenuContext, MenuItem,
+    OutputPattern, Plugin, PluginInfo, PluginProfile, ProfileTarget, Query, SettingField,
+    SettingKind, SshTarget, StatusItem, StatusText, Timer, export_plugin, read_config,
 };
 
+const STATUS_ID: &str = "hello.counter";
+const PING_TIMER: u32 = 1;
+
+#[derive(Default)]
 struct HelloPlugin;
 
-impl Guest for HelloPlugin {
+fn status(text: String) -> Action {
+    Action::SetStatus(StatusText {
+        id: STATUS_ID.to_string(),
+        text,
+    })
+}
+
+fn notify(text: String) -> Action {
+    Action::Notify(text)
+}
+
+impl Plugin for HelloPlugin {
     fn manifest() -> PluginInfo {
         PluginInfo {
             name: "hello".to_string(),
@@ -26,28 +34,25 @@ impl Guest for HelloPlugin {
             capabilities: vec![
                 Capability::Notify,
                 Capability::ReadConfig,
+                Capability::ReadScreen,
                 Capability::Network,
                 Capability::OpenUrl,
             ],
         }
     }
 
-    fn init() -> Result<(), String> {
-        Ok(())
-    }
-
-    fn shutdown() -> Result<(), String> {
-        host::notify("hello plugin shutting down");
-        Ok(())
-    }
-
-    fn contributions() -> Result<Contributions, String> {
-        Ok(Contributions {
+    fn contributions() -> Contributions {
+        Contributions {
             commands: vec![
                 Command {
                     id: "hello.hi".to_string(),
                     title: "Say hi".to_string(),
                     default_key: Some("Ctrl+Shift+H".to_string()),
+                },
+                Command {
+                    id: "hello.ping".to_string(),
+                    title: "Ping (pong after 10 ms)".to_string(),
+                    default_key: None,
                 },
                 Command {
                     id: "hello.fail".to_string(),
@@ -99,16 +104,20 @@ impl Guest for HelloPlugin {
                 },
             ],
             status_items: vec![StatusItem {
-                id: "hello.counter".to_string(),
+                id: STATUS_ID.to_string(),
                 text: "hello: 0".to_string(),
                 tooltip: Some("Panes opened since launch".to_string()),
                 command: Some("hello.hi".to_string()),
             }],
-        })
+        }
     }
 
-    fn list_profiles() -> Result<Vec<PluginProfile>, String> {
-        if host::read_config("slow").as_deref() == Some("true") {
+    fn shutdown(&mut self) -> Vec<Action> {
+        vec![notify("hello plugin shutting down".to_string())]
+    }
+
+    fn list_profiles(&mut self) -> Result<Vec<PluginProfile>, String> {
+        if read_config("slow").as_deref() == Some("true") {
             std::thread::sleep(std::time::Duration::from_secs(3));
         }
 
@@ -118,8 +127,6 @@ impl Guest for HelloPlugin {
                 name: "Hello shell".to_string(),
                 subtitle: Some("from the hello plugin".to_string()),
                 icon: None,
-                // A one-shot command would exit before the tab is even painted,
-                // so the demo profile opens the user's shell instead.
                 target: ProfileTarget::Local(LocalTarget {
                     program: None,
                     args: vec![],
@@ -140,91 +147,85 @@ impl Guest for HelloPlugin {
         ])
     }
 
-    fn on_event(ev: Event) -> Result<(), String> {
+    fn on_event(&mut self, ev: Event) -> Vec<Action> {
         match ev {
-            Event::SessionStart(pane) => {
-                host::notify(&format!("hello plugin saw pane {pane} open"));
-                host::set_status("hello.counter", &format!("hello: pane {pane}"));
-            }
+            Event::SessionStart(pane) => vec![
+                notify(format!("hello plugin saw pane {pane} open")),
+                status(format!("hello: pane {pane}")),
+                Action::Query(Query::Panes),
+            ],
             Event::SessionClose(pane) => {
-                host::notify(&format!("hello plugin saw pane {pane} close"));
+                vec![notify(format!("hello plugin saw pane {pane} close"))]
             }
-            Event::OutputMatched(matched) => {
-                host::notify(&format!(
-                    "hello plugin matched {} in pane {}",
-                    matched.pattern, matched.pane
-                ));
-            }
+            Event::OutputMatched(matched) => vec![notify(format!(
+                "hello plugin matched {} in pane {}",
+                matched.pattern, matched.pane
+            ))],
             Event::MatchActivated(matched) => {
                 let start = matched.start as usize;
                 let end = matched.end as usize;
                 let text = matched.line.get(start..end).unwrap_or_default();
-                host::open_url(&format!(
+                vec![Action::OpenUrl(format!(
                     "https://example.com/issues/{}",
                     text.trim_matches('#')
-                ));
+                ))]
             }
-            Event::CwdChanged(cwd) => {
-                host::set_status("hello.counter", &format!("cwd: {}", cwd.path));
-            }
-            Event::TitleChanged(title) => {
-                host::notify(&format!(
-                    "hello plugin saw pane {} retitled to {}",
-                    title.pane, title.title
-                ));
-            }
-            Event::PaneFocused(pane) => {
-                host::set_status("hello.counter", &format!("focus: {pane}"));
-            }
-            Event::ActiveTabChanged(tab) => {
-                host::set_status("hello.counter", &format!("tab: {tab}"));
-            }
-            Event::SelectionChanged(selection) => {
-                host::notify(&format!(
-                    "hello plugin saw {} chars selected in pane {}",
-                    selection.text.chars().count(),
-                    selection.pane
-                ));
-            }
+            Event::CwdChanged(cwd) => vec![status(format!("cwd: {}", cwd.path))],
+            Event::TitleChanged(title) => vec![notify(format!(
+                "hello plugin saw pane {} retitled to {}",
+                title.pane, title.title
+            ))],
+            Event::PaneFocused(pane) => vec![status(format!("focus: {pane}"))],
+            Event::ActiveTabChanged(tab) => vec![status(format!("tab: {tab}"))],
+            Event::SelectionChanged(pane) => vec![Action::Query(Query::Selection(pane))],
+            Event::Selection(selection) => vec![notify(format!(
+                "hello plugin saw {} chars selected in pane {}",
+                selection.text.chars().count(),
+                selection.pane
+            ))],
             Event::MenuActivated(menu) => {
                 let picked = menu.selection.unwrap_or_else(|| "<nothing>".to_string());
-                host::notify(&format!(
+                vec![notify(format!(
                     "hello plugin menu {} in pane {} over {picked}",
                     menu.item, menu.pane
-                ));
+                ))]
             }
-            Event::Bell(pane) => {
-                host::notify(&format!("hello plugin heard a bell in pane {pane}"));
-            }
-            Event::SettingChanged(setting) => {
-                host::notify(&format!(
-                    "hello plugin saw {} change to {}",
-                    setting.key, setting.value
-                ));
-            }
+            Event::Bell(pane) => vec![notify(format!("hello plugin heard a bell in pane {pane}"))],
+            Event::SettingChanged(setting) => vec![notify(format!(
+                "hello plugin saw {} change to {}",
+                setting.key, setting.value
+            ))],
+            Event::Timer(PING_TIMER) => vec![notify("pong".to_string())],
+            Event::Panes(list) => vec![status(format!("{} panes", list.len()))],
+            Event::Timer(_)
+            | Event::Scrollback(_)
+            | Event::Connected(_)
+            | Event::Data(_)
+            | Event::Closed(_)
+            | Event::TabOpened(_) => Vec::new(),
         }
-        Ok(())
     }
 
-    fn run_command(id: String) -> Result<(), String> {
-        match id.as_str() {
-            "hello.hi" => {
-                host::notify("hello from the hello plugin!");
-                Ok(())
-            }
+    fn run_command(&mut self, id: &str) -> Result<Vec<Action>, String> {
+        match id {
+            "hello.hi" => Ok(vec![notify("hello from the hello plugin!".to_string())]),
+            "hello.ping" => Ok(vec![Action::Schedule(Timer {
+                id: PING_TIMER,
+                after_ms: 10,
+                repeat: false,
+            })]),
             "hello.readconfig" => {
-                let greeting =
-                    host::read_config("greeting").unwrap_or_else(|| "<none>".to_string());
-                host::notify(&format!("hello plugin read greeting={greeting}"));
-                Ok(())
+                let greeting = read_config("greeting").unwrap_or_else(|| "<none>".to_string());
+                Ok(vec![notify(format!(
+                    "hello plugin read greeting={greeting}"
+                ))])
             }
             "hello.hog" => {
                 let mut blocks: Vec<Vec<u8>> = Vec::new();
                 for _ in 0..512 {
                     blocks.push(Vec::with_capacity(1024 * 1024));
                 }
-                host::notify(&format!("allocated {} blocks", blocks.len()));
-                Ok(())
+                Ok(vec![notify(format!("allocated {} blocks", blocks.len()))])
             }
             "hello.boom" => panic!("intentional panic, for host failure-isolation tests"),
             "hello.fail" => Err("intentional failure, for host error-path tests".to_string()),
@@ -233,4 +234,4 @@ impl Guest for HelloPlugin {
     }
 }
 
-export!(HelloPlugin);
+export_plugin!(HelloPlugin);

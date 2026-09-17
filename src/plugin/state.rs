@@ -4,15 +4,7 @@ use wasmtime::StoreLimits;
 use wasmtime::component::ResourceTable;
 use wasmtime_wasi::{WasiCtx, WasiCtxView, WasiView};
 
-use super::Capability;
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum PluginRequest {
-    WritePty { pane: u64, data: Vec<u8> },
-    Notify { message: String },
-    OpenUrl { url: String },
-    SetStatus { id: String, text: String },
-}
+use super::{Action, Capability, ConnectTarget, Query};
 
 pub(super) struct PluginState {
     pub(super) limits: StoreLimits,
@@ -20,7 +12,6 @@ pub(super) struct PluginState {
     pub(super) table: ResourceTable,
     pub(super) granted: Vec<Capability>,
     pub(super) config: HashMap<String, String>,
-    pub(super) requests: Vec<PluginRequest>,
 }
 
 impl PluginState {
@@ -41,32 +32,39 @@ impl WasiView for PluginState {
 impl super::rabbitty::plugin::types::Host for PluginState {}
 
 impl super::rabbitty::plugin::host::Host for PluginState {
-    fn write_pty(&mut self, pane: u64, data: Vec<u8>) {
-        if self.allows(Capability::WritePty) {
-            self.requests.push(PluginRequest::WritePty { pane, data });
-        }
-    }
-
-    fn notify(&mut self, message: String) {
-        if self.allows(Capability::Notify) {
-            self.requests.push(PluginRequest::Notify { message });
-        }
-    }
-
-    fn open_url(&mut self, url: String) {
-        if self.allows(Capability::OpenUrl) {
-            self.requests.push(PluginRequest::OpenUrl { url });
-        }
-    }
-
-    fn set_status(&mut self, id: String, text: String) {
-        self.requests.push(PluginRequest::SetStatus { id, text });
-    }
-
     fn read_config(&mut self, key: String) -> Option<String> {
         if !self.allows(Capability::ReadConfig) {
             return None;
         }
         self.config.get(&key).cloned()
     }
+}
+
+pub(super) fn required_capability(action: &Action) -> Option<Capability> {
+    match action {
+        Action::WritePty(_) => Some(Capability::WritePty),
+        Action::Notify(_) => Some(Capability::Notify),
+        Action::OpenUrl(_) => Some(Capability::OpenUrl),
+        Action::OpenTab(_) | Action::FocusPane(_) | Action::ClosePane(_) => {
+            Some(Capability::Control)
+        }
+        Action::Connect(request) => Some(match request.target {
+            ConnectTarget::Tcp(_) => Capability::Network,
+            ConnectTarget::Local(_) => Capability::LocalIpc,
+        }),
+        Action::Query(Query::Scrollback(_) | Query::Selection(_)) => Some(Capability::ReadScreen),
+        Action::SetStatus(_)
+        | Action::Schedule(_)
+        | Action::CancelTimer(_)
+        | Action::Query(Query::Panes)
+        | Action::Send(_)
+        | Action::Close(_) => None,
+    }
+}
+
+pub(super) fn permitted(granted: &[Capability], actions: Vec<Action>) -> Vec<Action> {
+    actions
+        .into_iter()
+        .filter(|action| required_capability(action).is_none_or(|cap| granted.contains(&cap)))
+        .collect()
 }

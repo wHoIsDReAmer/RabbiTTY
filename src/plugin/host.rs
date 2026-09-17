@@ -9,11 +9,13 @@ use wasmtime::{Config, Engine, Store, StoreLimitsBuilder};
 use wasmtime_wasi::{DirPerms, FilePerms, WasiCtx, WasiCtxBuilder};
 
 use super::policy::CapabilityPolicy;
-use super::state::{PluginRequest, PluginState};
-use super::{Capability, Contributions, Event, Plugin, PluginInfo, PluginProfile, SettingField};
+use super::state::{PluginState, permitted};
+use super::{
+    Action, Capability, Contributions, Event, Plugin, PluginInfo, PluginProfile, SettingField,
+};
 
 /// Kept in step with the package line in `wit/world.wit`; a test enforces it.
-pub const PLUGIN_ABI_VERSION: &str = "0.4.0";
+pub const PLUGIN_ABI_VERSION: &str = "0.5.0";
 const ABI_PACKAGE: &str = "rabbitty:plugin/";
 
 const CALL_FUEL: u64 = 10_000_000;
@@ -190,10 +192,6 @@ impl PluginHost {
     ) -> wasmtime::Result<LoadedPlugin> {
         let mut builder = WasiCtxBuilder::new();
 
-        if granted.contains(&Capability::Network) {
-            builder.inherit_network().allow_ip_name_lookup(true);
-        }
-
         if granted.contains(&Capability::Filesystem) {
             match self.data_dir(id) {
                 Some(dir) => {
@@ -207,7 +205,7 @@ impl PluginHost {
         let mut store = self.store(builder.build(), granted, config)?;
         let bindings = Plugin::instantiate(&mut store, component, &self.linker)?;
         arm(&mut store, START_DEADLINE)?;
-        bindings
+        let startup = bindings
             .call_init(&mut store)?
             .map_err(wasmtime::Error::msg)?;
         arm(&mut store, START_DEADLINE)?;
@@ -215,12 +213,14 @@ impl PluginHost {
             .call_contributions(&mut store)?
             .map_err(wasmtime::Error::msg)?;
 
+        let pending = permitted(&store.data().granted, startup);
         Ok(LoadedPlugin {
             store,
             bindings,
             info,
             contributions,
             failure: None,
+            pending,
         })
     }
 
@@ -243,7 +243,6 @@ impl PluginHost {
                 table: ResourceTable::new(),
                 granted,
                 config,
-                requests: Vec::new(),
             },
         );
         store.limiter(|state| &mut state.limits);
@@ -338,6 +337,7 @@ pub struct LoadedPlugin {
     info: PluginInfo,
     contributions: Contributions,
     failure: Option<String>,
+    pending: Vec<Action>,
 }
 
 impl LoadedPlugin {
@@ -357,16 +357,16 @@ impl LoadedPlugin {
         self.failure.as_deref()
     }
 
-    pub fn shutdown(&mut self) -> Result<(), PluginError> {
+    pub fn shutdown(&mut self) -> Result<Vec<Action>, PluginError> {
         if self.failure.is_some() {
-            return Ok(());
+            return Ok(Vec::new());
         }
         self.settle(SHUTDOWN_DEADLINE, |bindings, store| {
             bindings.call_shutdown(store)
         })
     }
 
-    pub fn run_command(&mut self, id: &str) -> Result<(), PluginError> {
+    pub fn run_command(&mut self, id: &str) -> Result<Vec<Action>, PluginError> {
         self.guard()?;
         let id = id.to_string();
         self.settle(COMMAND_DEADLINE, move |bindings, store| {
@@ -374,7 +374,7 @@ impl LoadedPlugin {
         })
     }
 
-    pub fn on_event(&mut self, event: Event) -> Result<(), PluginError> {
+    pub fn on_event(&mut self, event: Event) -> Result<Vec<Action>, PluginError> {
         self.guard()?;
         self.settle(EVENT_DEADLINE, move |bindings, store| {
             bindings.call_on_event(store, &event)
@@ -388,13 +388,16 @@ impl LoadedPlugin {
         }
     }
 
-    fn settle<F>(&mut self, deadline: Duration, call: F) -> Result<(), PluginError>
+    fn settle<F>(&mut self, deadline: Duration, call: F) -> Result<Vec<Action>, PluginError>
     where
-        F: FnOnce(&Plugin, &mut Store<PluginState>) -> wasmtime::Result<Result<(), String>>,
+        F: FnOnce(
+            &Plugin,
+            &mut Store<PluginState>,
+        ) -> wasmtime::Result<Result<Vec<Action>, String>>,
     {
-        self.settle_with(deadline, call)
+        let actions = self.settle_with(deadline, call)?;
+        Ok(permitted(&self.store.data().granted, actions))
     }
-
     fn settle_with<T, F>(&mut self, deadline: Duration, call: F) -> Result<T, PluginError>
     where
         F: FnOnce(&Plugin, &mut Store<PluginState>) -> wasmtime::Result<Result<T, String>>,
@@ -420,7 +423,7 @@ impl LoadedPlugin {
         })
     }
 
-    pub fn drain_requests(&mut self) -> Vec<PluginRequest> {
-        std::mem::take(&mut self.store.data_mut().requests)
+    pub fn take_actions(&mut self) -> Vec<Action> {
+        std::mem::take(&mut self.pending)
     }
 }

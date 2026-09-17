@@ -8,20 +8,24 @@ const AUTO: [Capability; 3] = [
     Capability::Filesystem,
 ];
 
-const NEEDS_CONSENT: [Capability; 3] = [
+const NEEDS_CONSENT: [Capability; 6] = [
     Capability::WritePty,
+    Capability::ReadScreen,
     Capability::Network,
+    Capability::LocalIpc,
+    Capability::Control,
     Capability::OpenUrl,
 ];
 
-/// Every capability the host knows about. `capability_from_name` and the
-/// settings UI both rely on this being complete.
-pub const ALL: [Capability; 6] = [
+pub const ALL: [Capability; 9] = [
     Capability::Notify,
     Capability::ReadConfig,
     Capability::Filesystem,
     Capability::WritePty,
+    Capability::ReadScreen,
     Capability::Network,
+    Capability::LocalIpc,
+    Capability::Control,
     Capability::OpenUrl,
 ];
 
@@ -47,17 +51,18 @@ pub fn capability_name(cap: Capability) -> &'static str {
     match cap {
         Capability::WritePty => "write-pty",
         Capability::ReadConfig => "read-config",
+        Capability::ReadScreen => "read-screen",
         Capability::Notify => "notify",
         Capability::Network => "network",
+        Capability::LocalIpc => "local-ipc",
+        Capability::Control => "control",
         Capability::Filesystem => "filesystem",
         Capability::OpenUrl => "open-url",
     }
 }
 
 pub fn capability_from_name(name: &str) -> Option<Capability> {
-    NEEDS_CONSENT
-        .iter()
-        .chain(AUTO.iter())
+    ALL.iter()
         .copied()
         .find(|cap| capability_name(*cap) == name)
 }

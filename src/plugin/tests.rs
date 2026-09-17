@@ -13,7 +13,7 @@ fn auto(info: &PluginInfo) -> Vec<Capability> {
 fn nothing(_info: &PluginInfo) -> Vec<Capability> {
     Vec::new()
 }
-use super::rabbitty::plugin::types::{CwdEvent, MatchEvent, MenuEvent, ProfileTarget};
+use super::rabbitty::plugin::types::{CwdEvent, MatchEvent, MenuEvent, ProfileTarget, StatusText};
 use super::registry;
 use super::*;
 
@@ -74,6 +74,7 @@ fn manifest_and_contributions_round_trip() {
         vec![
             Capability::Notify,
             Capability::ReadConfig,
+            Capability::ReadScreen,
             Capability::Network,
             Capability::OpenUrl
         ]
@@ -81,11 +82,11 @@ fn manifest_and_contributions_round_trip() {
     assert_eq!(
         plugin.granted(),
         &[Capability::Notify, Capability::ReadConfig],
-        "network and open-url are requested but not consented to, so they stay ungranted"
+        "read-screen, network and open-url are requested but not consented to, so they stay ungranted"
     );
 
     let commands = &plugin.contributions().commands;
-    assert_eq!(commands.len(), 3);
+    assert_eq!(commands.len(), 4);
     assert_eq!(commands[0].id, "hello.hi");
     assert_eq!(commands[0].title, "Say hi");
 }
@@ -96,13 +97,11 @@ fn granted_capability_lets_the_host_call_through() {
         return;
     };
 
-    plugin.run_command("hello.hi").expect("command runs");
+    let actions = plugin.run_command("hello.hi").expect("command runs");
 
     assert_eq!(
-        plugin.drain_requests(),
-        vec![PluginRequest::Notify {
-            message: "hello from the hello plugin!".to_string(),
-        }]
+        actions,
+        vec![Action::Notify("hello from the hello plugin!".to_string())]
     );
 }
 
@@ -112,10 +111,10 @@ fn ungranted_capability_is_a_no_op() {
         return;
     };
 
-    plugin.run_command("hello.hi").expect("command still runs");
+    let actions = plugin.run_command("hello.hi").expect("command still runs");
 
     assert!(
-        plugin.drain_requests().is_empty(),
+        actions.is_empty(),
         "notify must be dropped when the capability is not granted"
     );
 }
@@ -126,22 +125,21 @@ fn session_events_reach_the_guest() {
         return;
     };
 
-    plugin
+    let actions = plugin
         .on_event(Event::SessionStart(7))
         .expect("event delivered");
 
     assert_eq!(
-        plugin.drain_requests(),
+        actions,
         vec![
-            PluginRequest::Notify {
-                message: "hello plugin saw pane 7 open".to_string(),
-            },
-            PluginRequest::SetStatus {
+            Action::Notify("hello plugin saw pane 7 open".to_string()),
+            Action::SetStatus(StatusText {
                 id: "hello.counter".to_string(),
                 text: "hello: pane 7".to_string(),
-            },
+            }),
+            Action::Query(Query::Panes),
         ],
-        "every host call the guest makes is queued, in order"
+        "actions come back in the order the guest listed them"
     );
 }
 
@@ -151,7 +149,7 @@ fn events_reach_the_guest() {
         return;
     };
 
-    plugin
+    let actions = plugin
         .on_event(Event::OutputMatched(MatchEvent {
             pane: 7,
             pattern: "hello.greeting".to_string(),
@@ -162,10 +160,10 @@ fn events_reach_the_guest() {
         .expect("event delivered");
 
     assert_eq!(
-        plugin.drain_requests(),
-        vec![PluginRequest::Notify {
-            message: "hello plugin matched hello.greeting in pane 7".to_string(),
-        }]
+        actions,
+        vec![Action::Notify(
+            "hello plugin matched hello.greeting in pane 7".to_string()
+        )]
     );
 }
 
@@ -175,7 +173,7 @@ fn the_host_queues_only_what_the_guest_actually_asked_for() {
         return;
     };
 
-    plugin
+    let actions = plugin
         .on_event(Event::CwdChanged(CwdEvent {
             pane: 1,
             path: "/tmp".to_string(),
@@ -183,11 +181,11 @@ fn the_host_queues_only_what_the_guest_actually_asked_for() {
         .expect("delivered");
 
     assert_eq!(
-        plugin.drain_requests(),
-        vec![PluginRequest::SetStatus {
+        actions,
+        vec![Action::SetStatus(StatusText {
             id: "hello.counter".to_string(),
             text: "cwd: /tmp".to_string(),
-        }],
+        })],
         "this event only sets status, so no notification may appear"
     );
 }
@@ -198,7 +196,7 @@ fn an_ungranted_capability_drops_the_request_it_would_have_made() {
         return;
     };
 
-    plugin
+    let actions = plugin
         .on_event(Event::MatchActivated(MatchEvent {
             pane: 1,
             pattern: "hello.issue".to_string(),
@@ -209,7 +207,7 @@ fn an_ungranted_capability_drops_the_request_it_would_have_made() {
         .expect("delivered");
 
     assert!(
-        plugin.drain_requests().is_empty(),
+        actions.is_empty(),
         "open-url needs consent, so the guest's call must be dropped"
     );
 }
@@ -222,7 +220,7 @@ fn a_consented_capability_lets_the_request_through() {
         return;
     };
 
-    plugin
+    let actions = plugin
         .on_event(Event::MatchActivated(MatchEvent {
             pane: 1,
             pattern: "hello.issue".to_string(),
@@ -233,10 +231,8 @@ fn a_consented_capability_lets_the_request_through() {
         .expect("delivered");
 
     assert_eq!(
-        plugin.drain_requests(),
-        vec![PluginRequest::OpenUrl {
-            url: "https://example.com/issues/42".to_string(),
-        }],
+        actions,
+        vec![Action::OpenUrl("https://example.com/issues/42".to_string())],
         "the guest receives the clicked span, not just the pattern id"
     );
 }
@@ -288,6 +284,65 @@ fn consent_grants_only_what_was_agreed_to() {
     assert!(
         !granted.contains(&Capability::WritePty),
         "consenting to one capability must not imply the other"
+    );
+}
+
+#[test]
+fn each_gated_action_needs_exactly_its_own_capability() {
+    use super::rabbitty::plugin::types::{ConnectRequest, ConnectTarget, TcpTarget, Timer};
+    use super::state::permitted;
+
+    let tcp = Action::Connect(ConnectRequest {
+        id: 1,
+        target: ConnectTarget::Tcp(TcpTarget {
+            host: "example.invalid".to_string(),
+            port: 80,
+        }),
+    });
+    let local = Action::Connect(ConnectRequest {
+        id: 2,
+        target: ConnectTarget::Local("discord-ipc".to_string()),
+    });
+    let tab = Action::FocusPane(3);
+    let timer = Action::Schedule(Timer {
+        id: 4,
+        after_ms: 1,
+        repeat: false,
+    });
+    let screen = Action::Query(Query::Selection(5));
+    let panes = Action::Query(Query::Panes);
+    let all = || {
+        vec![
+            tcp.clone(),
+            local.clone(),
+            tab.clone(),
+            timer.clone(),
+            screen.clone(),
+            panes.clone(),
+        ]
+    };
+
+    assert_eq!(
+        permitted(&[], all()),
+        vec![timer.clone(), panes.clone()],
+        "timers and the pane list are free; everything else waits for a grant"
+    );
+    assert_eq!(
+        permitted(&[Capability::Network], all()),
+        vec![tcp.clone(), timer.clone(), panes.clone()],
+        "network unlocks tcp only, never the local socket or the screen"
+    );
+    assert_eq!(
+        permitted(&[Capability::LocalIpc], all()),
+        vec![local.clone(), timer.clone(), panes.clone()]
+    );
+    assert_eq!(
+        permitted(&[Capability::Control], all()),
+        vec![tab.clone(), timer.clone(), panes.clone()]
+    );
+    assert_eq!(
+        permitted(&[Capability::ReadScreen], all()),
+        vec![timer.clone(), screen.clone(), panes.clone()]
     );
 }
 
@@ -382,14 +437,12 @@ fn a_reported_failure_leaves_the_plugin_usable() {
         "a reported failure must not retire the instance"
     );
 
-    plugin
+    let actions = plugin
         .run_command("hello.hi")
         .expect("the plugin still works after reporting a failure");
     assert_eq!(
-        plugin.drain_requests(),
-        vec![PluginRequest::Notify {
-            message: "hello from the hello plugin!".to_string(),
-        }]
+        actions,
+        vec![Action::Notify("hello from the hello plugin!".to_string())]
     );
 }
 
@@ -700,7 +753,6 @@ fn disabling_gives_the_plugin_a_chance_to_flush() {
 
     let mut registry = registry_in(&root);
     registry.load_all();
-    registry.get_mut("alpha").expect("ready").drain_requests();
 
     registry.disable("alpha");
 
@@ -712,15 +764,12 @@ fn shutdown_reaches_the_guest() {
     let Some(mut plugin) = load(&auto) else {
         return;
     };
-    plugin.drain_requests();
 
-    plugin.shutdown().expect("shutdown runs");
+    let actions = plugin.shutdown().expect("shutdown runs");
 
     assert_eq!(
-        plugin.drain_requests(),
-        vec![PluginRequest::Notify {
-            message: "hello plugin shutting down".to_string(),
-        }]
+        actions,
+        vec![Action::Notify("hello plugin shutting down".to_string())]
     );
 }
 
@@ -730,14 +779,13 @@ fn a_trapped_plugin_is_not_asked_to_shut_down() {
         return;
     };
     plugin.run_command("hello.boom").expect_err("panics");
-    plugin.drain_requests();
 
-    plugin
+    let actions = plugin
         .shutdown()
         .expect("shutdown is skipped, not an error, once the instance is dead");
 
     assert!(
-        plugin.drain_requests().is_empty(),
+        actions.is_empty(),
         "a trapped instance cannot be re-entered, so nothing should reach the guest"
     );
 }
@@ -751,7 +799,6 @@ fn a_declared_pattern_reaches_the_guest_as_a_match() {
 
     let mut registry = registry_in(&root);
     registry.load_all();
-    registry.get_mut("alpha").expect("ready").drain_requests();
 
     assert!(
         registry.watches_output(),
@@ -772,14 +819,14 @@ fn a_declared_pattern_reaches_the_guest_as_a_match() {
     );
 
     let plugin = registry.get_mut("alpha").expect("ready");
-    plugin
+    let actions = plugin
         .on_event(Event::OutputMatched(matched.clone()))
         .expect("delivered");
     assert_eq!(
-        plugin.drain_requests(),
-        vec![PluginRequest::Notify {
-            message: "hello plugin matched hello.greeting in pane 3".to_string(),
-        }]
+        actions,
+        vec![Action::Notify(
+            "hello plugin matched hello.greeting in pane 3".to_string()
+        )]
     );
 }
 
@@ -915,16 +962,15 @@ fn a_setting_change_reaches_the_guest() {
         .expect("change");
 
     let plugin = registry.get_mut("alpha").expect("ready");
-    plugin.drain_requests();
-    plugin
+    let actions = plugin
         .on_event(Event::SettingChanged(changed))
         .expect("delivered");
 
     assert_eq!(
-        plugin.drain_requests(),
-        vec![PluginRequest::Notify {
-            message: "hello plugin saw greeting change to howdy".to_string(),
-        }]
+        actions,
+        vec![Action::Notify(
+            "hello plugin saw greeting change to howdy".to_string()
+        )]
     );
 }
 
@@ -950,16 +996,15 @@ fn a_stored_setting_is_visible_to_read_config() {
     registry.load_all();
 
     let plugin = registry.get_mut("alpha").expect("ready");
-    plugin.drain_requests();
-    plugin
+    let actions = plugin
         .run_command("hello.readconfig")
         .expect("command runs");
 
     assert_eq!(
-        plugin.drain_requests(),
-        vec![PluginRequest::Notify {
-            message: "hello plugin read greeting=howdy".to_string(),
-        }],
+        actions,
+        vec![Action::Notify(
+            "hello plugin read greeting=howdy".to_string()
+        )],
         "the guest must see the stored value through read-config"
     );
 }
@@ -1168,7 +1213,7 @@ fn an_activated_menu_item_carries_the_selection() {
         return;
     };
 
-    plugin
+    let actions = plugin
         .on_event(Event::MenuActivated(MenuEvent {
             item: "hello.hi".to_string(),
             pane: 3,
@@ -1177,10 +1222,10 @@ fn an_activated_menu_item_carries_the_selection() {
         .expect("delivered");
 
     assert_eq!(
-        plugin.drain_requests(),
-        vec![PluginRequest::Notify {
-            message: "hello plugin menu hello.hi in pane 3 over selected text".to_string(),
-        }]
+        actions,
+        vec![Action::Notify(
+            "hello plugin menu hello.hi in pane 3 over selected text".to_string()
+        )]
     );
 }
 
@@ -1422,16 +1467,14 @@ fn a_status_update_from_an_event_reaches_the_registry() {
     registry.load_all();
 
     let plugin = registry.get_mut("alpha").expect("ready");
-    plugin.drain_requests();
-    plugin
+    let actions = plugin
         .on_event(Event::SessionStart(9))
         .expect("event delivered");
-    let requests = plugin.drain_requests();
 
-    let update = requests
+    let update = actions
         .iter()
-        .find_map(|request| match request {
-            PluginRequest::SetStatus { id, text } => Some((id.clone(), text.clone())),
+        .find_map(|action| match action {
+            Action::SetStatus(status) => Some((status.id.clone(), status.text.clone())),
             _ => None,
         })
         .expect("the guest asked for a status update");
@@ -1466,10 +1509,6 @@ fn a_memory_hungry_plugin_is_stopped_instead_of_growing_without_bound() {
     assert!(
         plugin.failure().is_some(),
         "a plugin that hit the memory ceiling is retired like any other trap"
-    );
-    assert!(
-        plugin.drain_requests().is_empty(),
-        "it never reached its notify call"
     );
 }
 
@@ -1597,7 +1636,6 @@ fn a_call_after_a_timeout_reports_the_latched_failure_instead_of_running() {
 
     let plugin = registry.get_mut("alpha").expect("ready");
     plugin.set_profile_deadline(std::time::Duration::from_millis(200));
-    plugin.drain_requests();
     plugin
         .list_profiles()
         .expect_err("the source stalls well past its deadline");
@@ -1607,10 +1645,6 @@ fn a_call_after_a_timeout_reports_the_latched_failure_instead_of_running() {
     assert!(
         matches!(later, Err(PluginError::Retired(_))),
         "a missed deadline latches like a trap, got {later:?}"
-    );
-    assert!(
-        plugin.drain_requests().is_empty(),
-        "the abandoned call still owns the instance, so nothing may reach the guest"
     );
 }
 

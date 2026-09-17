@@ -201,6 +201,10 @@ impl Pane {
         self.engine.selection_text(self.selection.as_ref()?)
     }
 
+    pub fn recent_lines(&self, from: usize, count: usize) -> Vec<String> {
+        self.engine.recent_lines(from, count)
+    }
+
     pub fn clear_selection(&mut self) {
         self.selection = None;
     }

@@ -54,7 +54,12 @@ impl App {
     pub fn update(&mut self, message: Message) -> Task<Message> {
         let task = self.update_inner(message);
         self.sync_focus_event();
-        task
+        if self.plugin_tasks.is_empty() {
+            return task;
+        }
+        let mut tasks = std::mem::take(&mut self.plugin_tasks);
+        tasks.push(task);
+        Task::batch(tasks)
     }
 
     fn sync_focus_event(&mut self) {
@@ -83,10 +88,8 @@ impl App {
             .and_then(|pane| pane.selected_text().map(|text| (pane.id, text)));
         if selection != self.last_selection_dispatched {
             self.last_selection_dispatched = selection.clone();
-            if let Some((pane, text)) = selection {
-                self.dispatch_plugin_event(crate::plugin::Event::SelectionChanged(
-                    crate::plugin::SelectionEvent { pane, text },
-                ));
+            if let Some((pane, _)) = selection {
+                self.dispatch_plugin_event(crate::plugin::Event::SelectionChanged(pane));
             }
         }
     }
@@ -142,6 +145,8 @@ impl App {
             Message::PluginProfilesFetched { plugin, profiles } => {
                 self.apply_fetched_profiles(&plugin, profiles);
             }
+            Message::PluginTimerDue => self.fire_due_plugin_timers(),
+            Message::PluginIo { plugin, event } => self.deliver_plugin_io(&plugin, event),
             Message::CloseShellPicker => {
                 self.modal_anim.go_mut(false, Instant::now());
             }
