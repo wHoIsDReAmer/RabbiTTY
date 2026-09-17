@@ -6,6 +6,7 @@ pub enum SshAuthMethod {
     KeyFile,
     #[default]
     Password,
+    Agent,
 }
 
 /// Visual shape of the terminal text cursor.

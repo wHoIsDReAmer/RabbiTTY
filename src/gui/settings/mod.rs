@@ -706,6 +706,7 @@ fn update_profile_draft(draft: &mut ProfileDraft, field: ProfileField, value: St
             draft.auth_method = match value.as_str() {
                 "key_file" => SshAuthMethod::KeyFile,
                 "password" => SshAuthMethod::Password,
+                "agent" => SshAuthMethod::Agent,
                 _ => draft.auth_method,
             };
         }
@@ -1182,6 +1183,30 @@ mod tests {
             profile.proxy_command.as_deref(),
             Some("cloudflared access ssh --hostname %h")
         );
+    }
+
+    #[test]
+    fn ssh_draft_agent_auth_carries_neither_password_nor_key_path() {
+        let mut draft = ProfileDraft {
+            kind: ProfileDraftKind::Ssh,
+            name: "test".into(),
+            icon: String::new(),
+            program: String::new(),
+            host: "host".into(),
+            port: "22".into(),
+            user: "me".into(),
+            auth_method: SshAuthMethod::Password,
+            identity_file: "~/.ssh/id_ed25519".into(),
+            password: "saved-password".into(),
+            proxy_command_enabled: false,
+            proxy_command: String::new(),
+        };
+        update_profile_draft(&mut draft, ProfileField::AuthMethod, "agent".into());
+        let profile = draft.to_ssh_profile().unwrap();
+
+        assert_eq!(profile.auth_method, SshAuthMethod::Agent);
+        assert!(profile.identity_file.is_none());
+        assert!(profile.password.is_none());
     }
 
     #[test]

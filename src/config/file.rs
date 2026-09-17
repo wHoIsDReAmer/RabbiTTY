@@ -284,6 +284,30 @@ mod tests {
     }
 
     #[test]
+    fn agent_auth_round_trips_through_config() {
+        let config = AppConfig {
+            profiles: vec![crate::gui::tab::Profile::ssh(SshProfile {
+                name: "agent".into(),
+                host: "host.com".into(),
+                port: 22,
+                user: "user".into(),
+                auth_method: SshAuthMethod::Agent,
+                identity_file: None,
+                password: None,
+                proxy_command: None,
+            })],
+            ..Default::default()
+        };
+
+        let text = toml::to_string_pretty(&FileConfig::from(&config)).unwrap();
+        assert!(text.contains("auth_method = \"agent\""), "{text}");
+
+        let mut restored = AppConfig::default();
+        restored.apply_file(toml::from_str::<FileConfig>(&text).unwrap());
+        assert_eq!(restored.ssh_profiles()[0].auth_method, SshAuthMethod::Agent);
+    }
+
+    #[test]
     fn ssh_profile_serialization_skips_empty_host_profiles() {
         let config = AppConfig {
             profiles: vec![crate::gui::tab::Profile::ssh(SshProfile {
