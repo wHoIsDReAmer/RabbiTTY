@@ -2,7 +2,7 @@
 
 use crate::gui::app::{Message, SftpMessage};
 use crate::gui::components::{HoverStyle, hover_fade};
-use crate::gui::sftp::{self, SftpDrawerState, TransferRow};
+use crate::gui::sftp::{self, SftpDrawerState, TransferRow, TransferState};
 use crate::gui::theme::{Palette, RADIUS_NORMAL, RADIUS_SMALL, SPACING_NORMAL, SPACING_SMALL};
 use crate::ssh::sftp::Entry;
 use iced::widget::{Space, button, column, container, progress_bar, row, scrollable, text};
@@ -471,7 +471,7 @@ fn transfer_row<'a>(
     let name = row_state.path.rsplit('/').next().unwrap_or(&row_state.path);
     let progress = if row_state.total > 0 {
         (row_state.transferred as f32 / row_state.total as f32).clamp(0.0, 1.0)
-    } else if row_state.finished {
+    } else if row_state.state == TransferState::Done {
         1.0
     } else {
         0.0
@@ -502,15 +502,12 @@ fn transfer_row<'a>(
             },
         });
 
-    let status_marker: Element<Message> = if row_state.finished {
-        crate::gui::icons::ui(
-            crate::gui::icons::Ui::Check,
-            12.0,
-            Color {
-                a: 0.7,
-                ..palette.accent
-            },
-        )
+    let status_marker: Element<Message> = if row_state.state.is_terminal() {
+        let (icon, tint) = match row_state.state {
+            TransferState::Done => (crate::gui::icons::Ui::Check, palette.accent),
+            _ => (crate::gui::icons::Ui::Close, palette.text),
+        };
+        crate::gui::icons::ui(icon, 12.0, Color { a: 0.7, ..tint })
     } else {
         let cancel_style = move |_theme: &Theme, _status: button::Status| button::Style {
             background: Some(Background::Color(Color::TRANSPARENT)),
@@ -534,7 +531,9 @@ fn transfer_row<'a>(
                 ..palette.text
             },
         ))
-        .on_press(Message::Sftp(SftpMessage::CancelTransfer))
+        .on_press(Message::Sftp(SftpMessage::CancelTransfer(
+            row_state.path.clone(),
+        )))
         .padding([2, 6])
         .style(cancel_style);
         let cancel_rest = HoverStyle {

@@ -253,7 +253,7 @@ pub enum SftpMessage {
         remote: String,
         local: std::path::PathBuf,
     },
-    CancelTransfer,
+    CancelTransfer(String),
     DismissTransfer {
         tab_id: u64,
         path: String,

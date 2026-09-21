@@ -7,12 +7,26 @@ use iced::futures::channel::mpsc;
 pub const DEFAULT_PATH: &str = ".";
 pub const DEFAULT_HEIGHT_RATIO: f32 = 0.45;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TransferState {
+    Running,
+    Done,
+    Cancelled,
+    Failed,
+}
+
+impl TransferState {
+    pub fn is_terminal(self) -> bool {
+        self != TransferState::Running
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct TransferRow {
     pub path: String,
     pub transferred: u64,
     pub total: u64,
-    pub finished: bool,
+    pub state: TransferState,
 }
 
 #[derive(Debug)]
