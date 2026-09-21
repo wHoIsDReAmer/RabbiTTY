@@ -1,7 +1,8 @@
-use ab_glyph::FontArc;
+use ab_glyph::{Font, FontArc, GlyphId};
 use std::fs;
 
-use crate::terminal::font::{load_cjk_fallback_font, load_system_font_by_family};
+use crate::terminal::fallback::FontFallback;
+use crate::terminal::font::load_system_font_by_family;
 
 const DEJAVU_SANS_MONO: &[u8] = include_bytes!("../../../../fonts/DejaVuSansMono.ttf");
 pub(super) const COPY_BYTES_PER_ROW_ALIGNMENT: u32 = 256;
@@ -84,10 +85,6 @@ pub(super) fn default_terminal_font() -> FontArc {
     FontArc::try_from_slice(DEJAVU_SANS_MONO).expect("font load failed")
 }
 
-pub(super) fn load_cjk_fallback() -> Option<FontArc> {
-    load_cjk_fallback_font()
-}
-
 fn load_font_from_path(path: &str) -> Option<FontArc> {
     let bytes = fs::read(path).ok()?;
     FontArc::try_from_vec(bytes).ok()
@@ -95,4 +92,52 @@ fn load_font_from_path(path: &str) -> Option<FontArc> {
 
 pub(super) fn load_font_from_selection(selection: &str) -> Option<FontArc> {
     load_system_font_by_family(selection).or_else(|| load_font_from_path(selection))
+}
+
+pub(super) fn resolve_glyph<'a>(
+    primary: &'a FontArc,
+    fallback: &'a FontFallback,
+    ch: char,
+) -> Option<(&'a FontArc, GlyphId)> {
+    let id = primary.glyph_id(ch);
+    if id.0 != 0 {
+        return Some((primary, id));
+    }
+    fallback.glyph_for(ch)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_terminal_font_without_hangul_still_gets_hangul_from_the_chain() {
+        let primary = default_terminal_font();
+        assert_eq!(
+            primary.glyph_id('\u{d55c}').0,
+            0,
+            "the premise is a Latin-only terminal font"
+        );
+
+        let chain = FontFallback::for_locale("ko");
+        let Some((font, id)) = resolve_glyph(&primary, &chain, '\u{d55c}') else {
+            eprintln!("no CJK font installed; skipping");
+            return;
+        };
+        assert_ne!(id.0, 0);
+        assert_ne!(font.glyph_id('\u{ae00}').0, 0);
+    }
+
+    #[test]
+    fn latin_never_leaves_the_terminal_font() {
+        let primary = default_terminal_font();
+        let chain = FontFallback::for_locale("ko");
+        let (font, id) = resolve_glyph(&primary, &chain, 'A').expect("latin must resolve");
+
+        assert_eq!(id, primary.glyph_id('A'));
+        assert!(
+            std::ptr::eq(font, &primary),
+            "a covered character must not be handed to a fallback"
+        );
+    }
 }

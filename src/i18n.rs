@@ -58,12 +58,15 @@ pub fn set_locale(locale: Option<&str>) {
     let _ = INITIALIZED.set(());
 }
 
-pub fn t(key: &'static str) -> &'static str {
+pub fn locale() -> &'static str {
     if INITIALIZED.get().is_none() {
         set_locale(None);
     }
-    let locale = *CURRENT_LOCALE.read().expect("i18n locale lock poisoned");
-    get_translation(locale, key).unwrap_or(key)
+    *CURRENT_LOCALE.read().expect("i18n locale lock poisoned")
+}
+
+pub fn t(key: &'static str) -> &'static str {
+    get_translation(locale(), key).unwrap_or(key)
 }
 
 #[cfg(test)]

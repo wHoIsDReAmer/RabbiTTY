@@ -1,34 +1,39 @@
 use ab_glyph::{FontArc, FontVec};
 use fontdb::{Database, Family, Query};
 use std::collections::BTreeSet;
+use std::sync::LazyLock;
 
-/// A discovered system font with metadata.
 pub struct SystemFont {
     pub family: String,
     pub monospaced: bool,
 }
 
-/// Discover all system fonts. Monospaced fonts come first.
+pub fn database() -> &'static Database {
+    static DB: LazyLock<Database> = LazyLock::new(|| {
+        let mut db = Database::new();
+        db.load_system_fonts();
+
+        #[cfg(target_os = "macos")]
+        {
+            for dir in [
+                "/System/Library/Fonts",
+                "/System/Library/Fonts/Supplemental",
+                "/Library/Fonts",
+            ] {
+                db.load_fonts_dir(dir);
+            }
+            if let Some(home) = dirs::home_dir() {
+                db.load_fonts_dir(home.join("Library/Fonts"));
+            }
+        }
+
+        db
+    });
+    &DB
+}
+
 pub fn discover_system_terminal_fonts() -> Vec<SystemFont> {
-    let mut db = Database::new();
-    db.load_system_fonts();
-
-    // Also load from directories fontdb might miss
-    #[cfg(target_os = "macos")]
-    {
-        let extra_dirs = [
-            "/System/Library/Fonts",
-            "/System/Library/Fonts/Supplemental",
-            "/Library/Fonts",
-        ];
-        for dir in &extra_dirs {
-            db.load_fonts_dir(dir);
-        }
-        if let Some(home) = dirs::home_dir() {
-            db.load_fonts_dir(home.join("Library/Fonts"));
-        }
-    }
-
+    let db = database();
     let mut mono = BTreeSet::new();
     let mut others = BTreeSet::new();
 
@@ -48,7 +53,7 @@ pub fn discover_system_terminal_fonts() -> Vec<SystemFont> {
     }
 
     // Well-known monospaced families (catches Monaco, SF Mono, etc.)
-    for name in discover_well_known(&db) {
+    for name in discover_well_known(db) {
         if !is_excluded_family(&name) {
             others.remove(&name);
             mono.insert(name);
@@ -285,66 +290,13 @@ fn discover_well_known(db: &Database) -> Vec<String> {
     found
 }
 
-/// Load a system font suitable for CJK/wide character fallback.
-pub fn load_cjk_fallback_font() -> Option<FontArc> {
-    let mut db = Database::new();
-    db.load_system_fonts();
-
-    const CJK_FAMILIES: &[&str] = &[
-        "Apple SD Gothic Neo",
-        "Hiragino Sans",
-        "PingFang SC",
-        "Noto Sans CJK KR",
-        "Noto Sans CJK JP",
-        "Noto Sans CJK SC",
-        "Microsoft YaHei",
-        "Malgun Gothic",
-        "Yu Gothic",
-        "Noto Sans Mono CJK KR",
-        "Noto Sans Mono CJK JP",
-        "Noto Sans Mono CJK SC",
-    ];
-
-    for family_name in CJK_FAMILIES {
-        let families = [Family::Name(family_name)];
-        let query = Query {
-            families: &families,
-            ..Query::default()
-        };
-        if let Some(id) = db.query(&query) {
-            let result = db.with_face_data(id, |data, index| {
-                FontVec::try_from_vec_and_index(data.to_vec(), index)
-                    .ok()
-                    .map(FontArc::new)
-            });
-            if let Some(Some(font)) = result {
-                return Some(font);
-            }
-        }
-    }
-
-    None
-}
-
 pub fn load_system_font_by_family(family: &str) -> Option<FontArc> {
     let family = family.trim();
     if family.is_empty() {
         return None;
     }
 
-    let mut db = Database::new();
-    db.load_system_fonts();
-
-    #[cfg(target_os = "macos")]
-    {
-        db.load_fonts_dir("/System/Library/Fonts");
-        db.load_fonts_dir("/System/Library/Fonts/Supplemental");
-        db.load_fonts_dir("/Library/Fonts");
-        if let Some(home) = dirs::home_dir() {
-            db.load_fonts_dir(home.join("Library/Fonts"));
-        }
-    }
-
+    let db = database();
     let families = [Family::Name(family)];
     let query = Query {
         families: &families,
