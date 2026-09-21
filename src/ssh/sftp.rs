@@ -14,7 +14,13 @@ use russh_sftp::protocol::FileType;
 use std::path::PathBuf;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
-const TRANSFER_CHUNK: usize = 32 * 1024;
+/// One request per chunk, so this is also the per-round-trip window on a
+/// download. Kept at the SFTP packet ceiling the client negotiates.
+const TRANSFER_CHUNK: usize = 256 * 1024;
+
+/// A 1 GiB transfer would otherwise redraw the drawer tens of thousands of
+/// times; the last update is always sent regardless.
+const PROGRESS_INTERVAL: std::time::Duration = std::time::Duration::from_millis(50);
 
 #[derive(Debug, Clone)]
 pub enum Command {
@@ -260,6 +266,55 @@ async fn list_dir(sftp: &SftpSession, path: &str) -> Result<Vec<Entry>, String> 
     Ok(out)
 }
 
+/// Owns the `TransferStarted`/`TransferProgress` stream for one transfer.
+struct Progress<'a> {
+    evt_tx: &'a mpsc::UnboundedSender<Event>,
+    path: String,
+    total: u64,
+    transferred: u64,
+    reported: Option<std::time::Instant>,
+}
+
+impl<'a> Progress<'a> {
+    fn start(evt_tx: &'a mpsc::UnboundedSender<Event>, path: &str, total: u64) -> Self {
+        let _ = evt_tx.unbounded_send(Event::TransferStarted {
+            path: path.to_string(),
+            total,
+        });
+        Self {
+            evt_tx,
+            path: path.to_string(),
+            total,
+            transferred: 0,
+            reported: None,
+        }
+    }
+
+    fn advance(&mut self, bytes: usize) {
+        self.transferred += bytes as u64;
+        let now = std::time::Instant::now();
+        let due = self
+            .reported
+            .is_none_or(|last| now.duration_since(last) >= PROGRESS_INTERVAL);
+        if due {
+            self.reported = Some(now);
+            self.emit();
+        }
+    }
+
+    fn finish(&self) {
+        self.emit();
+    }
+
+    fn emit(&self) {
+        let _ = self.evt_tx.unbounded_send(Event::TransferProgress {
+            path: self.path.clone(),
+            transferred: self.transferred,
+            total: self.total,
+        });
+    }
+}
+
 async fn upload(
     sftp: &SftpSession,
     local: &std::path::Path,
@@ -277,13 +332,8 @@ async fn upload(
         .await
         .map_err(|e| format!("create remote: {e}"))?;
 
-    let _ = evt_tx.unbounded_send(Event::TransferStarted {
-        path: remote.to_string(),
-        total,
-    });
-
+    let mut progress = Progress::start(evt_tx, remote, total);
     let mut buf = vec![0u8; TRANSFER_CHUNK];
-    let mut transferred = 0u64;
     loop {
         if cancelled.load(Ordering::SeqCst) {
             drop(remote_file);
@@ -301,18 +351,14 @@ async fn upload(
             .write_all(&buf[..n])
             .await
             .map_err(|e| format!("write remote: {e}"))?;
-        transferred += n as u64;
-        let _ = evt_tx.unbounded_send(Event::TransferProgress {
-            path: remote.to_string(),
-            transferred,
-            total,
-        });
+        progress.advance(n);
     }
     remote_file
         .shutdown()
         .await
         .map_err(|e| format!("close remote: {e}"))?;
 
+    progress.finish();
     Ok(Outcome::Done)
 }
 
@@ -337,13 +383,8 @@ async fn download(
         .await
         .map_err(|e| format!("create local: {e}"))?;
 
-    let _ = evt_tx.unbounded_send(Event::TransferStarted {
-        path: remote.to_string(),
-        total,
-    });
-
+    let mut progress = Progress::start(evt_tx, remote, total);
     let mut buf = vec![0u8; TRANSFER_CHUNK];
-    let mut transferred = 0u64;
     loop {
         if cancelled.load(Ordering::SeqCst) {
             drop(local_file);
@@ -361,18 +402,14 @@ async fn download(
             .write_all(&buf[..n])
             .await
             .map_err(|e| format!("write local: {e}"))?;
-        transferred += n as u64;
-        let _ = evt_tx.unbounded_send(Event::TransferProgress {
-            path: remote.to_string(),
-            transferred,
-            total,
-        });
+        progress.advance(n);
     }
     local_file
         .flush()
         .await
         .map_err(|e| format!("flush local: {e}"))?;
 
+    progress.finish();
     Ok(Outcome::Done)
 }
 
@@ -422,7 +459,7 @@ mod tests {
         Attrs, Data, File as NameFile, FileAttributes, Handle, Name, OpenFlags, Status, StatusCode,
     };
 
-    const FILE_SIZE: u64 = (TRANSFER_CHUNK * 64) as u64;
+    const FILE_SIZE: u64 = (TRANSFER_CHUNK * 16) as u64;
 
     /// Serves one file of `FILE_SIZE` and a directory holding one entry.
     /// Requests are answered one at a time, as a real server does.
@@ -521,7 +558,7 @@ mod tests {
     }
 
     async fn harness(tag: &str) -> Harness {
-        let (client, server) = tokio::io::duplex(256 * 1024);
+        let (client, server) = tokio::io::duplex(1024 * 1024);
         russh_sftp::server::run(server, FakeServer::default()).await;
 
         let sftp = SftpSession::new(client).await.expect("client session");
@@ -657,5 +694,42 @@ mod tests {
             }
         };
         assert_eq!(outcome, Outcome::Done);
+    }
+
+    #[tokio::test]
+    async fn progress_is_throttled_but_still_lands_on_the_full_size() {
+        let mut h = harness("progress").await;
+
+        h.handle
+            .tx
+            .unbounded_send(Command::Download {
+                remote: "/remote/big.bin".to_string(),
+                local: h.dir.join("copy.bin"),
+            })
+            .expect("queued");
+
+        let mut reports = Vec::new();
+        loop {
+            match next_event(&mut h.handle.rx).await {
+                Event::TransferProgress { transferred, .. } => reports.push(transferred),
+                Event::TransferEnded { outcome, .. } => {
+                    assert_eq!(outcome, Outcome::Done);
+                    break;
+                }
+                _ => {}
+            }
+        }
+
+        let chunks = (FILE_SIZE as usize).div_ceil(TRANSFER_CHUNK);
+        assert_eq!(
+            reports.last().copied(),
+            Some(FILE_SIZE),
+            "the bar must end full even though updates are dropped"
+        );
+        assert!(
+            reports.len() < chunks,
+            "a report per chunk is what the throttle exists to avoid: {} of {chunks}",
+            reports.len()
+        );
     }
 }
