@@ -1,7 +1,7 @@
 //! SFTP drawer wiring.
 
 use super::super::{App, Message, SETTINGS_TAB_INDEX, SftpMessage};
-use crate::gui::sftp::{SftpDrawerState, TransferRow};
+use crate::gui::sftp::{SftpDrawerState, TransferRow, TransferState};
 use crate::ssh::SshSessionHandle;
 use crate::ssh::sftp;
 use iced::Task;
@@ -53,7 +53,7 @@ impl App {
                 }
             }
             SftpMessage::Event { tab_id, event } => {
-                let finished_path = if let sftp::Event::TransferFinished { path } = &event {
+                let ended_path = if let sftp::Event::TransferEnded { path, .. } = &event {
                     Some(path.clone())
                 } else {
                     None
@@ -61,7 +61,7 @@ impl App {
                 if let Some(pane) = self.pane_mut_by_id(tab_id) {
                     apply_sftp_event(&mut pane.sftp, event);
                 }
-                if let Some(path) = finished_path {
+                if let Some(path) = ended_path {
                     return Task::perform(
                         async {
                             tokio::time::sleep(std::time::Duration::from_millis(1500)).await;
@@ -79,7 +79,7 @@ impl App {
                 if let Some(pane) = self.pane_mut_by_id(tab_id) {
                     pane.sftp
                         .transfers
-                        .retain(|t| !(t.finished && t.path == path));
+                        .retain(|t| !(t.state.is_terminal() && t.path == path));
                 }
             }
             SftpMessage::Navigate { tab_id, path } => {
@@ -178,12 +178,12 @@ impl App {
                     let _ = tx.unbounded_send(sftp::Command::Download { remote, local });
                 }
             }
-            SftpMessage::CancelTransfer => {
+            SftpMessage::CancelTransfer(path) => {
                 if self.active_tab != SETTINGS_TAB_INDEX
                     && let Some(pane) = self.focused_pane_mut()
                     && let Some(tx) = pane.sftp.command_tx.clone()
                 {
-                    let _ = tx.unbounded_send(sftp::Command::Cancel);
+                    let _ = tx.unbounded_send(sftp::Command::Cancel { path });
                 }
             }
         }
@@ -237,13 +237,14 @@ fn apply_sftp_event(state: &mut SftpDrawerState, event: sftp::Event) {
             state.error = None;
         }
         sftp::Event::TransferStarted { path, total } => {
+            state.transfers.retain(|row| row.path != path);
             state.transfers.insert(
                 0,
                 TransferRow {
                     path,
                     transferred: 0,
                     total,
-                    finished: false,
+                    state: TransferState::Running,
                 },
             );
             const TRANSFER_HISTORY_CAP: usize = 8;
@@ -261,9 +262,16 @@ fn apply_sftp_event(state: &mut SftpDrawerState, event: sftp::Event) {
                 row.total = total;
             }
         }
-        sftp::Event::TransferFinished { path } => {
+        sftp::Event::TransferEnded { path, outcome } => {
             if let Some(row) = state.transfers.iter_mut().find(|row| row.path == path) {
-                row.finished = true;
+                row.state = match &outcome {
+                    sftp::Outcome::Done => TransferState::Done,
+                    sftp::Outcome::Cancelled => TransferState::Cancelled,
+                    sftp::Outcome::Failed(_) => TransferState::Failed,
+                };
+            }
+            if let sftp::Outcome::Failed(message) = &outcome {
+                state.error = Some(format!("{path}: {message}"));
             }
             if let Some(tx) = state.command_tx.clone() {
                 let _ = tx.unbounded_send(sftp::Command::List(state.current_path.clone()));
