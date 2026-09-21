@@ -4,13 +4,14 @@ mod synthetic;
 
 use crate::config::DEFAULT_TERMINAL_FONT_SIZE;
 use crate::terminal::CellVisual;
+use crate::terminal::fallback::FontFallback;
 use ab_glyph::{Font, FontArc, PxScale, ScaleFont, point};
 use atlas::{ATLAS_INITIAL_SIZE, ATLAS_MAX_SIZE, ATLAS_PADDING, GlyphAtlas};
 use bytemuck::{Pod, Zeroable};
 use iced::wgpu;
 use rasterize::{
     COPY_BYTES_PER_ROW_ALIGNMENT, align_to, apply_lcd_filter, default_terminal_font,
-    load_cjk_fallback, load_font_from_selection, pack_subpixel_rgba,
+    load_font_from_selection, pack_subpixel_rgba, resolve_glyph,
 };
 use std::collections::HashMap;
 
@@ -59,7 +60,7 @@ pub(super) struct TextPipelineData {
     line_min_y: f32,
     cell_advance: f32,
     synthetic: std::collections::HashMap<(char, u32, u32), GlyphInfo>,
-    fallback_font: Option<FontArc>,
+    fallback: FontFallback,
     glyphs: HashMap<char, GlyphInfo>,
     raster_buf: Vec<u8>,
     filter_buf: Vec<u8>,
@@ -221,7 +222,7 @@ impl TextPipelineData {
         });
 
         let font = default_terminal_font();
-        let fallback_font = load_cjk_fallback();
+        let fallback = FontFallback::for_locale(crate::i18n::locale());
         let scale = PxScale::from(1.0);
 
         let instance_buffer = device.create_buffer(&wgpu::BufferDescriptor {
@@ -240,7 +241,7 @@ impl TextPipelineData {
             sampler,
             atlas,
             font,
-            fallback_font,
+            fallback,
             scale,
             font_px: 0.0,
             requested_font_size: DEFAULT_TERMINAL_FONT_SIZE,
@@ -692,22 +693,9 @@ impl TextPipelineData {
             return Some(*info);
         }
 
-        let glyph_id = self.font.glyph_id(ch);
+        let resolved = resolve_glyph(&self.font, &self.fallback, ch);
 
-        let use_fallback = glyph_id.0 == 0 && self.fallback_font.is_some();
-        let active_font: &FontArc = if use_fallback {
-            self.fallback_font.as_ref().unwrap()
-        } else {
-            &self.font
-        };
-
-        let resolved_glyph_id = if use_fallback {
-            active_font.glyph_id(ch)
-        } else {
-            glyph_id
-        };
-
-        if resolved_glyph_id.0 == 0 {
+        let Some((active_font, resolved_glyph_id)) = resolved else {
             let info = GlyphInfo {
                 uv_min: [0.0, 0.0],
                 uv_max: [0.0, 0.0],
@@ -716,7 +704,7 @@ impl TextPipelineData {
             };
             self.glyphs.insert(ch, info);
             return Some(info);
-        }
+        };
 
         let subpixel_scale = PxScale {
             x: self.scale.x * 3.0,

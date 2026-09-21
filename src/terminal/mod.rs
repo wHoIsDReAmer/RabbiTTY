@@ -1,4 +1,5 @@
 mod engine;
+pub mod fallback;
 pub mod font;
 pub mod osc;
 pub mod theme;
