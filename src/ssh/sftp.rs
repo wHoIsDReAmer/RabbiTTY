@@ -14,12 +14,8 @@ use russh_sftp::protocol::FileType;
 use std::path::PathBuf;
 use tokio::io::{AsyncReadExt, AsyncSeekExt, AsyncWriteExt};
 
-/// One request per chunk, so this is also the per-round-trip window on a
-/// download. Kept at the SFTP packet ceiling the client negotiates.
 const TRANSFER_CHUNK: usize = 256 * 1024;
 
-/// A 1 GiB transfer would otherwise redraw the drawer tens of thousands of
-/// times; the last update is always sent regardless.
 const PROGRESS_INTERVAL: std::time::Duration = std::time::Duration::from_millis(50);
 
 #[derive(Debug, Clone)]
@@ -199,7 +195,6 @@ async fn run_worker(
     let _ = evt_tx.unbounded_send(Event::Closed);
 }
 
-/// A queued cancel must not leak into the next transfer of the same path.
 fn arm_token(tokens: &mut HashMap<String, Arc<AtomicBool>>, path: &str) -> Arc<AtomicBool> {
     let token = Arc::new(AtomicBool::new(false));
     tokens.insert(path.to_string(), Arc::clone(&token));
@@ -266,7 +261,6 @@ async fn list_dir(sftp: &SftpSession, path: &str) -> Result<Vec<Entry>, String> 
     Ok(out)
 }
 
-/// Owns the `TransferStarted`/`TransferProgress` stream for one transfer.
 struct Progress<'a> {
     evt_tx: &'a mpsc::UnboundedSender<Event>,
     path: String,
@@ -362,10 +356,6 @@ async fn upload(
     Ok(Outcome::Done)
 }
 
-/// Each handle carries one outstanding read, so this is how many chunks are in
-/// flight; `File` itself never pipelines. Sixteen 256 KiB chunks is the 4 MiB
-/// window OpenSSH's own client keeps open, reached with a quarter of its
-/// requests.
 const READ_WINDOW: usize = 16;
 
 async fn download(
@@ -437,8 +427,6 @@ async fn download(
     Ok(Outcome::Done)
 }
 
-/// Reads one whole chunk, since a server may answer with less than it was asked
-/// for and the next chunk starts at a fixed offset.
 async fn read_chunk(
     reader: &tokio::sync::Mutex<russh_sftp::client::fs::File>,
     offset: u64,
@@ -512,15 +500,12 @@ mod tests {
 
     const FILE_SIZE: u64 = (TRANSFER_CHUNK * 16) as u64;
 
-    /// Serves one file of `FILE_SIZE` and a directory holding one entry.
-    /// Requests are answered one at a time, as a real server does.
     #[derive(Default)]
     struct FakeServer {
         drained: std::collections::HashSet<String>,
         short_reads: bool,
     }
 
-    /// Position-dependent, so a skipped or duplicated range is visible.
     fn byte_at(position: u64) -> u8 {
         (position % 251) as u8
     }
