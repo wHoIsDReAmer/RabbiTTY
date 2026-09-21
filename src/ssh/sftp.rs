@@ -12,7 +12,7 @@ use russh::client::Msg;
 use russh_sftp::client::SftpSession;
 use russh_sftp::protocol::FileType;
 use std::path::PathBuf;
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::io::{AsyncReadExt, AsyncSeekExt, AsyncWriteExt};
 
 /// One request per chunk, so this is also the per-round-trip window on a
 /// download. Kept at the SFTP packet ceiling the client negotiates.
@@ -362,6 +362,10 @@ async fn upload(
     Ok(Outcome::Done)
 }
 
+/// Each handle carries one outstanding read, so this is how many chunks are in
+/// flight; `File` itself never pipelines.
+const READ_WINDOW: usize = 8;
+
 async fn download(
     sftp: &SftpSession,
     remote: &str,
@@ -375,35 +379,53 @@ async fn download(
         .map_err(|e| format!("stat remote: {e}"))?;
     let total = metadata.size.unwrap_or(0);
 
-    let mut remote_file = sftp
-        .open(remote)
-        .await
-        .map_err(|e| format!("open remote: {e}"))?;
+    let chunks = (total as usize).div_ceil(TRANSFER_CHUNK).max(1);
+    let window = READ_WINDOW.min(chunks);
+    let readers = iced::futures::future::try_join_all(
+        std::iter::repeat_with(|| sftp.open(remote)).take(window),
+    )
+    .await
+    .map_err(|e| format!("open remote: {e}"))?;
+    let readers: Vec<tokio::sync::Mutex<russh_sftp::client::fs::File>> =
+        readers.into_iter().map(tokio::sync::Mutex::new).collect();
+
     let mut local_file = tokio::fs::File::create(local)
         .await
         .map_err(|e| format!("create local: {e}"))?;
 
     let mut progress = Progress::start(evt_tx, remote, total);
-    let mut buf = vec![0u8; TRANSFER_CHUNK];
-    loop {
-        if cancelled.load(Ordering::SeqCst) {
-            drop(local_file);
-            let _ = tokio::fs::remove_file(local).await;
-            return Ok(Outcome::Cancelled);
+    let mut reads = iced::futures::stream::iter(0u64..)
+        .map(|index| {
+            let reader = &readers[index as usize % window];
+            let offset = index * TRANSFER_CHUNK as u64;
+            async move { read_chunk(reader, offset).await }
+        })
+        .buffered(window);
+
+    let mut outcome = Outcome::Done;
+    while let Some(chunk) = reads.next().await {
+        let chunk = chunk?;
+        if chunk.is_empty() {
+            break;
         }
-        let n = remote_file
-            .read(&mut buf)
-            .await
-            .map_err(|e| format!("read remote: {e}"))?;
-        if n == 0 {
+        if cancelled.load(Ordering::SeqCst) {
+            outcome = Outcome::Cancelled;
             break;
         }
         local_file
-            .write_all(&buf[..n])
+            .write_all(&chunk)
             .await
             .map_err(|e| format!("write local: {e}"))?;
-        progress.advance(n);
+        progress.advance(chunk.len());
     }
+    drop(reads);
+
+    if outcome == Outcome::Cancelled {
+        drop(local_file);
+        let _ = tokio::fs::remove_file(local).await;
+        return Ok(Outcome::Cancelled);
+    }
+
     local_file
         .flush()
         .await
@@ -411,6 +433,33 @@ async fn download(
 
     progress.finish();
     Ok(Outcome::Done)
+}
+
+/// Reads one whole chunk, since a server may answer with less than it was asked
+/// for and the next chunk starts at a fixed offset.
+async fn read_chunk(
+    reader: &tokio::sync::Mutex<russh_sftp::client::fs::File>,
+    offset: u64,
+) -> Result<Vec<u8>, String> {
+    let mut file = reader.lock().await;
+    file.seek(std::io::SeekFrom::Start(offset))
+        .await
+        .map_err(|e| format!("seek remote: {e}"))?;
+
+    let mut buf = vec![0u8; TRANSFER_CHUNK];
+    let mut filled = 0;
+    while filled < buf.len() {
+        let n = file
+            .read(&mut buf[filled..])
+            .await
+            .map_err(|e| format!("read remote: {e}"))?;
+        if n == 0 {
+            break;
+        }
+        filled += n;
+    }
+    buf.truncate(filled);
+    Ok(buf)
 }
 
 pub async fn request_sftp(channel: &mut russh::Channel<Msg>) -> Result<(), String> {
@@ -466,6 +515,12 @@ mod tests {
     #[derive(Default)]
     struct FakeServer {
         drained: std::collections::HashSet<String>,
+        short_reads: bool,
+    }
+
+    /// Position-dependent, so a skipped or duplicated range is visible.
+    fn byte_at(position: u64) -> u8 {
+        (position % 251) as u8
     }
 
     fn ok(id: u32) -> Status {
@@ -522,10 +577,13 @@ mod tests {
             if offset >= FILE_SIZE {
                 return Err(StatusCode::Eof);
             }
-            let n = (FILE_SIZE - offset).min(len as u64) as usize;
+            let mut n = (FILE_SIZE - offset).min(len as u64) as usize;
+            if self.short_reads {
+                n = n.div_ceil(3);
+            }
             Ok(Data {
                 id,
-                data: vec![7u8; n],
+                data: (0..n as u64).map(|i| byte_at(offset + i)).collect(),
             })
         }
 
@@ -558,8 +616,19 @@ mod tests {
     }
 
     async fn harness(tag: &str) -> Harness {
+        harness_with(tag, false).await
+    }
+
+    async fn harness_with(tag: &str, short_reads: bool) -> Harness {
         let (client, server) = tokio::io::duplex(1024 * 1024);
-        russh_sftp::server::run(server, FakeServer::default()).await;
+        russh_sftp::server::run(
+            server,
+            FakeServer {
+                short_reads,
+                ..Default::default()
+            },
+        )
+        .await;
 
         let sftp = SftpSession::new(client).await.expect("client session");
         let (cmd_tx, cmd_rx) = mpsc::unbounded::<Command>();
@@ -731,5 +800,34 @@ mod tests {
             "a report per chunk is what the throttle exists to avoid: {} of {chunks}",
             reports.len()
         );
+    }
+
+    #[tokio::test]
+    async fn a_server_that_answers_with_less_than_it_was_asked_for_still_copies_every_byte() {
+        let mut h = harness_with("short", true).await;
+        let local = h.dir.join("copy.bin");
+
+        h.handle
+            .tx
+            .unbounded_send(Command::Download {
+                remote: "/remote/big.bin".to_string(),
+                local: local.clone(),
+            })
+            .expect("queued");
+
+        loop {
+            if let Event::TransferEnded { outcome, .. } = next_event(&mut h.handle.rx).await {
+                assert_eq!(outcome, Outcome::Done);
+                break;
+            }
+        }
+
+        let got = std::fs::read(&local).expect("downloaded file");
+        assert_eq!(got.len() as u64, FILE_SIZE, "the copy is the wrong length");
+        let wrong = got
+            .iter()
+            .enumerate()
+            .find(|(i, byte)| **byte != byte_at(*i as u64));
+        assert!(wrong.is_none(), "byte {:?} does not belong there", wrong);
     }
 }
