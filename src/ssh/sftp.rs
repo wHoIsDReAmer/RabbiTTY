@@ -363,8 +363,10 @@ async fn upload(
 }
 
 /// Each handle carries one outstanding read, so this is how many chunks are in
-/// flight; `File` itself never pipelines.
-const READ_WINDOW: usize = 8;
+/// flight; `File` itself never pipelines. Sixteen 256 KiB chunks is the 4 MiB
+/// window OpenSSH's own client keeps open, reached with a quarter of its
+/// requests.
+const READ_WINDOW: usize = 16;
 
 async fn download(
     sftp: &SftpSession,
