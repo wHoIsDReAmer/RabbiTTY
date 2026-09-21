@@ -499,9 +499,10 @@ mod tests {
     };
 
     const FILE_SIZE: u64 = (TRANSFER_CHUNK * 16) as u64;
+    const ENDLESS: u64 = (TRANSFER_CHUNK * 1024) as u64;
 
-    #[derive(Default)]
     struct FakeServer {
+        size: u64,
         drained: std::collections::HashSet<String>,
         short_reads: bool,
     }
@@ -547,7 +548,7 @@ mod tests {
             Ok(Attrs {
                 id,
                 attrs: FileAttributes {
-                    size: Some(FILE_SIZE),
+                    size: Some(self.size),
                     permissions: Some(0o100_644),
                     ..Default::default()
                 },
@@ -561,10 +562,10 @@ mod tests {
             offset: u64,
             len: u32,
         ) -> Result<Data, StatusCode> {
-            if offset >= FILE_SIZE {
+            if offset >= self.size {
                 return Err(StatusCode::Eof);
             }
-            let mut n = (FILE_SIZE - offset).min(len as u64) as usize;
+            let mut n = (self.size - offset).min(len as u64) as usize;
             if self.short_reads {
                 n = n.div_ceil(3);
             }
@@ -603,16 +604,17 @@ mod tests {
     }
 
     async fn harness(tag: &str) -> Harness {
-        harness_with(tag, false).await
+        harness_with(tag, FILE_SIZE, false).await
     }
 
-    async fn harness_with(tag: &str, short_reads: bool) -> Harness {
+    async fn harness_with(tag: &str, size: u64, short_reads: bool) -> Harness {
         let (client, server) = tokio::io::duplex(1024 * 1024);
         russh_sftp::server::run(
             server,
             FakeServer {
+                size,
                 short_reads,
-                ..Default::default()
+                drained: std::collections::HashSet::new(),
             },
         )
         .await;
@@ -650,7 +652,7 @@ mod tests {
 
     #[tokio::test]
     async fn a_cancel_stops_a_transfer_that_is_already_running() {
-        let mut h = harness("cancel").await;
+        let mut h = harness_with("cancel", ENDLESS, false).await;
         let local = h.dir.join("copy.bin");
 
         h.handle
@@ -678,14 +680,15 @@ mod tests {
             match next_event(&mut h.handle.rx).await {
                 Event::TransferProgress { transferred: n, .. } => transferred = n,
                 Event::TransferEnded { outcome, .. } => break outcome,
+                Event::Error { message } => panic!("the worker reported {message}"),
                 _ => {}
             }
         };
 
         assert_eq!(outcome, Outcome::Cancelled);
         assert!(
-            transferred < FILE_SIZE,
-            "it should have stopped short of {FILE_SIZE}, got {transferred}"
+            transferred < ENDLESS,
+            "it should have stopped short of {ENDLESS}, got {transferred}"
         );
         assert!(
             !local.exists(),
@@ -695,7 +698,7 @@ mod tests {
 
     #[tokio::test]
     async fn the_drawer_can_still_browse_while_a_transfer_runs() {
-        let mut h = harness("browse").await;
+        let mut h = harness_with("browse", ENDLESS, false).await;
 
         h.handle
             .tx
@@ -719,6 +722,7 @@ mod tests {
             match next_event(&mut h.handle.rx).await {
                 Event::Listed { entries, .. } => break entries,
                 Event::TransferEnded { .. } => panic!("the transfer finished before the listing"),
+                Event::Error { message } => panic!("the worker reported {message}"),
                 _ => {}
             }
         };
@@ -791,7 +795,7 @@ mod tests {
 
     #[tokio::test]
     async fn a_server_that_answers_with_less_than_it_was_asked_for_still_copies_every_byte() {
-        let mut h = harness_with("short", true).await;
+        let mut h = harness_with("short", FILE_SIZE, true).await;
         let local = h.dir.join("copy.bin");
 
         h.handle
