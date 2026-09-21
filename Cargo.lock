@@ -4187,6 +4187,7 @@ dependencies = [
  "ab_glyph",
  "alacritty_terminal",
  "async-trait",
+ "base64",
  "bytemuck",
  "dirs",
  "fontdb",

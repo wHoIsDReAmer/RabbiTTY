@@ -39,6 +39,13 @@ dropped silently. `connect(local(name))` resolves `$TMPDIR/{name}-{0..9}` on
 unix and `\\.\pipe\{name}-{0..9}` on Windows, so Discord IPC is
 `local("discord-ipc")`. `connect(tcp)` is a raw stream: no TLS.
 
+`command-finished` arrives when the shell emits OSC 133 `D` (shell integration
+must be installed in the shell for this). It carries the exit code and two
+`scrollback-range`s — the typed command (`input`, starting at `input-col`) and
+its output — but no text: fetch either with `query(scrollback)` in the same
+dispatch, since ranges are measured from the bottom of the grid at delivery
+time and shift as new output arrives.
+
 Terminal output is **not** streamed to you. Declare `output-pattern` records
 instead; the host matches every line natively and calls `on-event` only on a hit.
 

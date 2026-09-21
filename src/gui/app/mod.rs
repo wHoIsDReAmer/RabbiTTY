@@ -1418,6 +1418,28 @@ mod plugin_wiring_tests {
         );
         let _ = std::fs::remove_dir_all(root);
     }
+
+    #[test]
+    fn a_shell_integration_mark_reaches_the_plugin_as_a_finished_command() {
+        let Some((mut app, root)) = app_with_hello() else {
+            return;
+        };
+        let (tx, _rx) = mpsc::unbounded();
+        app.pty_sender = Some(tx);
+        let _ = app.update(Message::CreateTab(Profile::default_shell()));
+        let pane = app.tabs[0].panes[0].id;
+        app.handle_pty_event(crate::session::OutputEvent::Data {
+            tab_id: pane,
+            bytes:
+                b"\x1b]133;A\x07$ \x1b]133;B\x07ls\r\n\x1b]133;C\x07one\r\ntwo\r\n\x1b]133;D;2\x07"
+                    .to_vec(),
+        });
+        assert_eq!(
+            status_text(&app, "hello.counter").as_deref(),
+            Some("exit 2: 2 lines")
+        );
+        let _ = std::fs::remove_dir_all(root);
+    }
 }
 
 #[cfg(test)]

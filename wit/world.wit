@@ -133,6 +133,14 @@ interface types {
         selection: option<string>,
     }
 
+    record command-event {
+        pane: u64,
+        exit: option<u32>,
+        input: scrollback-range,
+        input-col: u32,
+        output: scrollback-range,
+    }
+
     record setting-event {
         key: string,
         value: string,
@@ -175,6 +183,7 @@ interface types {
         menu-activated(menu-event),
         bell(u64),
         setting-changed(setting-event),
+        command-finished(command-event),
         timer(u32),
         panes(list<pane-info>),
         scrollback(scrollback-chunk),

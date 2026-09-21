@@ -22,11 +22,11 @@ pub struct Pane {
     pub selection: Option<Selection>,
     pub sftp: SftpDrawerState,
     pub capture_output: bool,
-    pub track_cwd: bool,
     engine: TerminalEngine,
     lines: crate::plugin::LineReader,
     captured: Vec<String>,
     pending_title: Option<String>,
+    shell_directory: Option<String>,
 }
 
 pub struct TerminalTab {
@@ -103,10 +103,10 @@ impl Pane {
             selection: None,
             sftp: SftpDrawerState::new(),
             capture_output: false,
-            track_cwd: false,
             lines: crate::plugin::LineReader::default(),
             captured: Vec::new(),
             pending_title: None,
+            shell_directory: None,
             engine,
         }
     }
@@ -133,18 +133,34 @@ impl Pane {
     }
 
     pub fn take_cwd_change(&mut self) -> Option<String> {
-        self.lines.take_cwd()
+        let path = self.engine.take_reported_cwd()?;
+        if self.shell_directory.as_deref() == Some(path.as_str()) {
+            return None;
+        }
+        self.shell_directory = Some(path.clone());
+        Some(path)
+    }
+
+    pub fn take_notifications(&mut self) -> Vec<crate::terminal::osc::Notification> {
+        self.engine.take_notifications()
+    }
+
+    pub fn take_finished_commands(&mut self) -> Vec<crate::terminal::CommandFinished> {
+        self.engine.take_finished_commands()
+    }
+
+    pub fn shell_directory(&self) -> Option<String> {
+        self.shell_directory.clone().or_else(|| {
+            self.working_directory()
+                .map(|path| path.to_string_lossy().into_owned())
+        })
     }
 
     pub fn feed_bytes(&mut self, bytes: &[u8]) -> bool {
-        if self.capture_output || self.track_cwd {
-            let capture = self.capture_output;
+        if self.capture_output {
             let captured = &mut self.captured;
-            self.lines.feed(bytes, |line| {
-                if capture {
-                    captured.push(line.to_string());
-                }
-            });
+            self.lines
+                .feed(bytes, |line| captured.push(line.to_string()));
         }
         self.engine.feed_bytes(bytes);
         if let Some(change) = self.engine.take_title() {
