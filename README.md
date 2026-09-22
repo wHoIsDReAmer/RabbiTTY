@@ -90,10 +90,6 @@ A theme with the same name as a built-in will override it. See `assets/example-t
 - Windows (x86_64)
 - macOS (Apple Silicon)
 
-## Known Limitations
-
-- **IME preedit font.** The in-progress IME composition text is drawn by the app's UI font — the platform's sans-serif — not the monospace terminal font. `iced` 0.14's preedit API exposes only the text size, with no way to override the font, so the composition text may look slightly different from committed terminal input even though both use the same configured `font_size`.
-
 ## Credits
 
 - Interface icons from [Lucide](https://lucide.dev) (ISC). See `assets/icons/LUCIDE_LICENSE.txt`.
