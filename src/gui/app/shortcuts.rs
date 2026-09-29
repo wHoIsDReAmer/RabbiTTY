@@ -309,6 +309,53 @@ fn normalize_shortcut_key_token(value: &str) -> Option<Cow<'static, str>> {
     Some(normalized)
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(in crate::gui) enum Recorded {
+    Chord(String),
+    Clear,
+    Cancel,
+    Ignore,
+}
+
+pub(in crate::gui) fn record(physical: &Physical, modifiers: Modifiers) -> Recorded {
+    let Some(key) = physical_key_token(physical) else {
+        return Recorded::Ignore;
+    };
+    let bare = !(modifiers.control() || modifiers.alt() || modifiers.logo() || modifiers.shift());
+    if bare {
+        match &*key {
+            "Escape" => return Recorded::Cancel,
+            "Backspace" | "Delete" => return Recorded::Clear,
+            _ => {}
+        }
+    }
+    if modifiers.logo() && !cfg!(target_os = "macos") {
+        return Recorded::Ignore;
+    }
+    let chorded = modifiers.control() || modifiers.alt() || modifiers.logo();
+    let function_key =
+        key.len() > 1 && key.starts_with('F') && key[1..].bytes().all(|b| b.is_ascii_digit());
+    if !chorded && !function_key {
+        return Recorded::Ignore;
+    }
+
+    let mut parts: Vec<&str> = Vec::with_capacity(5);
+    if modifiers.logo() {
+        parts.push("Command");
+    }
+    if modifiers.control() {
+        parts.push("Ctrl");
+    }
+    if modifiers.alt() {
+        parts.push("Alt");
+    }
+    if modifiers.shift() {
+        parts.push("Shift");
+    }
+    parts.push(&key);
+    Recorded::Chord(parts.join("+"))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -499,5 +546,132 @@ mod tests {
             ShortcutAction::resolve(&Physical::Code(Code::KeyE), modifiers, &shortcuts),
             Some(ShortcutAction::SplitAuto)
         ));
+    }
+
+    const SAMPLE_CODES: [Code; 16] = [
+        Code::KeyA,
+        Code::KeyZ,
+        Code::Digit0,
+        Code::Numpad7,
+        Code::Enter,
+        Code::Tab,
+        Code::Space,
+        Code::ArrowLeft,
+        Code::PageDown,
+        Code::Comma,
+        Code::Period,
+        Code::Minus,
+        Code::Equal,
+        Code::BracketLeft,
+        Code::Backquote,
+        Code::F12,
+    ];
+
+    fn every_modifier_set() -> Vec<Modifiers> {
+        let flags = [
+            Modifiers::CTRL,
+            Modifiers::ALT,
+            Modifiers::SHIFT,
+            Modifiers::LOGO,
+        ];
+        (0u8..16)
+            .map(|bits| {
+                flags
+                    .iter()
+                    .enumerate()
+                    .filter(|(i, _)| bits & (1 << i) != 0)
+                    .fold(Modifiers::empty(), |acc, (_, flag)| acc | *flag)
+            })
+            .collect()
+    }
+
+    #[test]
+    fn a_recorded_chord_is_stored_and_then_matches_the_press_that_made_it() {
+        let mut recorded = 0;
+        for code in SAMPLE_CODES {
+            let physical = Physical::Code(code);
+            for modifiers in every_modifier_set() {
+                let Recorded::Chord(chord) = record(&physical, modifiers) else {
+                    continue;
+                };
+                recorded += 1;
+
+                let mut config = crate::config::AppConfig::default();
+                config.apply_updates(crate::config::AppConfigUpdates {
+                    shortcuts: vec![(ShortcutId::NewTab, chord.clone())],
+                    ..Default::default()
+                });
+                let stored = config.shortcuts.get(ShortcutId::NewTab);
+
+                assert_eq!(
+                    stored, chord,
+                    "saving rewrote {chord}, so the field would change under the user"
+                );
+                assert!(
+                    shortcut_matches(stored, &physical, modifiers),
+                    "{chord} was recorded from {code:?}+{modifiers:?} but does not match it"
+                );
+            }
+        }
+        assert!(
+            recorded > SAMPLE_CODES.len(),
+            "almost nothing was recordable"
+        );
+    }
+
+    #[test]
+    fn a_plain_letter_or_shifted_letter_is_not_a_shortcut_but_a_bare_function_key_is() {
+        assert_eq!(
+            record(&Physical::Code(Code::KeyT), Modifiers::empty()),
+            Recorded::Ignore
+        );
+        assert_eq!(
+            record(&Physical::Code(Code::KeyT), Modifiers::SHIFT),
+            Recorded::Ignore
+        );
+        assert_eq!(
+            record(&Physical::Code(Code::F5), Modifiers::empty()),
+            Recorded::Chord("F5".to_string())
+        );
+    }
+
+    #[test]
+    fn escape_cancels_and_backspace_clears_only_when_pressed_alone() {
+        assert_eq!(
+            record(&Physical::Code(Code::Escape), Modifiers::empty()),
+            Recorded::Cancel
+        );
+        assert_eq!(
+            record(&Physical::Code(Code::Backspace), Modifiers::empty()),
+            Recorded::Clear
+        );
+        assert_eq!(
+            record(&Physical::Code(Code::Backspace), Modifiers::CTRL),
+            Recorded::Chord("Ctrl+Backspace".to_string())
+        );
+    }
+
+    #[test]
+    fn a_modifier_key_on_its_own_keeps_listening() {
+        for code in [
+            Code::ShiftLeft,
+            Code::ControlRight,
+            Code::AltLeft,
+            Code::SuperLeft,
+        ] {
+            assert_eq!(
+                record(&Physical::Code(code), Modifiers::CTRL),
+                Recorded::Ignore
+            );
+        }
+    }
+
+    #[cfg(not(target_os = "macos"))]
+    #[test]
+    fn the_windows_or_super_key_is_refused_where_no_binding_can_name_it() {
+        assert_eq!(
+            record(&Physical::Code(Code::KeyT), Modifiers::LOGO),
+            Recorded::Ignore
+        );
     }
 }

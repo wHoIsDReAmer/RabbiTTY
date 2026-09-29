@@ -567,6 +567,38 @@ impl App {
         text: Option<String>,
         repeat: bool,
     ) -> Task<Message> {
+        if let Some(field) = self.settings_draft.recording {
+            if self.active_tab != SETTINGS_TAB_INDEX {
+                self.settings_draft.recording = None;
+            } else {
+                if repeat {
+                    return Task::none();
+                }
+                let value = match super::shortcuts::record(&physical_key, modifiers) {
+                    super::shortcuts::Recorded::Chord(chord) => chord,
+                    super::shortcuts::Recorded::Clear
+                        if matches!(
+                            field,
+                            crate::gui::settings::SettingsField::PluginShortcut(_)
+                        ) =>
+                    {
+                        String::new()
+                    }
+                    super::shortcuts::Recorded::Cancel => {
+                        self.settings_draft.recording = None;
+                        return Task::none();
+                    }
+                    super::shortcuts::Recorded::Clear | super::shortcuts::Recorded::Ignore => {
+                        return Task::none();
+                    }
+                };
+                self.settings_draft.recording = None;
+                return self.update(Message::Settings(
+                    crate::gui::app::SettingsMessage::InputCommitted(field, value),
+                ));
+            }
+        }
+
         // The multi-line paste confirmation is the topmost overlay; while it is
         // shown, Enter confirms, Escape cancels, and all other keys are swallowed.
         if self.pending_paste.is_some() {

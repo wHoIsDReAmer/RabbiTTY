@@ -1,6 +1,6 @@
 use crate::config::{AppConfig, ShortcutId};
 use crate::gui::app::Message;
-use crate::gui::settings::{SettingsDraft, SettingsField, hint_text, input_row, section};
+use crate::gui::settings::{SettingsDraft, SettingsField, hint_text, section, shortcut_row};
 use crate::gui::theme::{Palette, SPACING_NORMAL};
 use iced::widget::column;
 use iced::{Element, Length};
@@ -10,21 +10,21 @@ pub fn view<'a>(
     draft: &'a SettingsDraft,
     palette: Palette,
 ) -> Element<'a, Message> {
+    let listening = |field| draft.recording == Some(field);
+
     let mut rows: Vec<Element<'a, Message>> = ShortcutId::ALL
         .into_iter()
         .map(|id| {
+            let field = SettingsField::Shortcut(id);
             let value = draft
                 .shortcuts
                 .get(&id)
                 .map(String::as_str)
                 .unwrap_or_default();
-            input_row(id.label(), value, SettingsField::Shortcut(id), palette)
+            shortcut_row(id.label(), value, field, listening(field), palette)
         })
         .collect();
-    rows.push(hint_text(
-        "Format: Command+T, Ctrl+W, Ctrl+PageDown, Command+Comma",
-        palette,
-    ));
+    rows.push(hint_text(crate::t!("settings.shortcuts.hint"), palette));
 
     let mut sections = vec![section(
         crate::t!("settings.shortcuts.application"),
@@ -36,19 +36,19 @@ pub fn view<'a>(
     )];
 
     if !draft.plugin_shortcuts.is_empty() {
-        let plugin_rows: Vec<Element<'a, Message>> = draft
+        let mut plugin_rows: Vec<Element<'a, Message>> = draft
             .plugin_shortcuts
             .iter()
             .enumerate()
             .map(|(index, row)| {
-                input_row(
-                    &row.label,
-                    &row.binding,
-                    SettingsField::PluginShortcut(index),
-                    palette,
-                )
+                let field = SettingsField::PluginShortcut(index);
+                shortcut_row(&row.label, &row.binding, field, listening(field), palette)
             })
             .collect();
+        plugin_rows.push(hint_text(
+            crate::t!("settings.shortcuts.plugin_hint"),
+            palette,
+        ));
         sections.push(section(
             crate::t!("settings.shortcuts.plugins"),
             column(plugin_rows)
