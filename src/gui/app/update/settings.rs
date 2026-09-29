@@ -324,6 +324,7 @@ impl App {
                     self.settings_draft = SettingsDraft::from_config(&self.config);
                 }
                 self.settings_category = category;
+                self.settings_draft.recording = None;
                 self.refresh_plugin_settings();
             }
             SettingsMessage::InputChanged(field, value) => {
@@ -349,6 +350,13 @@ impl App {
                 }
                 self.settings_debounce_spawned_seq = self.settings_debounce_seq;
                 return self.apply_settings(true);
+            }
+            SettingsMessage::RecordShortcut(field) => {
+                self.settings_draft.recording = if self.settings_draft.recording == Some(field) {
+                    None
+                } else {
+                    Some(field)
+                };
             }
             SettingsMessage::CommitDebounce => {
                 if self.settings_debounce_spawned_seq != self.settings_debounce_seq {

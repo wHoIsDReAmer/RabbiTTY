@@ -390,6 +390,7 @@ pub struct SettingsDraft {
     pub macos_blur_radius: String,
     pub shortcuts: std::collections::BTreeMap<crate::config::ShortcutId, String>,
     pub plugin_shortcuts: Vec<PluginShortcutDraft>,
+    pub recording: Option<SettingsField>,
     pub profiles: Vec<ProfileDraft>,
     pub profiles_error: Option<String>,
     pub profile_modal_mode: Option<ProfileModalMode>,
@@ -403,6 +404,7 @@ impl SettingsDraft {
     pub fn from_config(config: &AppConfig) -> Self {
         Self {
             plugin_shortcuts: Vec::new(),
+            recording: None,
             language: config
                 .ui
                 .language
@@ -781,6 +783,51 @@ pub fn input_row<'a>(
         .on_submit(commit_msg),
         palette,
     )
+}
+
+pub fn shortcut_row<'a>(
+    label: &'a str,
+    value: &'a str,
+    field: SettingsField,
+    listening: bool,
+    palette: Palette,
+) -> Element<'a, Message> {
+    let (shown, color) = if listening {
+        (crate::t!("settings.shortcuts.listening"), palette.accent)
+    } else if value.trim().is_empty() {
+        (
+            crate::t!("settings.shortcuts.unbound"),
+            palette.text_secondary,
+        )
+    } else {
+        (value, palette.text)
+    };
+    let control = button(text(shown).size(14).color(color))
+        .on_press(Message::Settings(SettingsMessage::RecordShortcut(field)))
+        .padding([9, 12])
+        .width(Length::Fixed(TEXT_INPUT_WIDTH))
+        .style(move |_theme: &iced::Theme, status: button::Status| {
+            let hovered = matches!(status, button::Status::Hovered | button::Status::Pressed);
+            button::Style {
+                background: Some(Background::Color(Color {
+                    a: if hovered { 0.75 } else { 0.55 },
+                    ..palette.background
+                })),
+                text_color: color,
+                border: Border {
+                    radius: RADIUS_SMALL.into(),
+                    width: 1.0,
+                    color: if listening {
+                        palette.accent
+                    } else {
+                        Color::TRANSPARENT
+                    },
+                },
+                shadow: iced::Shadow::default(),
+                snap: true,
+            }
+        });
+    setting_row(label, control, palette)
 }
 
 pub fn input_row_with_suffix<'a>(

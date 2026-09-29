@@ -155,6 +155,7 @@ pub enum SettingsMessage {
     SelectCategory(SettingsCategory),
     InputChanged(SettingsField, String),
     InputCommitted(SettingsField, String),
+    RecordShortcut(SettingsField),
     CommitDebounce,
     BlurToggled(bool),
     AnimationsToggled(bool),
@@ -882,6 +883,59 @@ mod tests {
 
         assert_eq!(app.tabs.len(), 1, "no tab was opened");
         assert!(!app.show_shell_picker, "the picker opened instead");
+    }
+
+    fn press(app: &mut App, code: iced::keyboard::key::Code, modifiers: Modifiers) {
+        let _ = app.update(Message::KeyPressed {
+            key: Key::Unidentified,
+            physical_key: iced::keyboard::key::Physical::Code(code),
+            modifiers,
+            text: None,
+            repeat: false,
+        });
+    }
+
+    #[test]
+    fn a_recorded_shortcut_takes_over_without_firing_what_was_pressed() {
+        use crate::config::ShortcutId;
+        use crate::gui::settings::SettingsField;
+        use iced::keyboard::key::Code;
+
+        let mut app = app_with_pty();
+        let primary = if cfg!(target_os = "macos") {
+            Modifiers::LOGO
+        } else {
+            Modifiers::CTRL
+        };
+        let field = SettingsField::Shortcut(ShortcutId::NewTab);
+        let _ = app.update(Message::Settings(SettingsMessage::SelectCategory(
+            SettingsCategory::Shortcuts,
+        )));
+
+        let _ = app.update(Message::Settings(SettingsMessage::RecordShortcut(field)));
+        press(&mut app, Code::KeyT, primary);
+        assert!(
+            app.tabs.is_empty(),
+            "the current new-tab chord leaked out of the recorder and opened a tab"
+        );
+
+        let _ = app.update(Message::Settings(SettingsMessage::RecordShortcut(field)));
+        press(&mut app, Code::KeyY, primary);
+        assert_eq!(
+            app.settings_draft.recording, None,
+            "one press ends listening"
+        );
+        let expected = if cfg!(target_os = "macos") {
+            "Command+Y"
+        } else {
+            "Ctrl+Y"
+        };
+        assert_eq!(app.config.shortcuts.get(ShortcutId::NewTab), expected);
+
+        press(&mut app, Code::KeyT, primary);
+        assert!(app.tabs.is_empty(), "the old chord still opens a tab");
+        press(&mut app, Code::KeyY, primary);
+        assert_eq!(app.tabs.len(), 1, "the recorded chord does not open a tab");
     }
 
     fn app_with_pty() -> App {
