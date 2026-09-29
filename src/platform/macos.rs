@@ -2,7 +2,7 @@ use crate::config::ThemeConfig;
 use iced::window::raw_window_handle::{DisplayHandle, RawWindowHandle, WindowHandle};
 use objc2::{AnyThread, MainThreadMarker};
 use objc2_app_kit::{NSApplication, NSColor, NSImage, NSView, NSWindowCollectionBehavior};
-use objc2_foundation::NSData;
+use objc2_foundation::{NSBundle, NSData, NSString};
 use std::sync::OnceLock;
 
 // macOS private CoreGraphics SPI for window background blur.
@@ -35,13 +35,21 @@ pub fn set_app_icon_once() {
     let Some(mtm) = MainThreadMarker::new() else {
         return;
     };
+    let _ = APPLIED.set(());
+    if bundle_has_icon() {
+        return;
+    }
     let data = NSData::with_bytes(APP_ICON_PNG);
-    let image = NSImage::initWithData(NSImage::alloc(), &data);
-    if let Some(image) = image {
+    if let Some(image) = NSImage::initWithData(NSImage::alloc(), &data) {
         let app = NSApplication::sharedApplication(mtm);
         unsafe { app.setApplicationIconImage(Some(&image)) };
-        let _ = APPLIED.set(());
     }
+}
+
+fn bundle_has_icon() -> bool {
+    NSBundle::mainBundle()
+        .objectForInfoDictionaryKey(&NSString::from_str("CFBundleIconFile"))
+        .is_some()
 }
 
 fn apply_style_inner(handle: WindowHandle<'_>, theme: &ThemeConfig) {

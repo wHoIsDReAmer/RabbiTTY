@@ -96,7 +96,7 @@ install_linux_desktop_entry() {
     else
         curl -fsSL \
             -o "$ICON_FILE" \
-            "https://raw.githubusercontent.com/${REPO}/main/assets/logo.png" \
+            "https://raw.githubusercontent.com/${REPO}/${tag}/assets/logo.png" \
             >/dev/null 2>&1 \
             || printf 'Warning: failed to install application icon. The launcher may use a generic icon.\n' >&2
     fi
