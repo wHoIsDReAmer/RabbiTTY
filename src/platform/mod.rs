@@ -154,4 +154,40 @@ mod tests {
         );
         let _ = std::fs::remove_dir_all(&dir);
     }
+
+    fn icns_png_sizes(data: &[u8]) -> Vec<(String, u32)> {
+        assert_eq!(&data[..4], b"icns", "not an icns file");
+        let mut found = Vec::new();
+        let mut at = 8;
+        while at + 8 <= data.len() {
+            let kind = String::from_utf8_lossy(&data[at..at + 4]).into_owned();
+            let len = u32::from_be_bytes(data[at + 4..at + 8].try_into().unwrap()) as usize;
+            let body = &data[at + 8..at + len];
+            if body.starts_with(b"\x89PNG\r\n\x1a\n") {
+                let width = u32::from_be_bytes(body[16..20].try_into().unwrap());
+                found.push((kind, width));
+            }
+            at += len;
+        }
+        found
+    }
+
+    #[test]
+    fn the_bundle_icon_carries_every_retina_size_up_to_1024() {
+        let data = include_bytes!("../../assets/icon.icns");
+        let sizes = icns_png_sizes(data);
+        for (kind, width) in [
+            ("ic07", 128),
+            ("ic08", 256),
+            ("ic09", 512),
+            ("ic10", 1024),
+            ("ic13", 256),
+            ("ic14", 512),
+        ] {
+            assert!(
+                sizes.contains(&(kind.to_string(), width)),
+                "{kind} ({width}px) is missing, so macOS upscales a smaller one: {sizes:?}"
+            );
+        }
+    }
 }

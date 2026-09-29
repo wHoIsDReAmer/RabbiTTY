@@ -108,6 +108,7 @@ jobs:
           package_root="dist/${BIN_NAME}-${RELEASE_TAG}-${{ matrix.id }}"
           mkdir -p "${package_root}"
           cp "target/${{ matrix.target }}/release/${{ matrix.binary_name }}" "${package_root}/${BIN_NAME}"
+          cp assets/logo.png "${package_root}/logo.png"
 
           archive_path="${package_root}.tar.gz"
           tar -C dist -czf "${archive_path}" "$(basename "${package_root}")"
