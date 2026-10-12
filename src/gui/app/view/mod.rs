@@ -213,12 +213,12 @@ impl App {
             return self.view_shell_picker(base_layout);
         }
 
-        if let Some(tab_index) = self.tab_context_menu {
-            return self.view_tab_context_menu(base_layout, tab_index);
+        if let Some((tab_index, at)) = self.tab_context_menu {
+            return self.view_tab_context_menu(base_layout, tab_index, at);
         }
 
-        if self.terminal_context_menu {
-            return self.view_terminal_context_menu(base_layout);
+        if let Some(at) = self.terminal_context_menu {
+            return self.view_terminal_context_menu(base_layout, at);
         }
 
         base_layout.into()
@@ -521,6 +521,7 @@ impl App {
         &'a self,
         base_layout: impl Into<Element<'a, Message>>,
         tab_index: usize,
+        at: iced::Point,
     ) -> Element<'a, Message> {
         let mut items = vec![
             ContextMenuItem {
@@ -537,7 +538,7 @@ impl App {
         context_menu(
             base_layout,
             items,
-            self.cursor_position,
+            at,
             Message::CloseTabContextMenu,
             self.palette,
             self.config.ui.animations_enabled,
@@ -547,6 +548,7 @@ impl App {
     fn view_terminal_context_menu<'a>(
         &'a self,
         base_layout: impl Into<Element<'a, Message>>,
+        at: iced::Point,
     ) -> Element<'a, Message> {
         let has_selection = self
             .focused_pane()
@@ -569,7 +571,7 @@ impl App {
         context_menu(
             base_layout,
             items,
-            self.cursor_position,
+            at,
             Message::CloseTerminalContextMenu,
             self.palette,
             self.config.ui.animations_enabled,

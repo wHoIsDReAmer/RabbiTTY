@@ -499,9 +499,10 @@ impl ShaderProgram<Message> for TerminalProgram {
             Event::Mouse(mouse::Event::ButtonPressed(mouse::Button::Right)) => {
                 if let Some(pos) = cursor.position_in(bounds)
                     && let Some((pane, _)) = self.pane_under(pos, bounds)
+                    && let Some(at) = cursor.position()
                 {
                     return Some(
-                        Action::publish(Message::TerminalRightClick(pane.id)).and_capture(),
+                        Action::publish(Message::TerminalRightClick(pane.id, at)).and_capture(),
                     );
                 }
             }

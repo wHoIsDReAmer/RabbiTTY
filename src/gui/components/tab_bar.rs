@@ -54,13 +54,19 @@ pub fn tab_bar<'a>(
             animations_enabled,
         );
         let is_terminal_tab = index != crate::gui::app::SETTINGS_TAB_INDEX;
-        let mut tab_item = mouse_area(tab_item)
+        let tab_item = mouse_area(tab_item)
             .on_press(Message::TabSelected(index))
             .on_enter(Message::TabDragHover(index));
         if is_terminal_tab {
-            tab_item = tab_item.on_right_press(Message::ShowTabContextMenu(index));
+            tab_elements.push(
+                crate::gui::components::right_press_at(tab_item, move |at| {
+                    Message::ShowTabContextMenu(index, at)
+                })
+                .into(),
+            );
+        } else {
+            tab_elements.push(tab_item.into());
         }
-        tab_elements.push(tab_item.into());
     }
 
     let bar_icon =
