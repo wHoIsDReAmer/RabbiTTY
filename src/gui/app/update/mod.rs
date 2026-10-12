@@ -151,7 +151,7 @@ impl App {
                 self.modal_anim.go_mut(false, Instant::now());
             }
             Message::RunPluginMenuItem { plugin, item } => {
-                self.terminal_context_menu = false;
+                self.terminal_context_menu = None;
                 self.tab_context_menu = None;
                 self.activate_plugin_menu_item(&plugin, &item);
             }
@@ -191,7 +191,9 @@ impl App {
                 }
             }
             Message::DuplicateTab => {
-                let index = self.tab_context_menu.unwrap_or(self.active_tab);
+                let index = self
+                    .tab_context_menu
+                    .map_or(self.active_tab, |(index, _)| index);
                 self.tab_context_menu = None;
                 if let Some(tab) = self.tabs.get(index) {
                     let profile = tab.focused().profile.clone();
@@ -223,13 +225,13 @@ impl App {
             Message::SshPasswordPromptCancel => {
                 self.password_prompt = None;
             }
-            Message::ShowTabContextMenu(index) => {
-                self.tab_context_menu = Some(index);
+            Message::ShowTabContextMenu(index, at) => {
+                self.tab_context_menu = Some((index, at));
             }
             Message::CloseTabContextMenu => {
                 self.tab_context_menu = None;
             }
-            Message::TerminalRightClick(pane) => {
+            Message::TerminalRightClick(pane, at) => {
                 self.focus_pane(pane);
                 use crate::config::RightClickAction;
                 match self.config.terminal.right_click_action {
@@ -248,16 +250,16 @@ impl App {
                             .map(|content| Message::PasteClipboard(content.unwrap_or_default()));
                     }
                     RightClickAction::Menu => {
-                        self.terminal_context_menu = true;
+                        self.terminal_context_menu = Some(at);
                     }
                     RightClickAction::None => {}
                 }
             }
             Message::CloseTerminalContextMenu => {
-                self.terminal_context_menu = false;
+                self.terminal_context_menu = None;
             }
             Message::TerminalContextPaste => {
-                self.terminal_context_menu = false;
+                self.terminal_context_menu = None;
                 return iced::clipboard::read()
                     .map(|content| Message::PasteClipboard(content.unwrap_or_default()));
             }
@@ -265,17 +267,12 @@ impl App {
                 crate::platform::open_url(&url);
             }
             Message::TerminalContextCopy => {
-                self.terminal_context_menu = false;
+                self.terminal_context_menu = None;
                 if let Some(pane) = self.focused_pane_mut()
                     && let Some(text) = pane.selected_text()
                 {
                     pane.clear_selection();
                     return iced::clipboard::write(text);
-                }
-            }
-            Message::CursorMoved(point) => {
-                if self.tab_context_menu.is_none() && !self.terminal_context_menu {
-                    self.cursor_position = point;
                 }
             }
 

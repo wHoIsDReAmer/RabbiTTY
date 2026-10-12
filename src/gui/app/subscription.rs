@@ -131,9 +131,6 @@ impl App {
                 Event::Mouse(mouse::Event::ButtonReleased(mouse::Button::Left)) => {
                     Some(Message::TabDragRelease)
                 }
-                Event::Mouse(mouse::Event::CursorMoved { position }) => {
-                    Some(Message::CursorMoved(position))
-                }
                 Event::Mouse(mouse::Event::WheelScrolled { delta })
                     if !matches!(status, event::Status::Captured) =>
                 {

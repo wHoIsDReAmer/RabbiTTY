@@ -75,14 +75,13 @@ pub enum Message {
     SshPasswordPromptToggleSave(bool),
     SshPasswordPromptSubmit,
     SshPasswordPromptCancel,
-    ShowTabContextMenu(usize),
+    ShowTabContextMenu(usize, iced::Point),
     CloseTabContextMenu,
-    TerminalRightClick(u64),
+    TerminalRightClick(u64, iced::Point),
     CloseTerminalContextMenu,
     TerminalContextPaste,
     TerminalContextCopy,
     OpenUrl(String),
-    CursorMoved(iced::Point),
     PtySenderReady(mpsc::UnboundedSender<OutputEvent>),
     PtyOutput(OutputEvent),
     PtyOutputBatch(Vec<OutputEvent>),
@@ -284,7 +283,7 @@ pub struct App {
     pub(super) tab_bar_scroll_x: f32,
     pub(super) dragging_tab: Option<usize>,
     pub(super) drag_target: Option<usize>,
-    pub(super) tab_context_menu: Option<usize>,
+    pub(super) tab_context_menu: Option<(usize, iced::Point)>,
 
     // ── Scrolling ───────────────────────────────────────────────────────
     pub(super) scroll_follow_bottom: bool,
@@ -300,7 +299,6 @@ pub struct App {
     // ── Input ───────────────────────────────────────────────────────────
     pub(super) ime_active: bool,
     pub(super) ime_preedit: Option<(String, Option<std::ops::Range<usize>>)>,
-    pub(super) cursor_position: iced::Point,
     /// Text waiting for multiline-paste confirmation.
     pub(super) pending_paste: Option<String>,
 
@@ -339,7 +337,7 @@ pub struct App {
     // ── Overlays ────────────────────────────────────────────────────────
     pub(super) modal_anim: Animation<bool>,
     /// Whether the terminal right-click context menu is currently shown.
-    pub(super) terminal_context_menu: bool,
+    pub(super) terminal_context_menu: Option<iced::Point>,
 
     // ── Terminal paint state ────────────────────────────────────────────
     /// Current on/off phase of the blinking cursor.
@@ -476,7 +474,6 @@ impl App {
 
             ime_active: false,
             ime_preedit: None,
-            cursor_position: iced::Point::ORIGIN,
             pending_paste: None,
 
             show_shell_picker: false,
@@ -507,7 +504,7 @@ impl App {
             modal_anim: Animation::new(false)
                 .duration(std::time::Duration::from_millis(250))
                 .easing(iced::animation::Easing::EaseOutQuint),
-            terminal_context_menu: false,
+            terminal_context_menu: None,
 
             cursor_blink_on: true,
             last_key_at: None,
@@ -973,7 +970,7 @@ mod tests {
 
     fn right_click(app: &mut App) {
         let pane = app.tabs[0].panes[0].id;
-        let _ = app.update(Message::TerminalRightClick(pane));
+        let _ = app.update(Message::TerminalRightClick(pane, iced::Point::ORIGIN));
     }
 
     #[test]
@@ -1238,7 +1235,7 @@ mod tests {
         });
         assert_eq!(app.tabs[0].focused, first, "click did not move focus");
 
-        let _ = app.update(Message::TerminalRightClick(second));
+        let _ = app.update(Message::TerminalRightClick(second, iced::Point::ORIGIN));
         assert_eq!(
             app.tabs[0].focused, second,
             "right click did not move focus"

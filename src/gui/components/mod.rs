@@ -3,6 +3,7 @@ pub mod container;
 pub mod context_menu;
 pub mod hover_fade;
 pub mod ime_wrapper;
+pub mod right_press;
 pub mod tab_bar;
 pub mod widget_styles;
 
@@ -11,6 +12,7 @@ pub use button::{
 };
 pub use container::panel;
 pub use hover_fade::{HoverStyle, hover_fade};
+pub use right_press::right_press_at;
 pub use tab_bar::tab_bar;
 pub use widget_styles::{
     accent_combo_box_input_style, accent_combo_box_menu_style, accent_pick_list_style,
