@@ -74,9 +74,10 @@ impl App {
                             },
                         ));
                     }
-                    // Drained either way so a refused request cannot pile up.
-                    if self.config.terminal.osc52_write {
-                        self.osc_clipboard_write = clipboard_write;
+                    if self.config.terminal.osc52_write
+                        && let Some(text) = clipboard_write
+                    {
+                        self.osc_clipboard_write = Some(text);
                     }
                     if self.config.terminal.osc52_read
                         && let Some(format) = clipboard_read
