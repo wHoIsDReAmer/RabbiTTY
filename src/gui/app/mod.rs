@@ -1025,6 +1025,20 @@ mod tests {
     }
 
     #[test]
+    fn an_osc52_write_survives_more_output_in_the_same_batch() {
+        let mut app = zoom_app();
+        app.config.terminal.osc52_write = true;
+        feed(&mut app, b"\x1b]52;c;aGk=\x07");
+        feed(&mut app, b"redraw");
+
+        assert_eq!(
+            app.osc_clipboard_write.as_deref(),
+            Some("hi"),
+            "output after the copy, delivered before the clipboard task runs, dropped it"
+        );
+    }
+
+    #[test]
     fn a_dropped_session_resets_the_modes_the_program_left_on() {
         let mut app = zoom_app();
         feed(&mut app, b"\x1b[?1h\x1b[?1049h");
