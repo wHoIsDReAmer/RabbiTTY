@@ -40,7 +40,7 @@ iced = { version = "0.14.0", default-features = false, features = [
 bytemuck = { version = "1.25", features = ["derive"] }
 ab_glyph = "0.2"
 
-futures = { version = "0.3.33", default-features = false }
+futures = { version = "0.3.34", default-features = false }
 
 # Terminal
 alacritty_terminal = "0.26.0"
@@ -52,7 +52,7 @@ fontdb = "0.23"
 # SSH
 russh = "0.48"
 russh-keys = "0.48"
-russh-sftp = "2.3"
+russh-sftp = "2.4"
 ssh2-config = "0.7"
 async-trait = "0.1"
 rfd = { version = "0.15", default-features = false, features = ["xdg-portal", "tokio"] }
