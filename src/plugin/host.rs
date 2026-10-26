@@ -18,7 +18,7 @@ use super::{
 pub const PLUGIN_ABI_VERSION: &str = "0.5.0";
 const ABI_PACKAGE: &str = "rabbitty:plugin/";
 
-const CALL_FUEL: u64 = 10_000_000;
+const CALL_FUEL: u64 = 500_000_000;
 const MAX_MEMORY: usize = 64 * 1024 * 1024;
 const MAX_TABLE_ELEMENTS: usize = 100_000;
 const MAX_INSTANCES: usize = 64;

@@ -89,6 +89,14 @@ Calls are strictly sequential: the host never re-enters the plugin while a
 call is in progress, and actions returned by one call are executed before the
 next call is made.
 
+Every call runs under two budgets, whichever runs out first: 500 million
+instructions (about 35 ms on an Apple M-series CPU; slower machines take
+longer for the same count), and a wall-clock deadline of 2 s for `manifest`,
+`init`, `contributions` and `run-command`, 250 ms for `on-event`, 500 ms for
+`shutdown` and 5 s for `list-profiles`. That is enough for a TLS handshake with
+full certificate verification inside the plugin. Longer work should be split
+across calls with `schedule`.
+
 A trap — fuel exhaustion, memory limit or a guest panic — **permanently**
 poisons the instance. The Component Model refuses re-entry, so the host records
 the failure, blocks further calls, and skips `shutdown`. Recovery means a fresh
