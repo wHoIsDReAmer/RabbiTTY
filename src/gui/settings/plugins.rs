@@ -370,6 +370,13 @@ fn field_row<'a>(
             styled_text_input(value, change, palette).width(Length::Fixed(TEXT_INPUT_WIDTH)),
             palette,
         ),
+        SettingKind::Secret => setting_row(
+            label,
+            styled_text_input(value, change, palette)
+                .secure(true)
+                .width(Length::Fixed(TEXT_INPUT_WIDTH)),
+            palette,
+        ),
     }
 }
 

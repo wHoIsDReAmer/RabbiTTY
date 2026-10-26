@@ -268,14 +268,16 @@ impl App {
         }
     }
 
-    fn notify_from(&self, source: &str, message: &str) {
-        let name = self
-            .plugins
+    fn plugin_name<'a>(&'a self, source: &'a str) -> &'a str {
+        self.plugins
             .as_ref()
             .and_then(|registry| registry.info(source))
             .map(|info| info.name.as_str())
-            .unwrap_or(source);
-        crate::platform::notify(name, message);
+            .unwrap_or(source)
+    }
+
+    fn notify_from(&self, source: &str, message: &str) {
+        crate::platform::notify(self.plugin_name(source), message);
     }
 
     fn apply_actions(&mut self, source: &str, actions: Vec<Action>) {
@@ -294,6 +296,9 @@ impl App {
                 }
             }
             Action::Notify(message) => self.notify_from(source, &message),
+            Action::ShowText(panel) => {
+                self.plugin_panel = Some((self.plugin_name(source).to_string(), panel));
+            }
             Action::OpenUrl(url) => crate::platform::open_url(&url),
             Action::SetStatus(item) => {
                 if let Some(registry) = self.plugins.as_mut()

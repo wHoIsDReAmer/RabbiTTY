@@ -6,6 +6,7 @@ mod sftp;
 mod shell_picker;
 mod status_bar;
 
+use dialog::text_panel;
 pub(in crate::gui) use dialog::{DialogButton, confirm_dialog};
 
 use super::{App, Message, SETTINGS_TAB_INDEX};
@@ -200,6 +201,17 @@ impl App {
                     },
                 ],
                 Message::Settings(SettingsMessage::CancelRemovePlugin),
+                palette,
+                self.config.ui.animations_enabled,
+            );
+        }
+
+        if let Some((source, panel)) = self.plugin_panel.as_ref() {
+            return text_panel(
+                base_layout,
+                source,
+                &panel.title,
+                &panel.body,
                 palette,
                 self.config.ui.animations_enabled,
             );
