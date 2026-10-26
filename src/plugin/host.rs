@@ -15,7 +15,7 @@ use super::{
 };
 
 /// Kept in step with the package line in `wit/world.wit`; a test enforces it.
-pub const PLUGIN_ABI_VERSION: &str = "0.5.0";
+pub const PLUGIN_ABI_VERSION: &str = "0.6.0";
 const ABI_PACKAGE: &str = "rabbitty:plugin/";
 
 const CALL_FUEL: u64 = 10_000_000;
@@ -362,7 +362,7 @@ impl LoadedPlugin {
             return Ok(Vec::new());
         }
         self.settle(SHUTDOWN_DEADLINE, |bindings, store| {
-            bindings.call_shutdown(store)
+            bindings.call_on_shutdown(store)
         })
     }
 
@@ -376,6 +376,12 @@ impl LoadedPlugin {
 
     pub fn on_event(&mut self, event: Event) -> Result<Vec<Action>, PluginError> {
         self.guard()?;
+        if let Event::SettingChanged(change) = &event {
+            self.store
+                .data_mut()
+                .config
+                .insert(change.key.clone(), change.value.clone());
+        }
         self.settle(EVENT_DEADLINE, move |bindings, store| {
             bindings.call_on_event(store, &event)
         })

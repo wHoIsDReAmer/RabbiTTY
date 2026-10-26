@@ -21,6 +21,8 @@ paste_multiline_title = "Paste multiple lines?"
 paste_multiline_body = "This will paste {count} lines."
 paste = "Paste"
 cancel = "Cancel"
+copy = "Copy"
+close = "Close"
 
 [lobby]
 new_tab = "New Tab"

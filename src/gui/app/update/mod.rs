@@ -377,6 +377,14 @@ impl App {
             Message::CancelMultilinePaste => {
                 self.pending_paste = None;
             }
+            Message::ClosePluginPanel => {
+                self.plugin_panel = None;
+            }
+            Message::CopyPluginPanel => {
+                if let Some((_, panel)) = self.plugin_panel.as_ref() {
+                    return iced::clipboard::write(panel.body.clone());
+                }
+            }
             Message::ImeStateChanged(active) => {
                 self.ime_active = active;
                 if !active {
@@ -605,6 +613,13 @@ impl App {
                 _ => {}
             }
             return Task::none();
+        }
+
+        if self.plugin_panel.is_some() {
+            return match key {
+                Key::Named(Named::Escape | Named::Enter) => self.update(Message::ClosePluginPanel),
+                _ => Task::none(),
+            };
         }
 
         if self.show_command_palette {

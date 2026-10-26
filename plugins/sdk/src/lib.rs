@@ -77,7 +77,7 @@ macro_rules! export_plugin {
                     with_instance(<$ty as $crate::Plugin>::init)
                 }
 
-                fn shutdown()
+                fn on_shutdown()
                 -> ::core::result::Result<::std::vec::Vec<$crate::Action>, ::std::string::String>
                 {
                     ::core::result::Result::Ok(with_instance(<$ty as $crate::Plugin>::shutdown))

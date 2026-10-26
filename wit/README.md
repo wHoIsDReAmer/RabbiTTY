@@ -11,7 +11,7 @@ memory.
 ## What a plugin can do
 
 Plugins are **sans-IO**. The only host import is `read-config`. Every other
-side effect is an `action` the plugin *returns* from `init`, `shutdown`,
+side effect is an `action` the plugin *returns* from `init`, `on-shutdown`,
 `on-event` or `run-command`; the host executes the list after the call returns,
 in order. Anything that needs an answer (`query`, `connect`, `schedule`) comes
 back later as an `event`.
@@ -20,8 +20,8 @@ back later as an `event`.
 |---|---|
 | **Run commands** | Declare them in `contributions()`, handle `run-command(id)` → `list<action>` |
 | **React to events** | `on-event(ev)` — session start/close, pattern match, cwd, title, focus, tab, selection, bell, setting change, menu activation, plus the answers below. Events carry ids, not screen content: `selection-changed(pane)` tells you *that* the selection moved; `query(selection(pane))` gets you the text |
-| **Act** | `write-pty`, `notify`, `open-url`, `set-status`, `schedule`/`cancel-timer`, `open-tab`, `focus-pane`, `close-pane`, `query`, `connect`/`send`/`close` |
-| **Contribute UI** | `contributions()` returns commands, output patterns, settings fields, status items, menu items |
+| **Act** | `write-pty`, `notify`, `show-text`, `open-url`, `set-status`, `schedule`/`cancel-timer`, `open-tab`, `focus-pane`, `close-pane`, `query`, `connect`/`send`/`close` |
+| **Contribute UI** | `contributions()` returns commands, output patterns, settings fields, status items, menu items. A `secret` setting is kept in the OS keychain instead of `config.toml`, shown masked, and reaches the plugin through `read-config` like any other |
 | **Supply profiles** | `list-profiles()` |
 
 Answers arrive as events, keyed by the id the plugin chose:
@@ -62,7 +62,8 @@ running anything else, then enforces the grant when executing actions:
 |---|---|
 | `read-config` | The `read-config` import — ungranted returns `none` |
 | `read-screen` | `query(scrollback)` and `query(selection)` — ungranted is dropped, so no answer ever arrives |
-| `notify`, `open-url`, `write-pty` | The action of the same name — ungranted is dropped |
+| `notify` | `notify` and `show-text` — ungranted is dropped |
+| `open-url`, `write-pty` | The action of the same name — ungranted is dropped |
 | `control` | `open-tab`, `focus-pane`, `close-pane` |
 | `network` | `connect(tcp)` |
 | `local-ipc` | `connect(local)` |
@@ -82,7 +83,7 @@ manifest()       → host reviews and grants capabilities
 init()           → one-time setup; returns the first actions
 contributions()  → commands, patterns, settings, status and menu items
 on-event(…) / run-command(…) / list-profiles()   → steady state, each returning actions
-shutdown()       → last call before teardown (disable, reload, app exit); its actions still run, but at app exit a `send` is best-effort
+on-shutdown()    → last call before teardown (disable, reload, app exit); its actions still run, but at app exit a `send` is best-effort
 ```
 
 Calls are strictly sequential: the host never re-enters the plugin while a
@@ -91,12 +92,12 @@ next call is made.
 
 A trap — fuel exhaustion, memory limit or a guest panic — **permanently**
 poisons the instance. The Component Model refuses re-entry, so the host records
-the failure, blocks further calls, and skips `shutdown`. Recovery means a fresh
+the failure, blocks further calls, and skips `on-shutdown`. Recovery means a fresh
 instantiation.
 
 ## Versioning
 
-`package rabbitty:plugin@0.5.0`.
+`package rabbitty:plugin@0.6.0`.
 
 Pre-1.0, breaking changes bump the minor and the host supports exactly one
 version — recompile against the new world. From 1.0, breaking changes bump the

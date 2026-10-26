@@ -289,7 +289,9 @@ fn consent_grants_only_what_was_agreed_to() {
 
 #[test]
 fn each_gated_action_needs_exactly_its_own_capability() {
-    use super::rabbitty::plugin::types::{ConnectRequest, ConnectTarget, TcpTarget, Timer};
+    use super::rabbitty::plugin::types::{
+        ConnectRequest, ConnectTarget, TcpTarget, TextPanel, Timer,
+    };
     use super::state::permitted;
 
     let tcp = Action::Connect(ConnectRequest {
@@ -311,6 +313,10 @@ fn each_gated_action_needs_exactly_its_own_capability() {
     });
     let screen = Action::Query(Query::Selection(5));
     let panes = Action::Query(Query::Panes);
+    let panel = Action::ShowText(TextPanel {
+        title: "title".to_string(),
+        body: "body".to_string(),
+    });
     let all = || {
         vec![
             tcp.clone(),
@@ -319,6 +325,7 @@ fn each_gated_action_needs_exactly_its_own_capability() {
             timer.clone(),
             screen.clone(),
             panes.clone(),
+            panel.clone(),
         ]
     };
 
@@ -343,6 +350,11 @@ fn each_gated_action_needs_exactly_its_own_capability() {
     assert_eq!(
         permitted(&[Capability::ReadScreen], all()),
         vec![timer.clone(), screen.clone(), panes.clone()]
+    );
+    assert_eq!(
+        permitted(&[Capability::Notify], all()),
+        vec![timer.clone(), panes.clone(), panel.clone()],
+        "a panel is a notification surface and needs the same grant"
     );
 }
 
@@ -868,7 +880,7 @@ fn a_declared_setting_falls_back_to_its_default() {
     registry.load_all();
 
     let fields = registry.setting_fields("alpha");
-    assert_eq!(fields.len(), 2);
+    assert_eq!(fields.len(), 3);
     assert_eq!(
         registry.setting_value("alpha", "greeting").as_deref(),
         Some("hello"),
@@ -972,6 +984,59 @@ fn a_setting_change_reaches_the_guest() {
             "hello plugin saw greeting change to howdy".to_string()
         )]
     );
+    assert_eq!(
+        plugin
+            .run_command("hello.readconfig")
+            .expect("command runs"),
+        vec![Action::Notify(
+            "hello plugin read greeting=howdy".to_string()
+        )],
+        "read-config must not keep serving the value from load time"
+    );
+}
+
+#[test]
+fn a_secret_stays_out_of_the_config_file_but_survives_a_reload() {
+    let root = TempRoot::new("setting-secret");
+    if !install(&root, "vault") {
+        return;
+    }
+    let mut settings = crate::config::plugins::PluginsConfig::new();
+    settings.insert(
+        "vault".to_string(),
+        crate::config::plugins::PluginSettings {
+            enabled: true,
+            consented: vec!["read-config".to_string()],
+            settings: [("token".to_string(), "leaked".to_string())]
+                .into_iter()
+                .collect(),
+        },
+    );
+    let mut registry = registry_with(&root, settings);
+    registry.load_all();
+
+    registry
+        .set_setting("vault", "token", "s3cret".to_string())
+        .expect("change");
+    assert_eq!(
+        registry.settings()["vault"].settings.get("token"),
+        None,
+        "neither the secret nor an older plaintext copy may be written to config.toml"
+    );
+
+    registry.load_all();
+    let token = registry
+        .get_mut("vault")
+        .expect("ready")
+        .run_command("hello.readtoken")
+        .expect("command runs");
+    crate::keychain::delete_plugin_secrets("vault");
+
+    assert_eq!(
+        token,
+        vec![Action::Notify("hello plugin read token=s3cret".to_string())],
+        "a fresh instance must see the secret through read-config"
+    );
 }
 
 #[test]
@@ -1037,7 +1102,7 @@ fn a_disabled_plugin_still_reports_what_it_is() {
     );
     assert_eq!(
         registry.setting_fields("alpha").len(),
-        2,
+        3,
         "declared settings stay editable while the plugin is off"
     );
 }

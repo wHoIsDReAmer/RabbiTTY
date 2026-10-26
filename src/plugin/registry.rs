@@ -11,7 +11,7 @@ use super::matcher::OutputMatcher;
 use super::policy::{capability_from_name, capability_name, grant_with_consent, requires_consent};
 use super::{
     Action, Capability, Contributions, Event, MatchEvent, MenuContext, MenuItem, PluginInfo,
-    PluginProfile, SettingEvent, SettingField, StatusItem,
+    PluginProfile, SettingEvent, SettingField, SettingKind, StatusItem,
 };
 
 pub const COMPONENT_FILE: &str = "plugin.wasm";
@@ -377,11 +377,7 @@ impl PluginRegistry {
         settings: &PluginSettings,
     ) -> Slot {
         let consented = consented_capabilities(settings);
-        let values: HashMap<String, String> = settings
-            .settings
-            .iter()
-            .map(|(key, value)| (key.clone(), value.clone()))
-            .collect();
+        let values = guest_config(id, settings);
         match PluginWorker::load(host, id, path, values, consented) {
             Ok(plugin) => Slot::ready(plugin),
             Err(reason) => Slot::Retired(reason),
@@ -542,6 +538,7 @@ impl PluginRegistry {
         }
         std::fs::remove_dir_all(&dir).map_err(|err| err.to_string())?;
         self.settings.remove(id);
+        crate::keychain::delete_plugin_secrets(id);
         self.load_all();
         Ok(())
     }
@@ -562,7 +559,7 @@ impl PluginRegistry {
                     id: entry.id.clone(),
                     path: entry.path.clone(),
                     consented: consented_capabilities(&settings),
-                    config: settings.settings.into_iter().collect(),
+                    config: guest_config(&entry.id, &settings),
                 }
             })
             .collect()
@@ -641,28 +638,35 @@ impl PluginRegistry {
     }
 
     pub fn setting_value(&self, id: &str, key: &str) -> Option<String> {
-        let stored = self
-            .settings
-            .get(id)
-            .and_then(|settings| settings.settings.get(key))
-            .cloned();
-        stored.or_else(|| {
-            self.setting_fields(id)
-                .into_iter()
-                .find(|field| field.key == key)
-                .map(|field| field.default_value)
-        })
+        let fields = self.setting_fields(id);
+        let field = fields.iter().find(|field| field.key == key);
+        let stored = match field.map(|field| &field.kind) {
+            Some(SettingKind::Secret) => crate::keychain::plugin_secrets(id).remove(key),
+            _ => self
+                .settings
+                .get(id)
+                .and_then(|settings| settings.settings.get(key))
+                .cloned(),
+        };
+        stored.or_else(|| field.map(|field| field.default_value.clone()))
     }
 
     pub fn set_setting(&mut self, id: &str, key: &str, value: String) -> Option<SettingEvent> {
         if self.setting_value(id, key).as_deref() == Some(value.as_str()) {
             return None;
         }
-        self.settings
-            .entry(id.to_string())
-            .or_default()
-            .settings
-            .insert(key.to_string(), value.clone());
+        let secret = self
+            .setting_fields(id)
+            .iter()
+            .any(|field| field.key == key && field.kind == SettingKind::Secret);
+        let stored = &mut self.settings.entry(id.to_string()).or_default().settings;
+        if secret {
+            stored.remove(key);
+            crate::keychain::set_plugin_secret(id, key, &value);
+        } else {
+            stored.insert(key.to_string(), value.clone());
+            crate::keychain::set_plugin_secret(id, key, "");
+        }
         Some(SettingEvent {
             key: key.to_string(),
             value,
@@ -851,6 +855,15 @@ fn consented_capabilities(settings: &PluginSettings) -> Vec<Capability> {
         .consented
         .iter()
         .filter_map(|name| capability_from_name(name))
+        .collect()
+}
+
+fn guest_config(id: &str, settings: &PluginSettings) -> HashMap<String, String> {
+    settings
+        .settings
+        .iter()
+        .map(|(key, value)| (key.clone(), value.clone()))
+        .chain(crate::keychain::plugin_secrets(id))
         .collect()
 }
 
