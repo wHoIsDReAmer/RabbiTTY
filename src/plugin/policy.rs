@@ -8,16 +8,17 @@ const AUTO: [Capability; 3] = [
     Capability::Filesystem,
 ];
 
-const NEEDS_CONSENT: [Capability; 6] = [
+const NEEDS_CONSENT: [Capability; 7] = [
     Capability::WritePty,
     Capability::ReadScreen,
     Capability::Network,
     Capability::LocalIpc,
     Capability::Control,
     Capability::OpenUrl,
+    Capability::Clipboard,
 ];
 
-pub const ALL: [Capability; 9] = [
+pub const ALL: [Capability; 10] = [
     Capability::Notify,
     Capability::ReadConfig,
     Capability::Filesystem,
@@ -27,6 +28,7 @@ pub const ALL: [Capability; 9] = [
     Capability::LocalIpc,
     Capability::Control,
     Capability::OpenUrl,
+    Capability::Clipboard,
 ];
 
 pub fn requires_consent(info: &PluginInfo) -> Vec<Capability> {
@@ -58,6 +60,7 @@ pub fn capability_name(cap: Capability) -> &'static str {
         Capability::Control => "control",
         Capability::Filesystem => "filesystem",
         Capability::OpenUrl => "open-url",
+        Capability::Clipboard => "clipboard",
     }
 }
 

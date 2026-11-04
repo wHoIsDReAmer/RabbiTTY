@@ -6,7 +6,8 @@ use iced::futures::channel::mpsc;
 use iced::futures::{SinkExt, StreamExt};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
-use crate::plugin::{ConnectTarget, Event, IoClosed, IoFrame, TcpTarget};
+use crate::plugin::{ConnectTarget, Event, IoClosed, IoFrame, IoSize, TcpTarget};
+use crate::session::{OutputEvent, PluginInput};
 
 use super::Message;
 
@@ -76,6 +77,18 @@ impl PluginRuntime {
         iced::Task::stream(link_stream(key, target, rx))
     }
 
+    pub fn connect_tab(
+        &mut self,
+        key: LinkKey,
+        pane: u64,
+        input: mpsc::UnboundedReceiver<PluginInput>,
+        output: mpsc::UnboundedSender<OutputEvent>,
+    ) -> iced::Task<Message> {
+        let (tx, rx) = mpsc::unbounded();
+        self.links.insert(key.clone(), tx);
+        iced::Task::stream(tab_stream(key, pane, rx, input, output))
+    }
+
     pub fn send(&self, key: &LinkKey, data: Vec<u8>) -> bool {
         self.links
             .get(key)
@@ -121,6 +134,55 @@ fn link_stream(
     })
 }
 
+fn tab_stream(
+    key: LinkKey,
+    pane: u64,
+    mut outbound: mpsc::UnboundedReceiver<Vec<u8>>,
+    mut input: mpsc::UnboundedReceiver<PluginInput>,
+    output: mpsc::UnboundedSender<OutputEvent>,
+) -> impl iced::futures::Stream<Item = Message> {
+    iced::stream::channel(32, async move |mut out| {
+        let plugin = key.plugin.clone();
+        let id = key.id;
+        let emit = |event| Message::PluginIo {
+            plugin: plugin.clone(),
+            event,
+        };
+
+        let _ = out.send(emit(Event::Connected(id))).await;
+        let mut ended = false;
+        loop {
+            tokio::select! {
+                data = outbound.next(), if !ended => match data {
+                    Some(bytes) => {
+                        let _ = output.unbounded_send(OutputEvent::Data { tab_id: pane, bytes });
+                    }
+                    None => {
+                        ended = true;
+                        let _ = output.unbounded_send(OutputEvent::Closed { tab_id: pane });
+                    }
+                },
+                received = input.next() => {
+                    let event = match received {
+                        None => break,
+                        Some(_) if ended => continue,
+                        Some(PluginInput::Data(data)) => Event::Data(IoFrame { id, data }),
+                        Some(PluginInput::Resize { rows, cols }) => {
+                            Event::Resized(IoSize { id, rows, cols })
+                        }
+                    };
+                    if out.send(emit(event)).await.is_err() {
+                        break;
+                    }
+                }
+            }
+        }
+        let _ = out
+            .send(emit(Event::Closed(IoClosed { id, reason: None })))
+            .await;
+    })
+}
+
 enum Link {
     Tcp(tokio::net::TcpStream),
     #[cfg(unix)]
@@ -138,6 +200,7 @@ async fn open(target: ConnectTarget) -> Result<Link, String> {
                 .map_err(|err| err.to_string())
         }
         ConnectTarget::Local(name) => open_local(&name).await,
+        ConnectTarget::Tab(_) => Err("a tab is not a socket".to_string()),
     }
 }
 
@@ -313,6 +376,89 @@ mod tests {
         assert_eq!(
             rt.fire_due(t0 + Duration::from_millis(10)),
             vec![("b".into(), 1)]
+        );
+    }
+
+    fn events(messages: &[Message]) -> Vec<Event> {
+        messages
+            .iter()
+            .filter_map(|message| match message {
+                Message::PluginIo { event, .. } => Some(event.clone()),
+                _ => None,
+            })
+            .collect()
+    }
+
+    #[tokio::test]
+    async fn a_plugin_tab_carries_keys_out_and_output_in_until_either_side_closes() {
+        let key = LinkKey {
+            plugin: "p".into(),
+            id: 4,
+        };
+        let (to_pane, outbound) = mpsc::unbounded::<Vec<u8>>();
+        let (keys, input) = mpsc::unbounded::<PluginInput>();
+        let (output, mut shown) = mpsc::unbounded::<OutputEvent>();
+        let mut stream = Box::pin(tab_stream(key, 9, outbound, input, output));
+
+        keys.unbounded_send(PluginInput::Resize { rows: 24, cols: 80 })
+            .unwrap();
+        keys.unbounded_send(PluginInput::Data(b"ls\r".to_vec()))
+            .unwrap();
+        let mut seen = Vec::new();
+        for _ in 0..3 {
+            seen.push(stream.next().await.unwrap());
+        }
+        assert_eq!(
+            events(&seen),
+            vec![
+                Event::Connected(4),
+                Event::Resized(IoSize {
+                    id: 4,
+                    rows: 24,
+                    cols: 80
+                }),
+                Event::Data(IoFrame {
+                    id: 4,
+                    data: b"ls\r".to_vec()
+                }),
+            ]
+        );
+
+        to_pane.unbounded_send(b"hi".to_vec()).unwrap();
+        drop(to_pane);
+        assert!(
+            tokio::time::timeout(Duration::from_millis(50), stream.next())
+                .await
+                .is_err(),
+            "the plugin hanging up tells the plugin nothing until the pane is gone"
+        );
+        let mut displayed = Vec::new();
+        while let Ok(event) = shown.try_recv() {
+            displayed.push(event);
+        }
+        assert!(
+            matches!(
+                displayed.as_slice(),
+                [
+                    OutputEvent::Data { tab_id: 9, bytes },
+                    OutputEvent::Closed { tab_id: 9 },
+                ] if bytes == b"hi"
+            ),
+            "the plugin's bytes reach the pane, then its hang-up closes it: {displayed:?}"
+        );
+
+        keys.unbounded_send(PluginInput::Data(b"late".to_vec()))
+            .unwrap();
+        drop(keys);
+        let rest: Vec<Message> = stream.collect().await;
+
+        assert_eq!(
+            events(&rest),
+            vec![Event::Closed(IoClosed {
+                id: 4,
+                reason: None
+            })],
+            "keys typed after the plugin hung up are not forwarded"
         );
     }
 }

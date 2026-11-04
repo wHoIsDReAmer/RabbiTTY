@@ -1,12 +1,21 @@
+use std::collections::VecDeque;
 use std::fmt;
+use std::ops::Range;
 
-use crate::{Action, ConnectRequest, ConnectTarget, IoFrame, TcpTarget};
+use crate::{Action, ConnectRequest, ConnectTarget, Event, IoFrame, TcpTarget, Timer};
+
+pub const REQUEST_TIMEOUT_MS: u64 = 60_000;
+pub const IDLE_TIMEOUT_MS: u64 = 30_000;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Error {
     UnsupportedScheme(String),
     MissingHost,
     InvalidPort,
+    TlsUnavailable,
+    Tls(String),
+    Closed(Option<String>),
+    Timeout,
 }
 
 impl fmt::Display for Error {
@@ -15,11 +24,18 @@ impl fmt::Display for Error {
             Error::UnsupportedScheme(scheme) => {
                 write!(
                     f,
-                    "unsupported scheme {scheme:?}: only plain http is available"
+                    "unsupported scheme {scheme:?}: only http and https are available"
                 )
             }
             Error::MissingHost => f.write_str("url has no host"),
             Error::InvalidPort => f.write_str("url has an invalid port"),
+            Error::TlsUnavailable => f.write_str(
+                "https needs TLS: enable the SDK's `tls` feature and call `Client::with_tls`",
+            ),
+            Error::Tls(reason) => write!(f, "TLS: {reason}"),
+            Error::Closed(Some(reason)) => write!(f, "connection closed: {reason}"),
+            Error::Closed(None) => f.write_str("connection closed before a full reply"),
+            Error::Timeout => f.write_str("no reply in time"),
         }
     }
 }
@@ -29,6 +45,7 @@ impl std::error::Error for Error {}
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Request {
     method: &'static str,
+    secure: bool,
     host: String,
     port: u16,
     path: String,
@@ -47,9 +64,12 @@ impl Request {
 
     pub fn new(method: &'static str, url: &str) -> Result<Request, Error> {
         let (scheme, rest) = url.split_once("://").unwrap_or(("http", url));
-        if !scheme.eq_ignore_ascii_case("http") {
-            return Err(Error::UnsupportedScheme(scheme.to_string()));
-        }
+        let secure = match scheme.to_ascii_lowercase().as_str() {
+            "http" => false,
+            "https" => true,
+            _ => return Err(Error::UnsupportedScheme(scheme.to_string())),
+        };
+        let default_port = if secure { 443 } else { 80 };
         let rest = rest.split('#').next().unwrap_or("");
         let (authority, path) = match rest.find(['/', '?']) {
             Some(i) => (&rest[..i], &rest[i..]),
@@ -58,8 +78,8 @@ impl Request {
         let authority = authority.rsplit_once('@').map_or(authority, |(_, h)| h);
         let (host, port) = match authority.rsplit_once(':') {
             Some((h, p)) if !p.is_empty() => (h, p.parse().map_err(|_| Error::InvalidPort)?),
-            Some((h, _)) => (h, 80),
-            None => (authority, 80),
+            Some((h, _)) => (h, default_port),
+            None => (authority, default_port),
         };
         if host.is_empty() {
             return Err(Error::MissingHost);
@@ -71,6 +91,7 @@ impl Request {
         };
         Ok(Request {
             method,
+            secure,
             host: host.to_string(),
             port,
             path,
@@ -97,6 +118,10 @@ impl Request {
         self.port
     }
 
+    pub fn is_secure(&self) -> bool {
+        self.secure
+    }
+
     pub fn to_bytes(&self) -> Vec<u8> {
         let mut out = Vec::with_capacity(128 + self.body.len());
         out.extend_from_slice(self.method.as_bytes());
@@ -104,17 +129,17 @@ impl Request {
         out.extend_from_slice(self.path.as_bytes());
         out.extend_from_slice(b" HTTP/1.1\r\nHost: ");
         out.extend_from_slice(self.host.as_bytes());
-        if self.port != 80 {
+        if self.port != if self.secure { 443 } else { 80 } {
             out.extend_from_slice(format!(":{}", self.port).as_bytes());
         }
-        out.extend_from_slice(b"\r\nConnection: close\r\n");
+        out.extend_from_slice(b"\r\n");
         if !self.body.is_empty() || self.method != "GET" {
             out.extend_from_slice(format!("Content-Length: {}\r\n", self.body.len()).as_bytes());
         }
         for (name, value) in &self.headers {
-            out.extend_from_slice(name.as_bytes());
+            out.extend(name.bytes().filter(|byte| !byte.is_ascii_control()));
             out.extend_from_slice(b": ");
-            out.extend_from_slice(value.as_bytes());
+            out.extend(value.bytes().filter(|byte| !byte.is_ascii_control()));
             out.extend_from_slice(b"\r\n");
         }
         out.extend_from_slice(b"\r\n");
@@ -122,18 +147,12 @@ impl Request {
         out
     }
 
-    pub fn start(self, id: u32) -> Vec<Action> {
-        let data = self.to_bytes();
-        vec![
-            Action::Connect(ConnectRequest {
-                id,
-                target: ConnectTarget::Tcp(TcpTarget {
-                    host: self.host,
-                    port: self.port,
-                }),
-            }),
-            Action::Send(IoFrame { id, data }),
-        ]
+    fn origin(&self) -> Origin {
+        Origin {
+            secure: self.secure,
+            host: self.host.clone(),
+            port: self.port,
+        }
     }
 }
 
@@ -150,6 +169,419 @@ impl Response {
             .iter()
             .find(|(k, _)| k.eq_ignore_ascii_case(name))
             .map(|(_, v)| v.as_str())
+    }
+}
+
+pub struct Step<T> {
+    pub actions: Vec<Action>,
+    pub replies: Vec<(T, Result<Response, Error>)>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct Origin {
+    secure: bool,
+    host: String,
+    port: u16,
+}
+
+enum Wire {
+    Plain(Vec<u8>),
+    #[cfg(feature = "tls")]
+    Tls(Box<rustls::ClientConnection>),
+}
+
+impl Wire {
+    fn send(&mut self, plain: &[u8]) -> Result<(), Error> {
+        match self {
+            Wire::Plain(pending) => {
+                pending.extend_from_slice(plain);
+                Ok(())
+            }
+            #[cfg(feature = "tls")]
+            Wire::Tls(conn) => {
+                use std::io::Write;
+                conn.writer()
+                    .write_all(plain)
+                    .map_err(|err| Error::Tls(err.to_string()))
+            }
+        }
+    }
+
+    fn outgoing(&mut self) -> Vec<u8> {
+        match self {
+            Wire::Plain(pending) => std::mem::take(pending),
+            #[cfg(feature = "tls")]
+            Wire::Tls(conn) => {
+                let mut out = Vec::new();
+                while conn.wants_write() {
+                    match conn.write_tls(&mut out) {
+                        Ok(0) | Err(_) => break,
+                        Ok(_) => {}
+                    }
+                }
+                out
+            }
+        }
+    }
+
+    fn receive(&mut self, incoming: &[u8]) -> Result<Vec<u8>, Error> {
+        match self {
+            Wire::Plain(_) => Ok(incoming.to_vec()),
+            #[cfg(feature = "tls")]
+            Wire::Tls(conn) => {
+                use std::io::Read;
+                let tls = |err: &dyn fmt::Display| Error::Tls(err.to_string());
+                let mut incoming = incoming;
+                let mut plain = Vec::new();
+                let mut chunk = [0u8; 16 * 1024];
+                while !incoming.is_empty() {
+                    let read = conn.read_tls(&mut incoming).map_err(|err| tls(&err))?;
+                    conn.process_new_packets().map_err(|err| tls(&err))?;
+                    loop {
+                        match conn.reader().read(&mut chunk) {
+                            Ok(0) => break,
+                            Ok(n) => plain.extend_from_slice(&chunk[..n]),
+                            Err(err) if err.kind() == std::io::ErrorKind::WouldBlock => break,
+                            Err(err) => return Err(tls(&err)),
+                        }
+                    }
+                    if read == 0 {
+                        break;
+                    }
+                }
+                Ok(plain)
+            }
+        }
+    }
+}
+
+enum Link {
+    Down,
+    Opening {
+        id: u32,
+        origin: Origin,
+        wire: Wire,
+    },
+    Open {
+        id: u32,
+        origin: Origin,
+        wire: Wire,
+        used: bool,
+    },
+}
+
+struct Exchange<T> {
+    tag: T,
+    origin: Origin,
+    bytes: Vec<u8>,
+}
+
+struct Inflight<T> {
+    exchange: Exchange<T>,
+    parser: ResponseParser,
+    reused: bool,
+    answered: bool,
+}
+
+pub struct Client<T> {
+    ids: Range<u32>,
+    next_id: u32,
+    timer: u32,
+    #[cfg(feature = "tls")]
+    tls: Option<std::sync::Arc<rustls::ClientConfig>>,
+    link: Link,
+    queue: VecDeque<Exchange<T>>,
+    inflight: Option<Inflight<T>>,
+    actions: Vec<Action>,
+    replies: Vec<(T, Result<Response, Error>)>,
+}
+
+impl<T> Client<T> {
+    pub fn new(ids: Range<u32>, timer: u32) -> Self {
+        assert!(!ids.is_empty(), "the client needs at least one stream id");
+        Self {
+            next_id: ids.start,
+            ids,
+            timer,
+            #[cfg(feature = "tls")]
+            tls: None,
+            link: Link::Down,
+            queue: VecDeque::new(),
+            inflight: None,
+            actions: Vec::new(),
+            replies: Vec::new(),
+        }
+    }
+
+    #[cfg(feature = "tls")]
+    pub fn with_tls(
+        mut self,
+        provider: std::sync::Arc<rustls::crypto::CryptoProvider>,
+    ) -> Result<Self, Error> {
+        let mut roots = rustls::RootCertStore::empty();
+        roots.extend(webpki_roots::TLS_SERVER_ROOTS.iter().cloned());
+        let config = rustls::ClientConfig::builder_with_provider(provider)
+            .with_safe_default_protocol_versions()
+            .map_err(|err| Error::Tls(err.to_string()))?
+            .with_root_certificates(roots)
+            .with_no_client_auth();
+        self.tls = Some(std::sync::Arc::new(config));
+        Ok(self)
+    }
+
+    pub fn busy(&self) -> bool {
+        self.inflight.is_some() || !self.queue.is_empty()
+    }
+
+    pub fn send(&mut self, tag: T, request: &Request) -> Step<T> {
+        self.queue.push_back(Exchange {
+            tag,
+            origin: request.origin(),
+            bytes: request.to_bytes(),
+        });
+        self.pump();
+        self.step()
+    }
+
+    pub fn handle(&mut self, event: &Event) -> Option<Step<T>> {
+        let current = self.link_id();
+        match event {
+            Event::Connected(id) if current == Some(*id) => self.connected(),
+            Event::Data(frame) if current == Some(frame.id) => self.data(&frame.data),
+            Event::Closed(closed) if current == Some(closed.id) => {
+                self.closed(closed.reason.clone());
+            }
+            Event::Timer(id) if *id == self.timer => self.timeout(),
+            Event::Connected(id) if self.ids.contains(id) => {}
+            Event::Data(frame) if self.ids.contains(&frame.id) => {}
+            Event::Closed(closed) if self.ids.contains(&closed.id) => {}
+            _ => return None,
+        }
+        Some(self.step())
+    }
+
+    pub fn shutdown(&mut self) -> Vec<Action> {
+        self.queue.clear();
+        self.inflight = None;
+        self.drop_link();
+        std::mem::take(&mut self.actions)
+    }
+
+    fn step(&mut self) -> Step<T> {
+        Step {
+            actions: std::mem::take(&mut self.actions),
+            replies: std::mem::take(&mut self.replies),
+        }
+    }
+
+    fn link_id(&self) -> Option<u32> {
+        match &self.link {
+            Link::Opening { id, .. } | Link::Open { id, .. } => Some(*id),
+            Link::Down => None,
+        }
+    }
+
+    fn connected(&mut self) {
+        if let Link::Opening { id, origin, wire } = std::mem::replace(&mut self.link, Link::Down) {
+            self.link = Link::Open {
+                id,
+                origin,
+                wire,
+                used: false,
+            };
+            self.pump();
+            self.flush();
+        }
+    }
+
+    fn data(&mut self, incoming: &[u8]) {
+        let Link::Open { wire, .. } = &mut self.link else {
+            return;
+        };
+        let plain = match wire.receive(incoming) {
+            Ok(plain) => plain,
+            Err(err) => return self.fail(err),
+        };
+        self.flush();
+        if plain.is_empty() {
+            return;
+        }
+        let Some(inflight) = self.inflight.as_mut() else {
+            return;
+        };
+        inflight.answered = true;
+        let Some(response) = inflight.parser.feed(&IoFrame { id: 0, data: plain }) else {
+            return;
+        };
+        let Some(done) = self.inflight.take() else {
+            return;
+        };
+        let server_closes = response
+            .header("connection")
+            .is_some_and(|value| value.eq_ignore_ascii_case("close"));
+        self.replies.push((done.exchange.tag, Ok(response)));
+        if server_closes {
+            self.drop_link();
+        } else if let Link::Open { used, .. } = &mut self.link {
+            *used = true;
+        }
+        self.pump();
+        if self.inflight.is_none() && matches!(self.link, Link::Open { .. }) {
+            self.arm(IDLE_TIMEOUT_MS);
+        }
+    }
+
+    fn closed(&mut self, reason: Option<String>) {
+        let was_opening = matches!(self.link, Link::Opening { .. });
+        self.link = Link::Down;
+        if was_opening {
+            return self.fail_queue(&Error::Closed(reason));
+        }
+        let Some(inflight) = self.inflight.take() else {
+            return;
+        };
+        if let Some(response) = inflight.parser.finish() {
+            self.replies.push((inflight.exchange.tag, Ok(response)));
+        } else if inflight.reused && !inflight.answered {
+            self.queue.push_front(inflight.exchange);
+        } else {
+            self.replies
+                .push((inflight.exchange.tag, Err(Error::Closed(reason))));
+        }
+        self.pump();
+    }
+
+    fn timeout(&mut self) {
+        if self.busy() {
+            self.fail(Error::Timeout);
+        } else {
+            self.drop_link();
+        }
+    }
+
+    fn pump(&mut self) {
+        while self.inflight.is_none() {
+            let Some(origin) = self.queue.front().map(|exchange| exchange.origin.clone()) else {
+                return;
+            };
+            let current = match &self.link {
+                Link::Opening { origin, .. } | Link::Open { origin, .. } => Some(origin),
+                Link::Down => None,
+            };
+            if current.is_some_and(|current| *current != origin) {
+                self.drop_link();
+            }
+            match self.link {
+                Link::Opening { .. } => return,
+                Link::Open { .. } => return self.dispatch(),
+                Link::Down => match self.open(&origin) {
+                    Ok(wire) => {
+                        let id = self.allocate();
+                        self.actions.push(Action::Connect(ConnectRequest {
+                            id,
+                            target: ConnectTarget::Tcp(TcpTarget {
+                                host: origin.host.clone(),
+                                port: origin.port,
+                            }),
+                        }));
+                        self.link = Link::Opening { id, origin, wire };
+                        return self.arm(REQUEST_TIMEOUT_MS);
+                    }
+                    Err(err) => {
+                        if let Some(exchange) = self.queue.pop_front() {
+                            self.replies.push((exchange.tag, Err(err)));
+                        }
+                    }
+                },
+            }
+        }
+    }
+
+    fn dispatch(&mut self) {
+        let Some(exchange) = self.queue.pop_front() else {
+            return;
+        };
+        let Link::Open { wire, used, .. } = &mut self.link else {
+            self.queue.push_front(exchange);
+            return;
+        };
+        let reused = *used;
+        if let Err(err) = wire.send(&exchange.bytes) {
+            self.replies.push((exchange.tag, Err(err.clone())));
+            return self.fail(err);
+        }
+        self.inflight = Some(Inflight {
+            exchange,
+            parser: ResponseParser::new(0),
+            reused,
+            answered: false,
+        });
+        self.flush();
+        self.arm(REQUEST_TIMEOUT_MS);
+    }
+
+    fn open(&self, origin: &Origin) -> Result<Wire, Error> {
+        if !origin.secure {
+            return Ok(Wire::Plain(Vec::new()));
+        }
+        #[cfg(feature = "tls")]
+        if let Some(config) = &self.tls {
+            let name = rustls::pki_types::ServerName::try_from(origin.host.clone())
+                .map_err(|err| Error::Tls(err.to_string()))?;
+            let conn = rustls::ClientConnection::new(std::sync::Arc::clone(config), name)
+                .map_err(|err| Error::Tls(err.to_string()))?;
+            return Ok(Wire::Tls(Box::new(conn)));
+        }
+        Err(Error::TlsUnavailable)
+    }
+
+    fn allocate(&mut self) -> u32 {
+        let id = self.next_id;
+        self.next_id = if id + 1 >= self.ids.end {
+            self.ids.start
+        } else {
+            id + 1
+        };
+        id
+    }
+
+    fn arm(&mut self, after_ms: u64) {
+        self.actions.push(Action::Schedule(Timer {
+            id: self.timer,
+            after_ms,
+            repeat: false,
+        }));
+    }
+
+    fn flush(&mut self) {
+        if let Link::Open { id, wire, .. } = &mut self.link {
+            let data = wire.outgoing();
+            if !data.is_empty() {
+                self.actions.push(Action::Send(IoFrame { id: *id, data }));
+            }
+        }
+    }
+
+    fn drop_link(&mut self) {
+        if let Link::Opening { id, .. } | Link::Open { id, .. } =
+            std::mem::replace(&mut self.link, Link::Down)
+        {
+            self.actions.push(Action::Close(id));
+        }
+    }
+
+    fn fail(&mut self, err: Error) {
+        self.drop_link();
+        if let Some(inflight) = self.inflight.take() {
+            self.replies.push((inflight.exchange.tag, Err(err.clone())));
+        }
+        self.fail_queue(&err);
+    }
+
+    fn fail_queue(&mut self, err: &Error) {
+        for exchange in self.queue.drain(..) {
+            self.replies.push((exchange.tag, Err(err.clone())));
+        }
     }
 }
 
@@ -291,39 +723,218 @@ fn decode_chunked(buf: &[u8]) -> Option<Vec<u8>> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::IoClosed;
+
+    const TIMER: u32 = 9;
+    const OK: &[u8] = b"HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\nhi";
+
+    fn client() -> Client<u32> {
+        Client::new(100..110, TIMER)
+    }
+
+    fn get(url: &str) -> Request {
+        Request::get(url).unwrap()
+    }
+
+    fn connects(actions: &[Action]) -> Vec<u32> {
+        actions
+            .iter()
+            .filter_map(|action| match action {
+                Action::Connect(request) => Some(request.id),
+                _ => None,
+            })
+            .collect()
+    }
+
+    fn sent(actions: &[Action]) -> Vec<(u32, Vec<u8>)> {
+        actions
+            .iter()
+            .filter_map(|action| match action {
+                Action::Send(frame) => Some((frame.id, frame.data.clone())),
+                _ => None,
+            })
+            .collect()
+    }
+
+    fn closes(actions: &[Action]) -> Vec<u32> {
+        actions
+            .iter()
+            .filter_map(|action| match action {
+                Action::Close(id) => Some(*id),
+                _ => None,
+            })
+            .collect()
+    }
+
+    fn statuses(step: Step<u32>) -> Vec<(u32, Result<u16, Error>)> {
+        step.replies
+            .into_iter()
+            .map(|(tag, reply)| (tag, reply.map(|response| response.status)))
+            .collect()
+    }
+
+    fn data(id: u32, bytes: &[u8]) -> Event {
+        Event::Data(IoFrame {
+            id,
+            data: bytes.to_vec(),
+        })
+    }
+
+    fn closed(id: u32, reason: Option<&str>) -> Event {
+        Event::Closed(IoClosed {
+            id,
+            reason: reason.map(str::to_string),
+        })
+    }
+
+    fn answered_once(client: &mut Client<u32>) -> u32 {
+        let id = connects(&client.send(1, &get("http://example.com/")).actions)[0];
+        client.handle(&Event::Connected(id)).unwrap();
+        let step = client.handle(&data(id, OK)).unwrap();
+        assert_eq!(statuses(step), vec![(1, Ok(200))]);
+        id
+    }
 
     #[test]
-    fn get_request_bytes_with_header() {
-        let request = Request::get("http://example.com:8080/v1/items?x=1")
-            .unwrap()
-            .header("Accept", "application/json");
-        let actions = request.start(7);
+    fn a_request_is_keep_alive_with_sanitized_headers() {
+        let request = get("http://example.com:8080/v1/items?x=1")
+            .header("Accept", "application/json")
+            .header("x-api-key", "secret\r\nx-evil: 1");
+
         assert_eq!(
-            actions[0],
-            Action::Connect(ConnectRequest {
-                id: 7,
-                target: ConnectTarget::Tcp(TcpTarget {
-                    host: "example.com".to_string(),
-                    port: 8080,
-                }),
-            })
-        );
-        let Action::Send(frame) = &actions[1] else {
-            panic!("second action must be send");
-        };
-        assert_eq!(frame.id, 7);
-        assert_eq!(
-            frame.data,
-            b"GET /v1/items?x=1 HTTP/1.1\r\nHost: example.com:8080\r\nConnection: close\r\nAccept: application/json\r\n\r\n"
+            request.to_bytes(),
+            b"GET /v1/items?x=1 HTTP/1.1\r\nHost: example.com:8080\r\nAccept: application/json\r\nx-api-key: secretx-evil: 1\r\n\r\n"
         );
     }
 
     #[test]
-    fn https_is_rejected() {
-        assert_eq!(
-            Request::get("https://example.com/").unwrap_err(),
-            Error::UnsupportedScheme("https".to_string())
+    fn https_defaults_to_443_and_other_schemes_are_refused() {
+        let request = get("https://api.example.com/v1");
+        assert!(request.is_secure());
+        assert_eq!(request.port(), 443);
+        assert!(
+            request
+                .to_bytes()
+                .starts_with(b"GET /v1 HTTP/1.1\r\nHost: api.example.com\r\n"),
+            "the default port stays out of the Host header"
         );
+        assert_eq!(
+            Request::get("ftp://example.com/").unwrap_err(),
+            Error::UnsupportedScheme("ftp".to_string())
+        );
+    }
+
+    #[test]
+    fn a_second_request_reuses_the_open_connection() {
+        let mut client = client();
+        let id = answered_once(&mut client);
+
+        let step = client.send(2, &get("http://example.com/next"));
+
+        assert!(
+            connects(&step.actions).is_empty(),
+            "no second connect while the connection is alive"
+        );
+        assert_eq!(sent(&step.actions).len(), 1);
+        assert_eq!(sent(&step.actions)[0].0, id);
+    }
+
+    #[test]
+    fn a_request_for_another_origin_replaces_the_connection() {
+        let mut client = client();
+        let first = answered_once(&mut client);
+
+        let step = client.send(2, &get("http://other.example/"));
+
+        assert_eq!(closes(&step.actions), vec![first]);
+        assert_eq!(connects(&step.actions), vec![first + 1]);
+    }
+
+    #[test]
+    fn a_reused_connection_that_dies_unanswered_is_retried_once_on_a_fresh_one() {
+        let mut client = client();
+        let first = answered_once(&mut client);
+        client.send(2, &get("http://example.com/next"));
+
+        let step = client.handle(&closed(first, None)).unwrap();
+        assert!(
+            step.replies.is_empty(),
+            "a stale keep-alive is not an error"
+        );
+        let second = connects(&step.actions)[0];
+        assert_ne!(second, first);
+        let step = client.handle(&Event::Connected(second)).unwrap();
+        assert_eq!(sent(&step.actions).len(), 1);
+
+        let step = client.handle(&closed(second, Some("reset"))).unwrap();
+        assert!(connects(&step.actions).is_empty(), "only one retry");
+        assert_eq!(
+            statuses(step),
+            vec![(2, Err(Error::Closed(Some("reset".to_string()))))]
+        );
+    }
+
+    #[test]
+    fn a_fresh_connection_that_dies_unanswered_is_not_retried() {
+        let mut client = client();
+        let id = connects(&client.send(1, &get("http://example.com/")).actions)[0];
+        client.handle(&Event::Connected(id)).unwrap();
+
+        let step = client.handle(&closed(id, Some("reset"))).unwrap();
+
+        assert!(connects(&step.actions).is_empty());
+        assert_eq!(
+            statuses(step),
+            vec![(1, Err(Error::Closed(Some("reset".to_string()))))]
+        );
+    }
+
+    #[test]
+    fn a_failed_connect_fails_everything_waiting_instead_of_reconnecting() {
+        let mut client = client();
+        let id = connects(&client.send(1, &get("http://example.com/a")).actions)[0];
+        client.send(2, &get("http://example.com/b"));
+
+        let step = client.handle(&closed(id, Some("refused"))).unwrap();
+
+        assert!(connects(&step.actions).is_empty());
+        let refused = Err(Error::Closed(Some("refused".to_string())));
+        assert_eq!(statuses(step), vec![(1, refused.clone()), (2, refused)]);
+    }
+
+    #[test]
+    fn a_timeout_fails_the_request_and_the_next_one_starts_over() {
+        let mut client = client();
+        let id = connects(&client.send(1, &get("http://example.com/")).actions)[0];
+        client.handle(&Event::Connected(id)).unwrap();
+
+        let step = client.handle(&Event::Timer(TIMER)).unwrap();
+        assert_eq!(closes(&step.actions), vec![id]);
+        assert_eq!(statuses(step), vec![(1, Err(Error::Timeout))]);
+
+        let step = client.send(2, &get("http://example.com/"));
+        assert_eq!(connects(&step.actions), vec![id + 1]);
+    }
+
+    #[test]
+    fn https_without_tls_fails_without_touching_the_network() {
+        let mut client = client();
+
+        let step = client.send(1, &get("https://example.com/"));
+
+        assert!(step.actions.is_empty());
+        assert_eq!(statuses(step), vec![(1, Err(Error::TlsUnavailable))]);
+    }
+
+    #[test]
+    fn only_the_clients_own_streams_and_timer_are_claimed() {
+        let mut client = client();
+        let id = answered_once(&mut client);
+
+        assert!(client.handle(&data(5, b"not ours")).is_none());
+        assert!(client.handle(&Event::Timer(TIMER + 1)).is_none());
+        let stale = client.handle(&closed(id + 3, None)).unwrap();
+        assert!(stale.actions.is_empty() && stale.replies.is_empty());
     }
 
     #[test]

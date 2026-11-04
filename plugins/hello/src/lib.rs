@@ -1,13 +1,16 @@
 #![cfg(target_arch = "wasm32")]
 
 use rabbitty_plugin_sdk::{
-    Action, Capability, Command, Contributions, Event, LocalTarget, MenuContext, MenuItem,
-    OutputPattern, Plugin, PluginInfo, PluginProfile, ProfileTarget, Query, SettingField,
-    SettingKind, SshTarget, StatusItem, StatusText, TextPanel, Timer, export_plugin, read_config,
+    Action, Capability, Command, ConnectRequest, ConnectTarget, Contributions, Event, IoFrame,
+    LocalTarget, MenuContext, MenuItem, OutputPattern, Plugin, PluginInfo, PluginProfile,
+    ProfileTarget, Query, SettingField, SettingKind, SshTarget, StatusItem, StatusText, TextPanel,
+    Timer, export_plugin, read_config,
 };
 
 const STATUS_ID: &str = "hello.counter";
 const PING_TIMER: u32 = 1;
+const ECHO_STREAM: u32 = 7;
+const ECHO_PROFILE: &str = "hello.echo";
 
 #[derive(Default)]
 struct HelloPlugin;
@@ -21,6 +24,56 @@ fn status(text: String) -> Action {
 
 fn notify(text: String) -> Action {
     Action::Notify(text)
+}
+
+fn echo_tab() -> Vec<Action> {
+    vec![Action::Connect(ConnectRequest {
+        id: ECHO_STREAM,
+        target: ConnectTarget::Tab("echo".to_string()),
+    })]
+}
+
+fn to_echo(data: &[u8]) -> Vec<u8> {
+    data.iter()
+        .flat_map(|&byte| match byte {
+            b'\r' => vec![b'\r', b'\n'],
+            other => vec![other],
+        })
+        .collect()
+}
+
+fn profiles() -> Vec<PluginProfile> {
+    vec![
+        PluginProfile {
+            id: "hello.local".to_string(),
+            name: "Hello shell".to_string(),
+            subtitle: Some("from the hello plugin".to_string()),
+            icon: None,
+            target: ProfileTarget::Local(LocalTarget {
+                program: None,
+                args: vec![],
+            }),
+        },
+        PluginProfile {
+            id: "hello.ssh".to_string(),
+            name: "Hello SSH".to_string(),
+            subtitle: Some("example.invalid".to_string()),
+            icon: None,
+            target: ProfileTarget::Ssh(SshTarget {
+                host: "example.invalid".to_string(),
+                port: 22,
+                user: "demo".to_string(),
+                identity_file: None,
+            }),
+        },
+        PluginProfile {
+            id: ECHO_PROFILE.to_string(),
+            name: "Hello echo".to_string(),
+            subtitle: Some("a tab the hello plugin answers".to_string()),
+            icon: None,
+            target: ProfileTarget::Plugin(ECHO_PROFILE.to_string()),
+        },
+    ]
 }
 
 impl Plugin for HelloPlugin {
@@ -37,6 +90,8 @@ impl Plugin for HelloPlugin {
                 Capability::ReadScreen,
                 Capability::Network,
                 Capability::OpenUrl,
+                Capability::Control,
+                Capability::Clipboard,
             ],
         }
     }
@@ -118,39 +173,12 @@ impl Plugin for HelloPlugin {
         }
     }
 
-    fn shutdown(&mut self) -> Vec<Action> {
-        vec![notify("hello plugin shutting down".to_string())]
+    fn init(&mut self) -> Result<Vec<Action>, String> {
+        Ok(vec![Action::SetProfiles(profiles())])
     }
 
-    fn list_profiles(&mut self) -> Result<Vec<PluginProfile>, String> {
-        if read_config("slow").as_deref() == Some("true") {
-            std::thread::sleep(std::time::Duration::from_secs(3));
-        }
-
-        Ok(vec![
-            PluginProfile {
-                id: "hello.local".to_string(),
-                name: "Hello shell".to_string(),
-                subtitle: Some("from the hello plugin".to_string()),
-                icon: None,
-                target: ProfileTarget::Local(LocalTarget {
-                    program: None,
-                    args: vec![],
-                }),
-            },
-            PluginProfile {
-                id: "hello.ssh".to_string(),
-                name: "Hello SSH".to_string(),
-                subtitle: Some("example.invalid".to_string()),
-                icon: None,
-                target: ProfileTarget::Ssh(SshTarget {
-                    host: "example.invalid".to_string(),
-                    port: 22,
-                    user: "demo".to_string(),
-                    identity_file: None,
-                }),
-            },
-        ])
+    fn shutdown(&mut self) -> Vec<Action> {
+        vec![notify("hello plugin shutting down".to_string())]
     }
 
     fn on_event(&mut self, ev: Event) -> Vec<Action> {
@@ -207,12 +235,23 @@ impl Plugin for HelloPlugin {
             })],
             Event::Timer(PING_TIMER) => vec![notify("pong".to_string())],
             Event::Panes(list) => vec![status(format!("{} panes", list.len()))],
+            Event::ProfileOpened(key) if key == ECHO_PROFILE => echo_tab(),
+            Event::Connected(ECHO_STREAM) => vec![Action::Send(IoFrame {
+                id: ECHO_STREAM,
+                data: b"hello echo: type and it comes back\r\n".to_vec(),
+            })],
+            Event::Data(frame) if frame.id == ECHO_STREAM => vec![Action::Send(IoFrame {
+                id: ECHO_STREAM,
+                data: to_echo(&frame.data),
+            })],
             Event::Timer(_)
             | Event::Scrollback(_)
             | Event::Connected(_)
             | Event::Data(_)
             | Event::Closed(_)
-            | Event::TabOpened(_) => Vec::new(),
+            | Event::TabOpened(_)
+            | Event::ProfileOpened(_)
+            | Event::Resized(_) => Vec::new(),
         }
     }
 
@@ -238,6 +277,26 @@ impl Plugin for HelloPlugin {
                 title: "hello".to_string(),
                 body: "a panel from the hello plugin".to_string(),
             })]),
+            "hello.tab" => Ok(echo_tab()),
+            "hello.copy" => Ok(vec![Action::SetClipboard(
+                "copied by the hello plugin".to_string(),
+            )]),
+            "hello.grow" => {
+                let mut grown = Self::contributions();
+                grown.commands.push(Command {
+                    id: "hello.extra".to_string(),
+                    title: "Added at runtime".to_string(),
+                    default_key: None,
+                });
+                Ok(vec![Action::SetContributions(grown)])
+            }
+            "hello.extra" => Ok(vec![notify(
+                "hello plugin ran a runtime command".to_string(),
+            )]),
+            "hello.stall" => {
+                std::thread::sleep(std::time::Duration::from_secs(3));
+                Ok(Vec::new())
+            }
             "hello.hog" => {
                 let mut blocks: Vec<Vec<u8>> = Vec::new();
                 for _ in 0..512 {

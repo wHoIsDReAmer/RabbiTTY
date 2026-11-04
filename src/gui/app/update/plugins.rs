@@ -3,8 +3,8 @@ use super::super::{App, Message};
 use crate::gui::settings::SettingsCategory;
 use crate::gui::settings::plugins::{PluginPermission, PluginState};
 use crate::plugin::{
-    Action, Event, PROFILE_DEADLINE, PaneInfo, PluginError, Query, ScrollbackChunk,
-    ScrollbackRange, SelectionEvent,
+    Action, ConnectTarget, Event, IoClosed, PaneInfo, PluginError, ProfileTarget, Query,
+    ScrollbackChunk, ScrollbackRange, SelectionEvent,
 };
 use iced::Task;
 
@@ -190,13 +190,19 @@ impl App {
         physical: &iced::keyboard::key::Physical,
         modifiers: iced::keyboard::Modifiers,
     ) -> Option<(String, String)> {
+        let commands = self.plugins.as_ref()?.contributed_commands();
         self.config
             .shortcuts
             .plugin_iter()
-            .find(|(_, binding)| {
+            .filter(|(_, binding)| {
                 crate::gui::app::shortcuts::shortcut_matches(binding, physical, modifiers)
             })
-            .and_then(|(key, _)| crate::config::split_plugin_key(key))
+            .filter_map(|(key, _)| crate::config::split_plugin_key(key))
+            .find(|(plugin, command)| {
+                commands
+                    .iter()
+                    .any(|known| known.plugin == *plugin && known.id == *command)
+            })
             .map(|(plugin, command)| (plugin.to_string(), command.to_string()))
     }
 
@@ -209,9 +215,13 @@ impl App {
         registry
             .profiles()
             .into_iter()
-            .map(|(_, declared)| {
+            .map(|(plugin, declared)| {
                 let subtitle = declared.subtitle.clone();
-                (declared.name.clone(), subtitle, into_profile(declared))
+                (
+                    declared.name.clone(),
+                    subtitle,
+                    into_profile(&plugin, declared),
+                )
             })
             .collect()
     }
@@ -313,19 +323,23 @@ impl App {
                 self.arm_next_plugin_timer();
             }
             Action::CancelTimer(id) => self.plugin_runtime.cancel(source, id),
+            Action::OpenTab(ProfileTarget::Plugin(key)) => {
+                self.dispatch_to_plugin(source, Event::ProfileOpened(key));
+            }
             Action::OpenTab(target) => {
                 let name = target_name(&target);
-                let profile = into_profile(crate::plugin::PluginProfile {
-                    id: name.clone(),
-                    name,
-                    subtitle: None,
-                    icon: None,
-                    target,
-                });
-                let task = self.create_tab(profile);
-                self.plugin_tasks.push(task);
-                if let Some(tab) = self.tabs.last() {
-                    self.dispatch_to_plugin(source, Event::TabOpened(tab.id));
+                let profile = into_profile(
+                    source,
+                    crate::plugin::PluginProfile {
+                        id: name.clone(),
+                        name,
+                        subtitle: None,
+                        icon: None,
+                        target,
+                    },
+                );
+                if let Some(tab) = self.spawn_tab(profile, None) {
+                    self.dispatch_to_plugin(source, Event::TabOpened(tab));
                 }
             }
             Action::FocusPane(pane) => {
@@ -344,8 +358,13 @@ impl App {
                     plugin: source.to_string(),
                     id: request.id,
                 };
-                let task = self.plugin_runtime.connect(key, request.target);
-                self.plugin_tasks.push(task);
+                match request.target {
+                    ConnectTarget::Tab(title) => self.open_plugin_tab(key, &title),
+                    target => {
+                        let task = self.plugin_runtime.connect(key, target);
+                        self.plugin_tasks.push(task);
+                    }
+                }
             }
             Action::Send(frame) => {
                 let key = LinkKey {
@@ -361,7 +380,61 @@ impl App {
                 };
                 self.plugin_runtime.close(&key);
             }
+            Action::SetProfiles(profiles) => {
+                if let Some(registry) = self.plugins.as_mut() {
+                    registry.set_profiles(source, profiles);
+                }
+            }
+            Action::SetContributions(contributions) => {
+                if let Some(registry) = self.plugins.as_mut()
+                    && registry.set_contributions(source, contributions)
+                {
+                    self.after_contributions_change();
+                }
+            }
+            Action::SetClipboard(text) => self.plugin_tasks.push(iced::clipboard::write(text)),
         }
+    }
+
+    fn open_plugin_tab(&mut self, key: LinkKey, title: &str) {
+        let Some(output) = self.pty_sender.clone() else {
+            self.dispatch_to_plugin(
+                &key.plugin,
+                Event::Closed(IoClosed {
+                    id: key.id,
+                    reason: Some("the terminal is not ready".to_string()),
+                }),
+            );
+            return;
+        };
+        let (input, received) = iced::futures::channel::mpsc::unbounded();
+        let profile = crate::gui::tab::Profile {
+            name: format!("{}: {title}", self.plugin_name(&key.plugin)),
+            icon: None,
+            kind: crate::gui::tab::ProfileKind::Plugin {
+                plugin: key.plugin.clone(),
+                key: String::new(),
+            },
+        };
+        let Some(pane) = self.spawn_tab(profile, Some(input)) else {
+            return;
+        };
+        let task = self.plugin_runtime.connect_tab(key, pane, received, output);
+        self.plugin_tasks.push(task);
+    }
+
+    fn after_contributions_change(&mut self) {
+        if matches!(
+            self.settings_draft.recording,
+            Some(crate::gui::settings::SettingsField::PluginShortcut(_))
+        ) {
+            self.settings_draft.recording = None;
+        }
+        self.adopt_plugin_shortcuts();
+        self.queue_config_save();
+        self.sync_output_capture();
+        self.sync_plugin_shortcut_draft();
+        self.refresh_plugin_settings();
     }
 
     pub(in crate::gui) fn deliver_plugin_io(&mut self, plugin: &str, event: Event) {
@@ -630,55 +703,6 @@ impl App {
         self.refresh_plugin_settings();
     }
 
-    /// A plugin that enumerates a network inventory can block for as long as its
-    /// source takes, and fuel only bounds instructions, not blocking I/O. So the
-    /// call happens off the UI thread and gives up after a deadline.
-    pub(in crate::gui) fn refresh_plugin_profiles(&self) -> Task<Message> {
-        let Some(registry) = self.plugins.as_ref() else {
-            return Task::none();
-        };
-        let host = registry.host();
-        let fetches: Vec<Task<Message>> = registry
-            .profile_sources()
-            .into_iter()
-            .map(|source| {
-                let host = std::sync::Arc::clone(&host);
-                let plugin = source.id.clone();
-                Task::perform(
-                    async move {
-                        tokio::task::spawn_blocking(move || {
-                            crate::plugin::fetch_profiles_with_deadline(
-                                &host,
-                                &source,
-                                PROFILE_DEADLINE,
-                            )
-                        })
-                        .await
-                        .unwrap_or(None)
-                    },
-                    move |profiles| Message::PluginProfilesFetched {
-                        plugin: plugin.clone(),
-                        profiles,
-                    },
-                )
-            })
-            .collect();
-        Task::batch(fetches)
-    }
-
-    pub(in crate::gui) fn apply_fetched_profiles(
-        &mut self,
-        plugin: &str,
-        profiles: Option<Vec<crate::plugin::PluginProfile>>,
-    ) {
-        let Some(profiles) = profiles else {
-            return;
-        };
-        if let Some(registry) = self.plugins.as_mut() {
-            registry.set_profiles(plugin, profiles);
-        }
-    }
-
     /// Reads the manifest before anything is copied, so the user sees what the
     /// plugin is and what it asks for while they can still decline.
     pub(in crate::gui) fn preview_plugin_install(&mut self, source: &std::path::Path) {
@@ -802,15 +826,15 @@ impl App {
     }
 }
 
-fn into_profile(declared: crate::plugin::PluginProfile) -> crate::gui::tab::Profile {
+fn into_profile(plugin: &str, declared: crate::plugin::PluginProfile) -> crate::gui::tab::Profile {
     use crate::gui::tab::{Profile, ProfileKind};
 
     let kind = match declared.target {
-        crate::plugin::ProfileTarget::Local(local) => ProfileKind::Local {
+        ProfileTarget::Local(local) => ProfileKind::Local {
             program: local.program.filter(|program| !program.trim().is_empty()),
             args: local.args,
         },
-        crate::plugin::ProfileTarget::Ssh(ssh) => ProfileKind::Ssh(crate::config::SshProfile {
+        ProfileTarget::Ssh(ssh) => ProfileKind::Ssh(crate::config::SshProfile {
             name: declared.name.clone(),
             host: ssh.host,
             port: ssh.port,
@@ -823,6 +847,10 @@ fn into_profile(declared: crate::plugin::PluginProfile) -> crate::gui::tab::Prof
             password: None,
             proxy_command: None,
         }),
+        ProfileTarget::Plugin(key) => ProfileKind::Plugin {
+            plugin: plugin.to_string(),
+            key,
+        },
     };
 
     Profile {
@@ -832,14 +860,15 @@ fn into_profile(declared: crate::plugin::PluginProfile) -> crate::gui::tab::Prof
     }
 }
 
-fn target_name(target: &crate::plugin::ProfileTarget) -> String {
+fn target_name(target: &ProfileTarget) -> String {
     match target {
-        crate::plugin::ProfileTarget::Local(local) => local
+        ProfileTarget::Local(local) => local
             .program
             .clone()
             .filter(|program| !program.trim().is_empty())
             .unwrap_or_else(|| "shell".to_string()),
-        crate::plugin::ProfileTarget::Ssh(ssh) => format!("{}@{}", ssh.user, ssh.host),
+        ProfileTarget::Ssh(ssh) => format!("{}@{}", ssh.user, ssh.host),
+        ProfileTarget::Plugin(key) => key.clone(),
     }
 }
 

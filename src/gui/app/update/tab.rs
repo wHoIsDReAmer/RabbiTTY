@@ -4,6 +4,7 @@ use crate::config::SshProfile;
 use crate::gui::pane::Axis;
 use crate::gui::settings::SettingsDraft;
 use crate::gui::tab::{Profile, ProfileKind};
+use crate::session::PluginInput;
 use crate::terminal::TerminalTheme;
 use iced::Task;
 use iced::keyboard::Modifiers;
@@ -44,6 +45,7 @@ fn local_subtitle(profile: &Profile) -> String {
         } => path.clone(),
         ProfileKind::Local { program: None, .. } => crate::t!("shell_picker.default").to_string(),
         ProfileKind::Ssh(ssh) => format!("{}:{}", ssh.host, ssh.port),
+        ProfileKind::Plugin { plugin, .. } => plugin.clone(),
     }
 }
 
@@ -104,7 +106,10 @@ impl App {
         if self.active_tab == SETTINGS_TAB_INDEX {
             return Task::none();
         }
-        let Some(profile) = self.focused_pane().map(|pane| pane.profile.clone()) else {
+        let Some(profile) = self.focused_pane().map(|pane| match pane.profile.kind {
+            ProfileKind::Plugin { .. } => Profile::default_shell(),
+            _ => pane.profile.clone(),
+        }) else {
             return Task::none();
         };
         let Some(sender) = self.pty_sender.clone() else {
@@ -126,6 +131,7 @@ impl App {
             theme,
             id: pane_id,
             output_tx: sender,
+            plugin_input: None,
             scrollback_lines: self.config.terminal.scrollback_lines,
             cwd,
         });
@@ -208,26 +214,46 @@ impl App {
     /// Launch a tab for `profile`, deferring through the SSH password prompt
     /// when the profile is an SSH connection that needs one.
     pub(in crate::gui) fn launch_profile(&mut self, profile: Profile) -> Task<Message> {
-        if let Some(ssh) = profile.ssh_profile() {
-            let ssh = ssh.clone();
-            self.request_ssh_tab(ssh)
-        } else {
-            self.create_tab(profile)
+        match &profile.kind {
+            ProfileKind::Ssh(ssh) => {
+                let ssh = ssh.clone();
+                self.request_ssh_tab(ssh)
+            }
+            ProfileKind::Plugin { plugin, key } => {
+                let (plugin, key) = (plugin.clone(), key.clone());
+                self.dismiss_shell_picker();
+                if !key.is_empty() {
+                    self.dispatch_to_plugin(&plugin, crate::plugin::Event::ProfileOpened(key));
+                }
+                Task::none()
+            }
+            ProfileKind::Local { .. } => self.create_tab(profile),
         }
     }
 
     pub(in crate::gui) fn create_tab(&mut self, profile: Profile) -> Task<Message> {
+        self.spawn_tab(profile, None);
+        Task::none()
+    }
+
+    pub(in crate::gui) fn spawn_tab(
+        &mut self,
+        profile: Profile,
+        plugin_input: Option<iced::futures::channel::mpsc::UnboundedSender<PluginInput>>,
+    ) -> Option<u64> {
         let Some(sender) = self.pty_sender.clone() else {
             eprintln!("PTY output channel not ready");
-            return Task::none();
+            return None;
         };
 
         let (cols, rows) = self.grid_for_size(self.window_size);
         let theme = TerminalTheme::from_config(&self.config);
         let tab_id = self.next_tab_id;
         self.next_tab_id = self.next_tab_id.wrapping_add(1);
-        let display_name = profile.display_name();
-        self.session_history.record(profile.clone(), display_name);
+        if plugin_input.is_none() {
+            let display_name = profile.display_name();
+            self.session_history.record(profile.clone(), display_name);
+        }
         let pane = crate::gui::tab::Pane::from_profile(crate::gui::tab::PaneSpawn {
             profile,
             columns: cols,
@@ -235,6 +261,7 @@ impl App {
             theme,
             id: tab_id,
             output_tx: sender,
+            plugin_input,
             scrollback_lines: self.config.terminal.scrollback_lines,
             cwd: None,
         });
@@ -244,7 +271,7 @@ impl App {
         self.dismiss_shell_picker();
         self.sync_output_capture();
         self.dispatch_plugin_event(crate::plugin::Event::SessionStart(tab_id));
-        Task::none()
+        Some(tab_id)
     }
 
     pub(super) fn handle_close_tab(&mut self, index: usize) {

@@ -299,6 +299,7 @@ pub(crate) fn capability_label(name: &str) -> &str {
         "control" => crate::t!("settings.plugins.capability.control"),
         "filesystem" => crate::t!("settings.plugins.capability.filesystem"),
         "open-url" => crate::t!("settings.plugins.capability.open_url"),
+        "clipboard" => crate::t!("settings.plugins.capability.clipboard"),
         other => other,
     }
 }

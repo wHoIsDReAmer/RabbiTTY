@@ -10,9 +10,7 @@ use wasmtime_wasi::{DirPerms, FilePerms, WasiCtx, WasiCtxBuilder};
 
 use super::policy::CapabilityPolicy;
 use super::state::{PluginState, permitted};
-use super::{
-    Action, Capability, Contributions, Event, Plugin, PluginInfo, PluginProfile, SettingField,
-};
+use super::{Action, Capability, Contributions, Event, Plugin, PluginInfo, SettingField};
 
 /// Kept in step with the package line in `wit/world.wit`; a test enforces it.
 pub const PLUGIN_ABI_VERSION: &str = "0.1.0";
@@ -30,7 +28,6 @@ const EPOCH_TICK_MS: u64 = 10;
 pub(super) const START_DEADLINE: Duration = Duration::from_secs(2);
 pub(super) const EVENT_DEADLINE: Duration = Duration::from_millis(250);
 pub(super) const COMMAND_DEADLINE: Duration = Duration::from_secs(2);
-pub const PROFILE_DEADLINE: Duration = Duration::from_secs(5);
 pub(super) const SHUTDOWN_DEADLINE: Duration = Duration::from_millis(500);
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -57,7 +54,7 @@ pub struct PluginHost {
     linker: Linker<PluginState>,
     root: PathBuf,
     /// Compiling a component is far more expensive than instantiating one, and
-    /// profile enumeration instantiates on every refresh.
+    /// enable, reload and disabled-plugin metadata all instantiate again.
     components: std::sync::RwLock<HashMap<PathBuf, Component>>,
     /// Cleared on drop so the epoch ticker stops with the host that owns it.
     ticking: Arc<AtomicBool>,
@@ -145,21 +142,6 @@ impl PluginHost {
         let probe = self.start("", &component, info.clone(), Vec::new(), HashMap::new())?;
         let fields = probe.contributions().settings.clone();
         Ok((info, fields))
-    }
-
-    pub fn fetch_profiles(
-        &self,
-        id: &str,
-        path: &Path,
-        config: HashMap<String, String>,
-        policy: CapabilityPolicy<'_>,
-    ) -> wasmtime::Result<Vec<PluginProfile>> {
-        let mut plugin = self.load(id, path, config, policy)?;
-        let profiles = plugin
-            .list_profiles()
-            .map_err(|err| wasmtime::Error::msg(err.to_string()))?;
-        let _ = plugin.shutdown();
-        Ok(profiles)
     }
 
     /// The guest's import names carry the WIT package version it was built
@@ -401,13 +383,6 @@ impl LoadedPlugin {
             &mut Store<PluginState>,
         ) -> wasmtime::Result<Result<Vec<Action>, String>>,
     {
-        let actions = self.settle_with(deadline, call)?;
-        Ok(permitted(&self.store.data().granted, actions))
-    }
-    fn settle_with<T, F>(&mut self, deadline: Duration, call: F) -> Result<T, PluginError>
-    where
-        F: FnOnce(&Plugin, &mut Store<PluginState>) -> wasmtime::Result<Result<T, String>>,
-    {
         if let Err(err) = arm(&mut self.store, deadline) {
             return Err(PluginError::Trapped(err.to_string()));
         }
@@ -418,15 +393,8 @@ impl LoadedPlugin {
                 Err(PluginError::Trapped(reason))
             }
             Ok(Err(reported)) => Err(PluginError::Reported(reported)),
-            Ok(Ok(value)) => Ok(value),
+            Ok(Ok(actions)) => Ok(permitted(&self.store.data().granted, actions)),
         }
-    }
-
-    pub fn list_profiles(&mut self) -> Result<Vec<PluginProfile>, PluginError> {
-        self.guard()?;
-        self.settle_with(PROFILE_DEADLINE, move |bindings, store| {
-            bindings.call_list_profiles(store)
-        })
     }
 
     pub fn take_actions(&mut self) -> Vec<Action> {

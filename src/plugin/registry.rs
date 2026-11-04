@@ -4,8 +4,8 @@ use std::path::{Path, PathBuf};
 use crate::config::plugins::{PluginSettings, PluginsConfig};
 
 use super::host::{
-    COMMAND_DEADLINE, EVENT_DEADLINE, LoadedPlugin, PROFILE_DEADLINE, PluginError, PluginHost,
-    SHUTDOWN_DEADLINE, START_DEADLINE,
+    COMMAND_DEADLINE, EVENT_DEADLINE, LoadedPlugin, PluginError, PluginHost, SHUTDOWN_DEADLINE,
+    START_DEADLINE,
 };
 use super::matcher::OutputMatcher;
 use super::policy::{capability_from_name, capability_name, grant_with_consent, requires_consent};
@@ -72,14 +72,6 @@ impl Entry {
     }
 }
 
-#[derive(Clone)]
-pub struct ProfileSource {
-    pub id: String,
-    pub path: PathBuf,
-    consented: Vec<Capability>,
-    config: HashMap<String, String>,
-}
-
 pub struct PluginRegistry {
     host: std::sync::Arc<PluginHost>,
     settings: PluginsConfig,
@@ -89,29 +81,28 @@ pub struct PluginRegistry {
 
 impl Slot {
     fn ready(plugin: PluginWorker) -> Self {
-        let (matcher, rejected) = OutputMatcher::compile(&plugin.contributions().output_patterns);
-        for (id, reason) in rejected {
-            eprintln!("plugin pattern {id} rejected: {reason}");
-        }
+        let matcher = matcher_for(plugin.contributions());
         Self::Ready(Box::new(plugin), Box::new(matcher))
     }
+}
+
+fn matcher_for(contributions: &Contributions) -> OutputMatcher {
+    let (matcher, rejected) = OutputMatcher::compile(&contributions.output_patterns);
+    for (id, reason) in rejected {
+        eprintln!("plugin pattern {id} rejected: {reason}");
+    }
+    matcher
 }
 
 /// One job outstanding at a time; every call takes `&mut self`.
 enum Job {
     Command(String),
     Event(Event),
-    Profiles,
     Shutdown,
 }
 
-enum Answer {
-    Done(Result<Vec<Action>, PluginError>),
-    Profiles(Result<Vec<PluginProfile>, PluginError>),
-}
-
 struct Reply {
-    answer: Answer,
+    answer: Result<Vec<Action>, PluginError>,
     failure: Option<String>,
 }
 
@@ -134,7 +125,7 @@ pub struct PluginWorker {
     contributions: Contributions,
     granted: Vec<Capability>,
     failure: Option<String>,
-    profile_deadline: std::time::Duration,
+    command_deadline: std::time::Duration,
 }
 
 impl PluginWorker {
@@ -193,7 +184,7 @@ impl PluginWorker {
             contributions: boot.contributions,
             granted: boot.granted,
             failure: None,
-            profile_deadline: PROFILE_DEADLINE,
+            command_deadline: COMMAND_DEADLINE,
         })
     }
 
@@ -222,24 +213,22 @@ impl PluginWorker {
         self.failure.as_deref()
     }
 
-    pub(super) fn set_profile_deadline(&mut self, deadline: std::time::Duration) {
-        self.profile_deadline = deadline;
+    #[cfg(test)]
+    pub(super) fn set_command_deadline(&mut self, deadline: std::time::Duration) {
+        self.command_deadline = deadline;
+    }
+
+    fn set_contributions(&mut self, contributions: Contributions) {
+        self.contributions = contributions;
     }
 
     pub fn run_command(&mut self, id: &str) -> Result<Vec<Action>, PluginError> {
-        self.settle(Job::Command(id.to_string()), COMMAND_DEADLINE)
+        let deadline = self.command_deadline;
+        self.settle(Job::Command(id.to_string()), deadline)
     }
 
     pub fn on_event(&mut self, event: Event) -> Result<Vec<Action>, PluginError> {
         self.settle(Job::Event(event), EVENT_DEADLINE)
-    }
-
-    pub fn list_profiles(&mut self) -> Result<Vec<PluginProfile>, PluginError> {
-        let deadline = self.profile_deadline;
-        match self.dispatch(Job::Profiles, deadline)? {
-            Answer::Profiles(listed) => listed,
-            Answer::Done(other) => other.map(|_| Vec::new()),
-        }
     }
 
     pub fn shutdown(&mut self) -> Result<Vec<Action>, PluginError> {
@@ -260,13 +249,6 @@ impl PluginWorker {
         job: Job,
         deadline: std::time::Duration,
     ) -> Result<Vec<Action>, PluginError> {
-        match self.dispatch(job, deadline)? {
-            Answer::Done(outcome) => outcome,
-            Answer::Profiles(listed) => listed.map(|_| Vec::new()),
-        }
-    }
-
-    fn dispatch(&mut self, job: Job, deadline: std::time::Duration) -> Result<Answer, PluginError> {
         if let Some(reason) = &self.failure {
             return Err(PluginError::Retired(reason.clone()));
         }
@@ -283,7 +265,7 @@ impl PluginWorker {
         match self.replies.recv_timeout(deadline) {
             Ok(reply) => {
                 self.failure = reply.failure;
-                Ok(reply.answer)
+                reply.answer
             }
             // Retire rather than reuse: the abandoned call is still running, and a
             // guest parked in a host call cannot be killed.
@@ -311,10 +293,9 @@ fn serve(
     while let Ok(job) = jobs.recv() {
         let last = matches!(job, Job::Shutdown);
         let answer = match job {
-            Job::Command(id) => Answer::Done(plugin.run_command(&id)),
-            Job::Event(event) => Answer::Done(plugin.on_event(event)),
-            Job::Profiles => Answer::Profiles(plugin.list_profiles()),
-            Job::Shutdown => Answer::Done(plugin.shutdown()),
+            Job::Command(id) => plugin.run_command(&id),
+            Job::Event(event) => plugin.on_event(event),
+            Job::Shutdown => plugin.shutdown(),
         };
         let reply = Reply {
             answer,
@@ -543,26 +524,31 @@ impl PluginRegistry {
         Ok(())
     }
 
-    pub fn host(&self) -> std::sync::Arc<PluginHost> {
-        std::sync::Arc::clone(&self.host)
-    }
-
-    pub fn profile_sources(&self) -> Vec<ProfileSource> {
-        self.entries
+    pub fn set_contributions(&mut self, id: &str, contributions: Contributions) -> bool {
+        let Some(entry) = self.entry_mut(id) else {
+            return false;
+        };
+        let Slot::Ready(plugin, matcher) = &mut entry.slot else {
+            return false;
+        };
+        **matcher = matcher_for(&contributions);
+        let status = contributions
+            .status_items
             .iter()
-            .filter(
-                |entry| matches!(&entry.slot, Slot::Ready(plugin, _) if plugin.failure().is_none()),
-            )
-            .map(|entry| {
-                let settings = self.settings.get(&entry.id).cloned().unwrap_or_default();
-                ProfileSource {
-                    id: entry.id.clone(),
-                    path: entry.path.clone(),
-                    consented: consented_capabilities(&settings),
-                    config: guest_config(&entry.id, &settings),
-                }
+            .map(|item| StatusItem {
+                text: entry
+                    .status
+                    .iter()
+                    .find(|live| live.id == item.id)
+                    .map_or_else(|| item.text.clone(), |live| live.text.clone()),
+                ..item.clone()
             })
-            .collect()
+            .collect();
+        entry.status = status;
+        entry.fields = contributions.settings.clone();
+        entry.menu = contributions.menu_items.clone();
+        plugin.set_contributions(contributions);
+        true
     }
 
     pub fn set_profiles(&mut self, id: &str, profiles: Vec<PluginProfile>) {
@@ -785,6 +771,7 @@ impl PluginRegistry {
             _ => Ok(()),
         };
         self.entries[index].slot = slot;
+        self.entries[index].profiles.clear();
         self.entries[index].remember(&self.host);
         outcome
     }
@@ -865,48 +852,4 @@ fn guest_config(id: &str, settings: &PluginSettings) -> HashMap<String, String> 
         .map(|(key, value)| (key.clone(), value.clone()))
         .chain(crate::keychain::plugin_secrets(id))
         .collect()
-}
-
-/// Its own instance, so enumeration never contends with the UI's. Unbounded by design.
-pub fn fetch_profiles_blocking(
-    host: &PluginHost,
-    source: &ProfileSource,
-) -> Result<Vec<PluginProfile>, String> {
-    let consented = source.consented.clone();
-    let policy = |info: &PluginInfo| grant_with_consent(info, &consented);
-    host.fetch_profiles(&source.id, &source.path, source.config.clone(), &policy)
-        .map_err(|err| err.to_string())
-}
-
-/// Enumeration gets its own worker; its deadline bounds a source that never answers.
-pub fn fetch_profiles_with_deadline(
-    host: &std::sync::Arc<PluginHost>,
-    source: &ProfileSource,
-    deadline: std::time::Duration,
-) -> Option<Vec<PluginProfile>> {
-    let id = &source.id;
-    let mut worker = match PluginWorker::load(
-        host,
-        id,
-        &source.path,
-        source.config.clone(),
-        source.consented.clone(),
-    ) {
-        Ok(worker) => worker,
-        Err(reason) => {
-            eprintln!("plugin {id} failed to start for profile enumeration: {reason}");
-            return None;
-        }
-    };
-    worker.set_profile_deadline(deadline);
-
-    let listed = worker.list_profiles();
-    let _ = worker.shutdown();
-    match listed {
-        Ok(profiles) => Some(profiles),
-        Err(reason) => {
-            eprintln!("plugin {id} failed to list profiles: {reason}");
-            None
-        }
-    }
 }

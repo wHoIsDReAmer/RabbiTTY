@@ -7,5 +7,10 @@ publish = false
 [lib]
 crate-type = ["rlib"]
 
+[features]
+tls = ["dep:rustls", "dep:webpki-roots"]
+
 [dependencies]
 wit-bindgen = "0.60.0"
+rustls = { version = "0.23", default-features = false, features = ["std", "tls12"], optional = true }
+webpki-roots = { version = "1", optional = true }

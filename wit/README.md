@@ -20,9 +20,10 @@ back later as an `event`.
 |---|---|
 | **Run commands** | Declare them in `contributions()`, handle `run-command(id)` → `list<action>` |
 | **React to events** | `on-event(ev)` — session start/close, pattern match, cwd, title, focus, tab, selection, bell, setting change, menu activation, plus the answers below. Events carry ids, not screen content: `selection-changed(pane)` tells you *that* the selection moved; `query(selection(pane))` gets you the text |
-| **Act** | `write-pty`, `notify`, `show-text`, `open-url`, `set-status`, `schedule`/`cancel-timer`, `open-tab`, `focus-pane`, `close-pane`, `query`, `connect`/`send`/`close` |
-| **Contribute UI** | `contributions()` returns commands, output patterns, settings fields, status items, menu items. A `secret` setting is kept in the OS keychain instead of `config.toml`, shown masked, and reaches the plugin through `read-config` like any other |
-| **Supply profiles** | `list-profiles()` |
+| **Act** | `write-pty`, `notify`, `show-text`, `set-clipboard`, `open-url`, `set-status`, `schedule`/`cancel-timer`, `open-tab`, `focus-pane`, `close-pane`, `query`, `connect`/`send`/`close` |
+| **Contribute UI** | `contributions()` returns commands, output patterns, settings fields, status items, menu items; `set-contributions` replaces them at any time, and a status item the plugin declares again keeps the text it last set. A `secret` setting is kept in the OS keychain instead of `config.toml`, shown masked, and reaches the plugin through `read-config` like any other |
+| **Supply profiles** | `set-profiles(list)` at any time, from `init` or after fetching an inventory; each call replaces the plugin's list, and a restarted plugin starts with none |
+| **Run a tab** | `connect(tab(title))` opens a tab whose process side is the plugin — see below |
 
 Answers arrive as events, keyed by the id the plugin chose:
 
@@ -33,11 +34,23 @@ Answers arrive as events, keyed by the id the plugin chose:
 | `query(scrollback(range))` | `scrollback(chunk)` — `from` counts lines upward from the bottom of the grid (0 = newest line, viewport included), `count` lines ending there, capped at 10000; `lines` are top-to-bottom and `from` is echoed |
 | `query(selection(pane))` | `selection(selection-event)` |
 | `connect(request)` | `connected(id)`, then `data(io-frame)` per read, `closed(io-closed)` at EOF or on error — a failed connect sends `closed` with a reason and no `connected` |
+| `open-tab(plugin(key))`, or the user picking a `plugin(key)` profile | `profile-opened(key)` |
 
 `send`/`close` only reach connections this plugin opened; an unknown id is
 dropped silently. `connect(local(name))` resolves `$TMPDIR/{name}-{0..9}` on
 unix and `\\.\pipe\{name}-{0..9}` on Windows, so Discord IPC is
 `local("discord-ipc")`. `connect(tcp)` is a raw stream: no TLS.
+
+`connect(tab(title))` opens a tab titled after the plugin and `title`, marked
+with a plugin icon, and treats it as one more stream: `connected(id)`, then
+`resized(io-size)` with the grid size (again on every resize), `data(io-frame)`
+for each keystroke and terminal reply typed into it, and `send` writes bytes to
+its screen as if a program printed them. `close` ends the tab like a process
+exiting; the user closing it, or the plugin stopping, sends `closed`. Splitting
+such a tab opens a shell, and it is not kept in session history. A profile with
+a `plugin(key)` target is how a plugin offers these tabs in the new-tab picker:
+picking it sends `profile-opened(key)`, and the plugin answers with the
+`connect`.
 
 `command-finished` arrives when the shell emits OSC 133 `D` (shell integration
 must be installed in the shell for this). It carries the exit code and two
@@ -50,8 +63,11 @@ Terminal output is **not** streamed to you. Declare `output-pattern` records
 instead; the host matches every line natively and calls `on-event` only on a hit.
 
 Rust plugins should build on `plugins/sdk` (`rabbitty-plugin-sdk`): a `Plugin`
-trait returning `Vec<Action>`, `export_plugin!`, and a sans-IO `http` helper
-that turns a request into actions and `data` frames into a response.
+trait returning `Vec<Action>`, `export_plugin!`, and a sans-IO `http::Client`
+that keeps one connection alive per origin and turns requests into actions and
+events into responses. With the SDK's `tls` feature and a rustls crypto
+provider (`Client::with_tls`), it speaks https, verifying certificates against
+the Mozilla roots inside the plugin.
 
 ## Capabilities
 
@@ -64,13 +80,15 @@ running anything else, then enforces the grant when executing actions:
 | `read-screen` | `query(scrollback)` and `query(selection)` — ungranted is dropped, so no answer ever arrives |
 | `notify` | `notify` and `show-text` — ungranted is dropped |
 | `open-url`, `write-pty` | The action of the same name — ungranted is dropped |
-| `control` | `open-tab`, `focus-pane`, `close-pane` |
+| `control` | `open-tab`, `focus-pane`, `close-pane`, `connect(tab)` |
 | `network` | `connect(tcp)` |
 | `local-ipc` | `connect(local)` |
+| `clipboard` | `set-clipboard` — write only; a plugin cannot read the clipboard |
 | `filesystem` | `wasi:filesystem`, preopened to the plugin's own data directory and nothing else |
 
-`set-status`, `schedule`, `cancel-timer`, `query(panes)`, `send` and `close` need
-no capability. The two exceptions to "events carry no screen content" are
+`set-status`, `set-profiles`, `set-contributions`, `schedule`, `cancel-timer`,
+`query(panes)`, `send` and `close` need no capability. The two exceptions to
+"events carry no screen content" are
 deliberate: `output-matched` carries the one line that hit a pattern the plugin
 declared, and `menu-activated` carries the selection the user invoked the
 plugin's own menu item on. Nothing is granted while `manifest()` runs, so a
@@ -82,7 +100,7 @@ plugin cannot influence its own review.
 manifest()       → host reviews and grants capabilities
 init()           → one-time setup; returns the first actions
 contributions()  → commands, patterns, settings, status and menu items
-on-event(…) / run-command(…) / list-profiles()   → steady state, each returning actions
+on-event(…) / run-command(…)   → steady state, each returning actions
 on-shutdown()    → last call before teardown (disable, reload, app exit); its actions still run, but at app exit a `send` is best-effort
 ```
 
@@ -93,8 +111,8 @@ next call is made.
 Every call runs under two budgets, whichever runs out first: 500 million
 instructions (about 35 ms on an Apple M-series CPU; slower machines take
 longer for the same count), and a wall-clock deadline of 2 s for `manifest`,
-`init`, `contributions` and `run-command`, 250 ms for `on-event`, 500 ms for
-`on-shutdown` and 5 s for `list-profiles`. That is enough for a TLS handshake with
+`init`, `contributions` and `run-command`, 250 ms for `on-event` and 500 ms for
+`on-shutdown`. That is enough for a TLS handshake with
 full certificate verification inside the plugin. Longer work should be split
 across calls with `schedule`.
 
