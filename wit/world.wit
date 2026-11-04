@@ -1,4 +1,4 @@
-package rabbitty:plugin@0.6.0;
+package rabbitty:plugin@0.1.0;
 
 interface types {
     enum capability {
