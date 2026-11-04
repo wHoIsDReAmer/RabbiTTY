@@ -1,8 +1,9 @@
 use keyring::Entry;
-use std::collections::HashMap;
-use std::sync::{Mutex, OnceLock};
+use std::collections::{BTreeMap, HashMap};
+use std::sync::{LazyLock, Mutex, OnceLock};
 
 const SERVICE: &str = "rabbitty-ssh";
+const PLUGIN_SERVICE: &str = "rabbitty-plugin";
 
 fn entry_key(host: &str, user: &str) -> String {
     if user.is_empty() {
@@ -58,6 +59,60 @@ pub fn delete_password(host: &str, user: &str) {
         .lock()
         .expect("keychain cache poisoned")
         .remove(&entry_key(host, user));
+}
+
+type Secrets = BTreeMap<String, String>;
+
+static PLUGIN_SECRETS: LazyLock<Mutex<HashMap<String, Secrets>>> = LazyLock::new(Default::default);
+
+fn plugin_entry(plugin: &str) -> Option<Entry> {
+    if cfg!(test) {
+        return None;
+    }
+    Entry::new(PLUGIN_SERVICE, plugin).ok()
+}
+
+pub fn plugin_secrets(plugin: &str) -> Secrets {
+    PLUGIN_SECRETS
+        .lock()
+        .expect("keychain cache poisoned")
+        .entry(plugin.to_string())
+        .or_insert_with(|| {
+            plugin_entry(plugin)
+                .and_then(|entry| entry.get_password().ok())
+                .and_then(|stored| toml::from_str(&stored).ok())
+                .unwrap_or_default()
+        })
+        .clone()
+}
+
+pub fn set_plugin_secret(plugin: &str, key: &str, value: &str) {
+    let mut secrets = plugin_secrets(plugin);
+    if value.is_empty() {
+        if secrets.remove(key).is_none() {
+            return;
+        }
+    } else {
+        secrets.insert(key.to_string(), value.to_string());
+    }
+    store_plugin_secrets(plugin, secrets);
+}
+
+pub fn delete_plugin_secrets(plugin: &str) {
+    store_plugin_secrets(plugin, Secrets::new());
+}
+
+fn store_plugin_secrets(plugin: &str, secrets: Secrets) {
+    if let Some(entry) = plugin_entry(plugin) {
+        let _ = match toml::to_string(&secrets) {
+            Ok(serialized) if !secrets.is_empty() => entry.set_password(&serialized),
+            _ => entry.delete_credential(),
+        };
+    }
+    PLUGIN_SECRETS
+        .lock()
+        .expect("keychain cache poisoned")
+        .insert(plugin.to_string(), secrets);
 }
 
 #[cfg(test)]

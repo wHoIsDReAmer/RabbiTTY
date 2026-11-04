@@ -17,7 +17,7 @@ pub(crate) use self::rabbitty::plugin::types::{
     Capability, CommandEvent, ConnectTarget, CwdEvent, IoClosed, IoFrame, MatchEvent, MenuContext,
     MenuEvent, MenuItem, OutputPattern, PaneInfo, ProfileTarget, Query, ScrollbackChunk,
     ScrollbackRange, SelectionEvent, SettingEvent, SettingField, SettingKind, StatusItem,
-    TcpTarget, Timer, TitleEvent,
+    TcpTarget, TextPanel, Timer, TitleEvent,
 };
 pub use host::{PLUGIN_ABI_VERSION, PROFILE_DEADLINE, PluginError, PluginHost};
 pub use lines::LineReader;

@@ -3,7 +3,7 @@
 use rabbitty_plugin_sdk::{
     Action, Capability, Command, Contributions, Event, LocalTarget, MenuContext, MenuItem,
     OutputPattern, Plugin, PluginInfo, PluginProfile, ProfileTarget, Query, SettingField,
-    SettingKind, SshTarget, StatusItem, StatusText, Timer, export_plugin, read_config,
+    SettingKind, SshTarget, StatusItem, StatusText, TextPanel, Timer, export_plugin, read_config,
 };
 
 const STATUS_ID: &str = "hello.counter";
@@ -89,6 +89,12 @@ impl Plugin for HelloPlugin {
                     label: "Shout it".to_string(),
                     kind: SettingKind::Toggle,
                     default_value: "false".to_string(),
+                },
+                SettingField {
+                    key: "token".to_string(),
+                    label: "Token".to_string(),
+                    kind: SettingKind::Secret,
+                    default_value: String::new(),
                 },
             ],
             menu_items: vec![
@@ -224,6 +230,14 @@ impl Plugin for HelloPlugin {
                     "hello plugin read greeting={greeting}"
                 ))])
             }
+            "hello.readtoken" => {
+                let token = read_config("token").unwrap_or_else(|| "<none>".to_string());
+                Ok(vec![notify(format!("hello plugin read token={token}"))])
+            }
+            "hello.panel" => Ok(vec![Action::ShowText(TextPanel {
+                title: "hello".to_string(),
+                body: "a panel from the hello plugin".to_string(),
+            })]),
             "hello.hog" => {
                 let mut blocks: Vec<Vec<u8>> = Vec::new();
                 for _ in 0..512 {

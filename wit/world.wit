@@ -1,4 +1,4 @@
-package rabbitty:plugin@0.5.0;
+package rabbitty:plugin@0.6.0;
 
 interface types {
     enum capability {
@@ -87,6 +87,7 @@ interface types {
         toggle,
         number(number-range),
         select(list<string>),
+        secret,
     }
 
     record setting-field {
@@ -204,6 +205,11 @@ interface types {
         text: string,
     }
 
+    record text-panel {
+        title: string,
+        body: string,
+    }
+
     record timer {
         id: u32,
         after-ms: u64,
@@ -251,6 +257,7 @@ interface types {
         connect(connect-request),
         send(io-frame),
         close(u32),
+        show-text(text-panel),
     }
 }
 
@@ -267,7 +274,7 @@ world plugin {
 
     export init: func() -> result<list<action>, string>;
 
-    export shutdown: func() -> result<list<action>, string>;
+    export on-shutdown: func() -> result<list<action>, string>;
 
     export contributions: func() -> result<contributions, string>;
     export on-event: func(ev: event) -> result<list<action>, string>;

@@ -121,6 +121,8 @@ pub enum Message {
     PasteClipboard(String),
     ConfirmMultilinePaste,
     CancelMultilinePaste,
+    ClosePluginPanel,
+    CopyPluginPanel,
     ImeStateChanged(bool),
     ImeCommit(String),
     ImePreedit(String, Option<std::ops::Range<usize>>),
@@ -301,6 +303,7 @@ pub struct App {
     pub(super) ime_preedit: Option<(String, Option<std::ops::Range<usize>>)>,
     /// Text waiting for multiline-paste confirmation.
     pub(super) pending_paste: Option<String>,
+    pub(super) plugin_panel: Option<(String, crate::plugin::TextPanel)>,
 
     // ── Shell picker ────────────────────────────────────────────────────
     pub(super) show_shell_picker: bool,
@@ -475,6 +478,7 @@ impl App {
             ime_active: false,
             ime_preedit: None,
             pending_paste: None,
+            plugin_panel: None,
 
             show_shell_picker: false,
             shell_picker_selected: 0,

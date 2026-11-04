@@ -43,7 +43,7 @@ impl super::rabbitty::plugin::host::Host for PluginState {
 pub(super) fn required_capability(action: &Action) -> Option<Capability> {
     match action {
         Action::WritePty(_) => Some(Capability::WritePty),
-        Action::Notify(_) => Some(Capability::Notify),
+        Action::Notify(_) | Action::ShowText(_) => Some(Capability::Notify),
         Action::OpenUrl(_) => Some(Capability::OpenUrl),
         Action::OpenTab(_) | Action::FocusPane(_) | Action::ClosePane(_) => {
             Some(Capability::Control)
