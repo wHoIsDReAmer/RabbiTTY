@@ -94,7 +94,7 @@ Every call runs under two budgets, whichever runs out first: 500 million
 instructions (about 35 ms on an Apple M-series CPU; slower machines take
 longer for the same count), and a wall-clock deadline of 2 s for `manifest`,
 `init`, `contributions` and `run-command`, 250 ms for `on-event`, 500 ms for
-`shutdown` and 5 s for `list-profiles`. That is enough for a TLS handshake with
+`on-shutdown` and 5 s for `list-profiles`. That is enough for a TLS handshake with
 full certificate verification inside the plugin. Longer work should be split
 across calls with `schedule`.
 
@@ -105,8 +105,12 @@ instantiation.
 
 ## Versioning
 
-`package rabbitty:plugin@0.6.0`.
+`package rabbitty:plugin@0.1.0`.
 
-Pre-1.0, breaking changes bump the minor and the host supports exactly one
-version — recompile against the new world. From 1.0, breaking changes bump the
-major and the previous major is supported for a transition period.
+While nothing outside this repository builds against it, the interface changes
+in place without a version bump: rebuild plugins against the current world
+after pulling. A plugin built against an older 0.1.0 world then fails to load
+with a type error rather than a version error. Once plugins are published,
+pre-1.0 breaking changes bump the minor and the host supports exactly one
+version; from 1.0, breaking changes bump the major and the previous major is
+supported for a transition period.

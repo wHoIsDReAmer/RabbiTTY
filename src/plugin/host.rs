@@ -15,7 +15,7 @@ use super::{
 };
 
 /// Kept in step with the package line in `wit/world.wit`; a test enforces it.
-pub const PLUGIN_ABI_VERSION: &str = "0.6.0";
+pub const PLUGIN_ABI_VERSION: &str = "0.1.0";
 const ABI_PACKAGE: &str = "rabbitty:plugin/";
 
 const CALL_FUEL: u64 = 500_000_000;
