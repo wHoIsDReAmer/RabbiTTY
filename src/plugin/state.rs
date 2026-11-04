@@ -51,14 +51,18 @@ pub(super) fn required_capability(action: &Action) -> Option<Capability> {
         Action::Connect(request) => Some(match request.target {
             ConnectTarget::Tcp(_) => Capability::Network,
             ConnectTarget::Local(_) => Capability::LocalIpc,
+            ConnectTarget::Tab(_) => Capability::Control,
         }),
         Action::Query(Query::Scrollback(_) | Query::Selection(_)) => Some(Capability::ReadScreen),
+        Action::SetClipboard(_) => Some(Capability::Clipboard),
         Action::SetStatus(_)
         | Action::Schedule(_)
         | Action::CancelTimer(_)
         | Action::Query(Query::Panes)
         | Action::Send(_)
-        | Action::Close(_) => None,
+        | Action::Close(_)
+        | Action::SetProfiles(_)
+        | Action::SetContributions(_) => None,
     }
 }
 

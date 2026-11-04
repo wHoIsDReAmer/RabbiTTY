@@ -14,18 +14,15 @@ wasmtime::component::bindgen!({
 });
 
 pub(crate) use self::rabbitty::plugin::types::{
-    Capability, CommandEvent, ConnectTarget, CwdEvent, IoClosed, IoFrame, MatchEvent, MenuContext,
-    MenuEvent, MenuItem, OutputPattern, PaneInfo, ProfileTarget, Query, ScrollbackChunk,
-    ScrollbackRange, SelectionEvent, SettingEvent, SettingField, SettingKind, StatusItem,
-    TcpTarget, TextPanel, Timer, TitleEvent,
+    Capability, CommandEvent, ConnectTarget, CwdEvent, IoClosed, IoFrame, IoSize, MatchEvent,
+    MenuContext, MenuEvent, MenuItem, OutputPattern, PaneInfo, PluginProfile, ProfileTarget, Query,
+    ScrollbackChunk, ScrollbackRange, SelectionEvent, SettingEvent, SettingField, SettingKind,
+    StatusItem, TcpTarget, TextPanel, Timer, TitleEvent,
 };
-pub use host::{PLUGIN_ABI_VERSION, PROFILE_DEADLINE, PluginError, PluginHost};
+pub use host::{PLUGIN_ABI_VERSION, PluginError, PluginHost};
 pub use lines::LineReader;
 pub use matcher::span_at;
 pub use policy::{
     ALL as ALL_CAPABILITIES, capability_from_name, capability_name, requires_consent,
 };
-pub use registry::{
-    ClickablePattern, PluginRegistry, ProfileSource, Status, fetch_profiles_blocking,
-    fetch_profiles_with_deadline,
-};
+pub use registry::{ClickablePattern, PluginRegistry, Status};

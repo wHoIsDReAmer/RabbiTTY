@@ -449,6 +449,7 @@ impl App {
                     }
                     crate::gui::tab::ProfileKind::Local { .. } => t!("session_kind.shell"),
                     crate::gui::tab::ProfileKind::Ssh(_) => t!("session_kind.ssh"),
+                    crate::gui::tab::ProfileKind::Plugin { .. } => t!("session_kind.plugin"),
                 };
 
                 let label_col = column![

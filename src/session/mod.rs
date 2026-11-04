@@ -6,7 +6,7 @@ use std::io::{ErrorKind, Write};
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
-use transport::{LocalPty, SshTransport, Transport};
+use transport::{LocalPty, PluginTransport, SshTransport, Transport};
 
 pub struct LaunchSpec {
     pub program: String,
@@ -44,6 +44,12 @@ pub enum OutputEvent {
     },
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum PluginInput {
+    Data(Vec<u8>),
+    Resize { rows: u16, cols: u16 },
+}
+
 impl Session {
     pub fn spawn(
         spec: LaunchSpec,
@@ -64,6 +70,12 @@ impl Session {
     ) -> Self {
         Self {
             backend: Box::new(SshTransport::spawn(profile, tab_id, rows, cols, output_tx)),
+        }
+    }
+
+    pub fn spawn_plugin(input: mpsc::UnboundedSender<PluginInput>, rows: u16, cols: u16) -> Self {
+        Self {
+            backend: Box::new(PluginTransport::spawn(input, rows, cols)),
         }
     }
 

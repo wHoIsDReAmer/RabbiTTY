@@ -49,6 +49,7 @@ pub struct PaneSpawn {
     pub theme: TerminalTheme,
     pub id: u64,
     pub output_tx: mpsc::UnboundedSender<OutputEvent>,
+    pub plugin_input: Option<mpsc::UnboundedSender<crate::session::PluginInput>>,
     pub scrollback_lines: usize,
     pub cwd: Option<PathBuf>,
 }
@@ -62,6 +63,7 @@ impl Pane {
             theme,
             id,
             output_tx,
+            plugin_input,
             scrollback_lines,
             cwd,
         } = spec;
@@ -70,24 +72,31 @@ impl Pane {
 
         let title = profile.display_name();
 
-        let (session, writer) = if let Some(ssh) = profile.ssh_profile() {
-            let s = Session::spawn_ssh(ssh.clone(), id, lines as u16, columns as u16, output_tx);
-
-            let w = s.writer();
-            (TerminalSession::Active(s), w)
-        } else {
-            let spec = profile.launch_spec(size, cwd);
-            match Session::spawn(spec, id, output_tx) {
-                Ok(s) => {
-                    let w = s.writer();
-                    (TerminalSession::Active(s), w)
-                }
-                Err(err) => {
-                    let sink = Arc::new(Mutex::new(
-                        Box::new(std::io::sink()) as Box<dyn Write + Send>
-                    ));
-                    (TerminalSession::Failed(err.to_string()), sink)
-                }
+        let spawned = match (&profile.kind, plugin_input) {
+            (ProfileKind::Ssh(ssh), _) => Ok(Session::spawn_ssh(
+                ssh.clone(),
+                id,
+                lines as u16,
+                columns as u16,
+                output_tx,
+            )),
+            (_, Some(input)) => Ok(Session::spawn_plugin(input, lines as u16, columns as u16)),
+            (ProfileKind::Plugin { .. }, None) => Err("a plugin tab needs its plugin".to_string()),
+            (ProfileKind::Local { program, args }, None) => {
+                let spec = launch_spec(program, args, size, cwd);
+                Session::spawn(spec, id, output_tx).map_err(|err| err.to_string())
+            }
+        };
+        let (session, writer) = match spawned {
+            Ok(s) => {
+                let w = s.writer();
+                (TerminalSession::Active(s), w)
+            }
+            Err(err) => {
+                let sink = Arc::new(Mutex::new(
+                    Box::new(std::io::sink()) as Box<dyn Write + Send>
+                ));
+                (TerminalSession::Failed(err), sink)
             }
         };
 
@@ -494,6 +503,10 @@ pub enum ProfileKind {
         args: Vec<String>,
     },
     Ssh(SshProfile),
+    Plugin {
+        plugin: String,
+        key: String,
+    },
 }
 
 impl Profile {
@@ -531,32 +544,35 @@ impl Profile {
     pub fn ssh_profile(&self) -> Option<&SshProfile> {
         match &self.kind {
             ProfileKind::Ssh(p) => Some(p),
-            ProfileKind::Local { .. } => None,
+            ProfileKind::Local { .. } | ProfileKind::Plugin { .. } => None,
         }
     }
+}
 
-    fn launch_spec(&self, size: TerminalSize, cwd: Option<PathBuf>) -> LaunchSpec {
-        let (program, args) = match &self.kind {
-            ProfileKind::Ssh(_) => unreachable!("SSH uses native russh, not launch_spec"),
-            ProfileKind::Local { program: None, .. } => resolve_default_shell(),
-            ProfileKind::Local {
-                program: Some(path),
-                args,
-            } => (path.clone(), args.clone()),
-        };
+fn launch_spec(
+    program: &Option<String>,
+    args: &[String],
+    size: TerminalSize,
+    cwd: Option<PathBuf>,
+) -> LaunchSpec {
+    let (program, args) = match program {
+        None => resolve_default_shell(),
+        Some(path) => (path.clone(), args.to_vec()),
+    };
 
-        let env = title_env_for_shell(&program);
+    let env = title_env_for_shell(&program);
 
-        LaunchSpec {
-            program,
-            args,
-            env,
-            rows: size.lines as u16,
-            cols: size.columns as u16,
-            cwd,
-        }
+    LaunchSpec {
+        program,
+        args,
+        env,
+        rows: size.lines as u16,
+        cols: size.columns as u16,
+        cwd,
     }
+}
 
+impl Profile {
     pub fn display_name(&self) -> String {
         match &self.kind {
             ProfileKind::Ssh(profile) => format!("SSH: {}", profile.tab_title()),

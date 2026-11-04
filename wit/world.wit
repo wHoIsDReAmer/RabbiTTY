@@ -11,6 +11,7 @@ interface types {
         control,
         filesystem,
         open-url,
+        clipboard,
     }
 
     record plugin-info {
@@ -67,6 +68,7 @@ interface types {
     variant profile-target {
         local(local-target),
         ssh(ssh-target),
+        plugin(string),
     }
 
     record plugin-profile {
@@ -171,6 +173,12 @@ interface types {
         reason: option<string>,
     }
 
+    record io-size {
+        id: u32,
+        rows: u16,
+        cols: u16,
+    }
+
     variant event {
         session-start(u64),
         session-close(u64),
@@ -193,6 +201,8 @@ interface types {
         data(io-frame),
         closed(io-closed),
         tab-opened(u64),
+        profile-opened(string),
+        resized(io-size),
     }
 
     record pane-write {
@@ -236,6 +246,7 @@ interface types {
     variant connect-target {
         tcp(tcp-target),
         local(string),
+        tab(string),
     }
 
     record connect-request {
@@ -258,6 +269,9 @@ interface types {
         send(io-frame),
         close(u32),
         show-text(text-panel),
+        set-profiles(list<plugin-profile>),
+        set-contributions(contributions),
+        set-clipboard(string),
     }
 }
 
@@ -266,7 +280,7 @@ interface host {
 }
 
 world plugin {
-    use types.{plugin-info, contributions, event, action, plugin-profile};
+    use types.{plugin-info, contributions, event, action};
 
     import host;
 
@@ -279,5 +293,4 @@ world plugin {
     export contributions: func() -> result<contributions, string>;
     export on-event: func(ev: event) -> result<list<action>, string>;
     export run-command: func(id: string) -> result<list<action>, string>;
-    export list-profiles: func() -> result<list<plugin-profile>, string>;
 }

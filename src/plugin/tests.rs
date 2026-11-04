@@ -76,13 +76,15 @@ fn manifest_and_contributions_round_trip() {
             Capability::ReadConfig,
             Capability::ReadScreen,
             Capability::Network,
-            Capability::OpenUrl
+            Capability::OpenUrl,
+            Capability::Control,
+            Capability::Clipboard,
         ]
     );
     assert_eq!(
         plugin.granted(),
         &[Capability::Notify, Capability::ReadConfig],
-        "read-screen, network and open-url are requested but not consented to, so they stay ungranted"
+        "everything past read-config is requested but not consented to, so it stays ungranted"
     );
 
     let commands = &plugin.contributions().commands;
@@ -317,6 +319,19 @@ fn each_gated_action_needs_exactly_its_own_capability() {
         title: "title".to_string(),
         body: "body".to_string(),
     });
+    let plugin_tab = Action::Connect(ConnectRequest {
+        id: 6,
+        target: ConnectTarget::Tab("echo".to_string()),
+    });
+    let clipboard = Action::SetClipboard("copied".to_string());
+    let profiles = Action::SetProfiles(Vec::new());
+    let grown = Action::SetContributions(Contributions {
+        commands: Vec::new(),
+        output_patterns: Vec::new(),
+        settings: Vec::new(),
+        status_items: Vec::new(),
+        menu_items: Vec::new(),
+    });
     let all = || {
         vec![
             tcp.clone(),
@@ -326,35 +341,86 @@ fn each_gated_action_needs_exactly_its_own_capability() {
             screen.clone(),
             panes.clone(),
             panel.clone(),
+            plugin_tab.clone(),
+            clipboard.clone(),
+            profiles.clone(),
+            grown.clone(),
         ]
     };
 
     assert_eq!(
         permitted(&[], all()),
-        vec![timer.clone(), panes.clone()],
-        "timers and the pane list are free; everything else waits for a grant"
+        vec![
+            timer.clone(),
+            panes.clone(),
+            profiles.clone(),
+            grown.clone()
+        ],
+        "timers, the pane list and a plugin's own declarations are free; everything else waits for a grant"
     );
     assert_eq!(
         permitted(&[Capability::Network], all()),
-        vec![tcp.clone(), timer.clone(), panes.clone()],
-        "network unlocks tcp only, never the local socket or the screen"
+        vec![
+            tcp.clone(),
+            timer.clone(),
+            panes.clone(),
+            profiles.clone(),
+            grown.clone()
+        ],
+        "network unlocks tcp only, never the local socket, a tab or the screen"
     );
     assert_eq!(
         permitted(&[Capability::LocalIpc], all()),
-        vec![local.clone(), timer.clone(), panes.clone()]
+        vec![
+            local.clone(),
+            timer.clone(),
+            panes.clone(),
+            profiles.clone(),
+            grown.clone()
+        ]
     );
     assert_eq!(
         permitted(&[Capability::Control], all()),
-        vec![tab.clone(), timer.clone(), panes.clone()]
+        vec![
+            tab.clone(),
+            timer.clone(),
+            panes.clone(),
+            plugin_tab.clone(),
+            profiles.clone(),
+            grown.clone()
+        ],
+        "a plugin tab is a tab, so it needs the same grant as opening one"
     );
     assert_eq!(
         permitted(&[Capability::ReadScreen], all()),
-        vec![timer.clone(), screen.clone(), panes.clone()]
+        vec![
+            timer.clone(),
+            screen.clone(),
+            panes.clone(),
+            profiles.clone(),
+            grown.clone()
+        ]
     );
     assert_eq!(
         permitted(&[Capability::Notify], all()),
-        vec![timer.clone(), panes.clone(), panel.clone()],
+        vec![
+            timer.clone(),
+            panes.clone(),
+            panel.clone(),
+            profiles.clone(),
+            grown.clone()
+        ],
         "a panel is a notification surface and needs the same grant"
+    );
+    assert_eq!(
+        permitted(&[Capability::Clipboard], all()),
+        vec![
+            timer.clone(),
+            panes.clone(),
+            clipboard.clone(),
+            profiles.clone(),
+            grown.clone()
+        ]
     );
 }
 
@@ -744,6 +810,7 @@ fn capability_names_match_the_wit_spelling() {
         Capability::Notify,
         Capability::Network,
         Capability::Filesystem,
+        Capability::Clipboard,
     ] {
         let name = capability_name(cap);
         assert_eq!(
@@ -753,6 +820,7 @@ fn capability_names_match_the_wit_spelling() {
         );
     }
     assert_eq!(capability_name(Capability::WritePty), "write-pty");
+    assert_eq!(capability_name(Capability::Clipboard), "clipboard");
     assert_eq!(capability_from_name("nonsense"), None);
 }
 
@@ -1348,8 +1416,17 @@ fn a_command_can_declare_a_default_key() {
     );
 }
 
+fn apply_startup_profiles(registry: &mut PluginRegistry, id: &str) {
+    let startup = registry.get_mut(id).expect("ready").take_startup_actions();
+    for action in startup {
+        if let Action::SetProfiles(profiles) = action {
+            registry.set_profiles(id, profiles);
+        }
+    }
+}
+
 #[test]
-fn a_plugin_can_supply_profiles() {
+fn the_profiles_a_plugin_pushes_at_start_are_listed_under_it() {
     let root = TempRoot::new("profiles");
     if !install(&root, "alpha") {
         return;
@@ -1357,68 +1434,47 @@ fn a_plugin_can_supply_profiles() {
 
     let mut registry = registry_in(&root);
     registry.load_all();
+    apply_startup_profiles(&mut registry, "alpha");
 
-    let profiles = registry
-        .get_mut("alpha")
-        .expect("ready")
-        .list_profiles()
-        .expect("listed");
-
-    assert_eq!(profiles.len(), 2);
-    assert!(matches!(profiles[0].target, ProfileTarget::Local(_)));
-    match &profiles[1].target {
+    let profiles = registry.profiles();
+    assert!(profiles.iter().all(|(owner, _)| owner == "alpha"));
+    let targets: Vec<&ProfileTarget> = profiles
+        .iter()
+        .map(|(_, profile)| &profile.target)
+        .collect();
+    assert!(matches!(targets[0], ProfileTarget::Local(_)));
+    match targets[1] {
         ProfileTarget::Ssh(target) => {
             assert_eq!(target.host, "example.invalid");
             assert_eq!(target.port, 22);
         }
         other => panic!("expected an ssh target, got {other:?}"),
     }
+    assert_eq!(
+        targets[2],
+        &ProfileTarget::Plugin("hello.echo".to_string()),
+        "a profile the plugin opens itself keeps its key across the boundary"
+    );
 }
 
 #[test]
-fn loading_a_plugin_does_not_enumerate_its_profiles() {
-    let root = TempRoot::new("profile-lazy");
+fn a_restarted_plugin_starts_without_the_profiles_it_pushed_before() {
+    let root = TempRoot::new("profile-restart");
     if !install(&root, "alpha") {
         return;
     }
 
     let mut registry = registry_in(&root);
     registry.load_all();
+    apply_startup_profiles(&mut registry, "alpha");
+    assert!(!registry.profiles().is_empty());
+
+    registry.enable("alpha").expect("restarts");
 
     assert!(
         registry.profiles().is_empty(),
-        "startup must not wait on a source that may be a slow network call"
+        "a fresh instance owns no profiles until it pushes its own"
     );
-    assert_eq!(
-        registry.profile_sources().len(),
-        1,
-        "the plugin is still offered as a source to fetch from later"
-    );
-}
-
-#[test]
-fn a_fetched_profile_list_is_read_back() {
-    let root = TempRoot::new("profile-fetch");
-    if !install(&root, "alpha") {
-        return;
-    }
-
-    let mut registry = registry_in(&root);
-    registry.load_all();
-
-    let source = registry.profile_sources().pop().expect("a source");
-    let fetched = fetch_profiles_blocking(&registry.host(), &source).expect("listed");
-    registry.set_profiles("alpha", fetched);
-
-    let profiles = registry.profiles();
-    assert_eq!(profiles.len(), 2);
-    assert_eq!(profiles[0].0, "alpha", "each profile carries its owner");
-
-    let names: Vec<String> = profiles
-        .into_iter()
-        .map(|(_, profile)| profile.name)
-        .collect();
-    assert_eq!(names, vec!["Hello shell", "Hello SSH"]);
 }
 
 #[test]
@@ -1430,19 +1486,13 @@ fn a_disabled_plugin_supplies_no_profiles() {
 
     let mut registry = registry_in(&root);
     registry.load_all();
-    let source = registry.profile_sources().pop().expect("a source");
-    let fetched = fetch_profiles_blocking(&registry.host(), &source).expect("listed");
-    registry.set_profiles("alpha", fetched);
+    apply_startup_profiles(&mut registry, "alpha");
     assert!(!registry.profiles().is_empty());
 
     registry.disable("alpha");
     assert!(
         registry.profiles().is_empty(),
         "a disabled plugin must not keep offering profiles"
-    );
-    assert!(
-        registry.profile_sources().is_empty(),
-        "and must not be fetched from again"
     );
 }
 
@@ -1455,17 +1505,95 @@ fn a_retired_plugin_supplies_no_profiles() {
 
     let mut registry = registry_in(&root);
     registry.load_all();
-
-    let source = registry.profile_sources().pop().expect("a source");
-    let fetched = fetch_profiles_blocking(&registry.host(), &source).expect("listed");
-    registry.set_profiles("alpha", fetched);
+    apply_startup_profiles(&mut registry, "alpha");
 
     let plugin = registry.get_mut("alpha").expect("ready");
     let _ = plugin.run_command("hello.boom");
     registry.retire_failed();
 
     assert!(registry.profiles().is_empty());
-    assert!(registry.profile_sources().is_empty());
+}
+
+#[test]
+fn replaced_contributions_take_over_but_live_status_text_survives() {
+    use super::rabbitty::plugin::types::Command;
+    const STATUS_ID: &str = "hello.counter";
+
+    let root = TempRoot::new("contributions");
+    if !install(&root, "alpha") {
+        return;
+    }
+    let mut registry = registry_in(&root);
+    registry.load_all();
+    assert!(registry.set_status("alpha", STATUS_ID, "hello: 3".to_string()));
+
+    let replaced = registry.set_contributions(
+        "alpha",
+        Contributions {
+            commands: vec![Command {
+                id: "hello.extra".to_string(),
+                title: "Added at runtime".to_string(),
+                default_key: None,
+            }],
+            output_patterns: vec![OutputPattern {
+                id: "late".to_string(),
+                regex: "goodbye".to_string(),
+                clickable: false,
+            }],
+            settings: Vec::new(),
+            status_items: vec![
+                StatusItem {
+                    id: STATUS_ID.to_string(),
+                    text: "hello: 0".to_string(),
+                    tooltip: None,
+                    command: None,
+                },
+                StatusItem {
+                    id: "late.status".to_string(),
+                    text: "fresh".to_string(),
+                    tooltip: None,
+                    command: None,
+                },
+            ],
+            menu_items: Vec::new(),
+        },
+    );
+    assert!(replaced);
+
+    let commands: Vec<String> = registry
+        .contributed_commands()
+        .into_iter()
+        .map(|command| command.id)
+        .collect();
+    assert_eq!(commands, vec!["hello.extra"]);
+    let texts: Vec<(String, String)> = registry
+        .status_items()
+        .into_iter()
+        .map(|(_, item)| (item.id, item.text))
+        .collect();
+    assert_eq!(
+        texts,
+        vec![
+            (STATUS_ID.to_string(), "hello: 3".to_string()),
+            ("late.status".to_string(), "fresh".to_string()),
+        ],
+        "a redeclared item keeps what the plugin last set; a new one starts from its declaration"
+    );
+    assert!(registry.setting_fields("alpha").is_empty());
+    assert!(registry.menu_items(MenuContext::Terminal).is_empty());
+    let now = std::time::Instant::now();
+    assert!(
+        registry.match_output(1, "hello there", now).is_empty(),
+        "the dropped pattern must stop matching"
+    );
+    assert_eq!(
+        registry
+            .match_output(1, "goodbye", now)
+            .into_iter()
+            .map(|(_, hit)| hit.pattern)
+            .collect::<Vec<_>>(),
+        vec!["late"]
+    );
 }
 
 #[test]
@@ -1578,100 +1706,19 @@ fn a_memory_hungry_plugin_is_stopped_instead_of_growing_without_bound() {
 }
 
 #[test]
-fn a_source_that_answers_in_time_is_used() {
-    let root = TempRoot::new("profile-deadline-ok");
-    if !install(&root, "alpha") {
-        return;
-    }
-
-    let mut registry = registry_in(&root);
-    registry.load_all();
-    let source = registry.profile_sources().pop().expect("a source");
-
-    let fetched = fetch_profiles_with_deadline(
-        &registry.host(),
-        &source,
-        std::time::Duration::from_secs(10),
-    );
-
-    assert_eq!(fetched.map(|list| list.len()), Some(2));
-}
-
-#[test]
-fn a_stalled_source_is_abandoned_at_the_deadline() {
-    let root = TempRoot::new("profile-deadline-stall");
-    if !install(&root, "alpha") {
-        return;
-    }
-    let mut settings = crate::config::plugins::PluginsConfig::new();
-    settings.insert(
-        "alpha".to_string(),
-        crate::config::plugins::PluginSettings {
-            enabled: true,
-            consented: Vec::new(),
-            settings: [("slow".to_string(), "true".to_string())]
-                .into_iter()
-                .collect(),
-        },
-    );
-
-    let mut registry = registry_with(&root, settings);
-    registry.load_all();
-    let source = registry.profile_sources().pop().expect("a source");
-
-    let started = std::time::Instant::now();
-    let fetched = fetch_profiles_with_deadline(
-        &registry.host(),
-        &source,
-        std::time::Duration::from_millis(200),
-    );
-    let waited = started.elapsed();
-
-    assert!(
-        fetched.is_none(),
-        "a source that misses the deadline must not be waited on"
-    );
-    assert!(
-        waited >= std::time::Duration::from_millis(150),
-        "returned after only {waited:?}, so the fetch failed outright \
-         rather than running into the deadline"
-    );
-    assert!(
-        waited < std::time::Duration::from_secs(2),
-        "the caller returned after {waited:?}, so it was still blocked on the guest"
-    );
-}
-
-/// The fixture stalls in `list-profiles` when `slow` is set.
-fn slow_registry(root: &TempRoot) -> PluginRegistry {
-    let mut settings = crate::config::plugins::PluginsConfig::new();
-    settings.insert(
-        "alpha".to_string(),
-        crate::config::plugins::PluginSettings {
-            enabled: true,
-            consented: Vec::new(),
-            settings: [("slow".to_string(), "true".to_string())]
-                .into_iter()
-                .collect(),
-        },
-    );
-    registry_with(root, settings)
-}
-
-#[test]
 fn a_guest_that_never_answers_is_timed_out_and_retired() {
     let root = TempRoot::new("worker-timeout");
     if !install(&root, "alpha") {
         return;
     }
 
-    let mut registry = slow_registry(&root);
+    let mut registry = registry_in(&root);
     registry.load_all();
 
     let started = std::time::Instant::now();
     let plugin = registry.get_mut("alpha").expect("ready");
-    plugin.set_profile_deadline(std::time::Duration::from_millis(200));
-    let outcome = plugin.list_profiles();
+    plugin.set_command_deadline(std::time::Duration::from_millis(200));
+    let outcome = plugin.run_command("hello.stall");
     let waited = started.elapsed();
 
     assert!(
@@ -1696,14 +1743,14 @@ fn a_call_after_a_timeout_reports_the_latched_failure_instead_of_running() {
         return;
     }
 
-    let mut registry = slow_registry(&root);
+    let mut registry = registry_in(&root);
     registry.load_all();
 
     let plugin = registry.get_mut("alpha").expect("ready");
-    plugin.set_profile_deadline(std::time::Duration::from_millis(200));
+    plugin.set_command_deadline(std::time::Duration::from_millis(200));
     plugin
-        .list_profiles()
-        .expect_err("the source stalls well past its deadline");
+        .run_command("hello.stall")
+        .expect_err("the command stalls well past its deadline");
 
     let later = plugin.run_command("hello.hi");
 

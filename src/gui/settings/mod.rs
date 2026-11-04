@@ -255,6 +255,12 @@ impl ProfileDraft {
                 draft.icon = icon;
                 draft
             }
+            ProfileKind::Plugin { .. } => Self {
+                kind: ProfileDraftKind::Local,
+                name: profile.name.clone(),
+                icon,
+                ..Self::default()
+            },
         }
     }
 

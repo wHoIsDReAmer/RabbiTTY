@@ -55,6 +55,13 @@ pub fn ssh() -> ShellIcon {
     }
 }
 
+pub fn plugin() -> ShellIcon {
+    ShellIcon {
+        handle: UI_PLUGIN.clone(),
+        color: Color::from_rgb8(0xB3, 0x8B, 0xF2),
+    }
+}
+
 pub fn default_shell_name() -> String {
     let shell = std::env::var("SHELL").unwrap_or_default();
     std::path::Path::new(&shell)
@@ -71,6 +78,7 @@ pub fn for_profile(profile: &crate::gui::tab::Profile) -> ShellIcon {
     }
     match &profile.kind {
         ProfileKind::Ssh(_) => ssh(),
+        ProfileKind::Plugin { .. } => plugin(),
         ProfileKind::Local { program: None, .. } => by_name(&default_shell_name()),
         ProfileKind::Local { .. } => by_name(&profile.name),
     }

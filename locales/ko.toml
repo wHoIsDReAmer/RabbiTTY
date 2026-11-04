@@ -32,6 +32,7 @@ recent_sessions = "최근 세션"
 default_shell = "기본 셸"
 shell = "셸"
 ssh = "SSH"
+plugin = "플러그인"
 
 [settings.categories]
 appearance = "모양"
@@ -73,9 +74,10 @@ capability.read_screen = "터미널 화면 내용 읽기"
 capability.notify = "알림 보내기"
 capability.network = "네트워크 접근"
 capability.local_ipc = "이 컴퓨터의 다른 앱과 통신"
-capability.control = "탭 및 분할 열기(프로그램 실행 포함), 포커스, 닫기"
+capability.control = "탭 및 분할 열기(프로그램 실행·플러그인이 직접 다루는 탭 포함), 포커스, 닫기"
 capability.filesystem = "전용 데이터 폴더"
 capability.open_url = "브라우저로 링크 열기"
+capability.clipboard = "클립보드에 텍스트 복사"
 
 [settings.language]
 section_title = "언어"

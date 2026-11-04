@@ -1,4 +1,7 @@
-use super::{LaunchSpec, OutputEvent, SessionError, default_working_directory, send_output_event};
+use super::{
+    LaunchSpec, OutputEvent, PluginInput, SessionError, default_working_directory,
+    send_output_event,
+};
 use crate::ssh::SshSessionHandle;
 use alacritty_terminal::event::{OnResize, WindowSize};
 use alacritty_terminal::tty::{self, Options, Shell};
@@ -513,6 +516,56 @@ impl Transport for SshTransport {
 
     fn ssh_handle(&self) -> Option<&SshSessionHandle> {
         Some(&self.handle)
+    }
+}
+
+pub(super) struct PluginTransport {
+    input: mpsc::UnboundedSender<PluginInput>,
+    writer: Arc<Mutex<Box<dyn Write + Send>>>,
+}
+
+struct PluginWriter {
+    input: mpsc::UnboundedSender<PluginInput>,
+}
+
+impl Write for PluginWriter {
+    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+        self.input
+            .unbounded_send(PluginInput::Data(buf.to_vec()))
+            .map_err(|_| {
+                std::io::Error::new(std::io::ErrorKind::BrokenPipe, "plugin tab closed")
+            })?;
+        Ok(buf.len())
+    }
+
+    fn flush(&mut self) -> std::io::Result<()> {
+        Ok(())
+    }
+}
+
+impl PluginTransport {
+    pub(super) fn spawn(input: mpsc::UnboundedSender<PluginInput>, rows: u16, cols: u16) -> Self {
+        let _ = input.unbounded_send(PluginInput::Resize { rows, cols });
+        let writer: Box<dyn Write + Send> = Box::new(PluginWriter {
+            input: input.clone(),
+        });
+        Self {
+            input,
+            writer: Arc::new(Mutex::new(writer)),
+        }
+    }
+}
+
+impl Transport for PluginTransport {
+    fn writer(&self) -> Arc<Mutex<Box<dyn Write + Send>>> {
+        Arc::clone(&self.writer)
+    }
+
+    fn resize(&mut self, rows: u16, cols: u16) -> Result<(), SessionError> {
+        let _ = self
+            .input
+            .unbounded_send(PluginInput::Resize { rows, cols });
+        Ok(())
     }
 }
 

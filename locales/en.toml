@@ -32,6 +32,7 @@ recent_sessions = "Recent Sessions"
 default_shell = "Default Shell"
 shell = "Shell"
 ssh = "SSH"
+plugin = "Plugin"
 
 [settings.categories]
 appearance = "Appearance"
@@ -73,9 +74,10 @@ capability.read_screen = "Read what is on the terminal screen"
 capability.notify = "Send notifications"
 capability.network = "Network access"
 capability.local_ipc = "Talk to apps on this computer"
-capability.control = "Open, focus and close tabs and panes"
+capability.control = "Open, focus and close tabs and panes, including tabs the plugin runs itself"
 capability.filesystem = "Its own data folder"
 capability.open_url = "Open links in your browser"
+capability.clipboard = "Copy text to your clipboard"
 
 [settings.language]
 section_title = "Language"

@@ -36,10 +36,6 @@ pub trait Plugin {
         let _ = id;
         Ok(Vec::new())
     }
-
-    fn list_profiles(&mut self) -> Result<Vec<PluginProfile>, String> {
-        Ok(Vec::new())
-    }
 }
 
 #[macro_export]
@@ -102,13 +98,6 @@ macro_rules! export_plugin {
                 ) -> ::core::result::Result<::std::vec::Vec<$crate::Action>, ::std::string::String>
                 {
                     with_instance(|plugin| <$ty as $crate::Plugin>::run_command(plugin, &id))
-                }
-
-                fn list_profiles() -> ::core::result::Result<
-                    ::std::vec::Vec<$crate::PluginProfile>,
-                    ::std::string::String,
-                > {
-                    with_instance(<$ty as $crate::Plugin>::list_profiles)
                 }
             }
 
