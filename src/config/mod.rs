@@ -75,6 +75,7 @@ pub struct TerminalConfig {
     pub wheel_zoom: bool,
     pub osc52_write: bool,
     pub osc52_read: bool,
+    pub shell_integration: bool,
     pub minimum_contrast: f32,
     pub bell_mode: BellMode,
     pub right_click_action: RightClickAction,
@@ -133,6 +134,7 @@ impl Default for AppConfig {
                 wheel_zoom: DEFAULT_WHEEL_ZOOM,
                 osc52_write: DEFAULT_OSC52_WRITE,
                 osc52_read: DEFAULT_OSC52_READ,
+                shell_integration: DEFAULT_SHELL_INTEGRATION,
                 minimum_contrast: DEFAULT_MINIMUM_CONTRAST,
                 bell_mode: BellMode::default(),
                 right_click_action: RightClickAction::default(),
@@ -275,6 +277,9 @@ impl AppConfig {
             }
             if let Some(enabled) = term.osc52_read {
                 self.terminal.osc52_read = enabled;
+            }
+            if let Some(enabled) = term.shell_integration {
+                self.terminal.shell_integration = enabled;
             }
             if let Some(ratio) = term.minimum_contrast {
                 self.terminal.minimum_contrast = ratio.clamp(1.0, 21.0);

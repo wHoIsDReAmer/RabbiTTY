@@ -401,6 +401,19 @@ fn each_gated_action_needs_exactly_its_own_capability() {
             grown.clone()
         ]
     );
+    let typed = Action::Query(Query::PromptInput(5));
+    assert_eq!(
+        permitted(
+            &[Capability::Notify, Capability::Control],
+            vec![typed.clone()]
+        ),
+        Vec::new(),
+        "what someone is typing at the prompt is screen content"
+    );
+    assert_eq!(
+        permitted(&[Capability::ReadScreen], vec![typed.clone()]),
+        vec![typed]
+    );
     assert_eq!(
         permitted(&[Capability::Notify], all()),
         vec![

@@ -1,4 +1,5 @@
 pub mod history;
+mod shell_integration;
 mod transport;
 
 use iced::futures::channel::mpsc;
@@ -15,6 +16,7 @@ pub struct LaunchSpec {
     pub rows: u16,
     pub cols: u16,
     pub cwd: Option<PathBuf>,
+    pub shell_integration: bool,
 }
 
 /// A terminal session. A thin facade over a [`Transport`] backend (local PTY or
@@ -56,6 +58,11 @@ impl Session {
         tab_id: u64,
         output_tx: mpsc::UnboundedSender<OutputEvent>,
     ) -> Result<Self, SessionError> {
+        let spec = if spec.shell_integration {
+            shell_integration::apply(spec)
+        } else {
+            spec
+        };
         Ok(Self {
             backend: Box::new(LocalPty::spawn(spec, tab_id, output_tx)?),
         })

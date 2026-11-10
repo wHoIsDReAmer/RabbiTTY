@@ -52,6 +52,7 @@ pub struct PaneSpawn {
     pub plugin_input: Option<mpsc::UnboundedSender<crate::session::PluginInput>>,
     pub scrollback_lines: usize,
     pub cwd: Option<PathBuf>,
+    pub shell_integration: bool,
 }
 
 impl Pane {
@@ -66,6 +67,7 @@ impl Pane {
             plugin_input,
             scrollback_lines,
             cwd,
+            shell_integration,
         } = spec;
 
         let size = TerminalSize::new(columns, lines);
@@ -83,7 +85,7 @@ impl Pane {
             (_, Some(input)) => Ok(Session::spawn_plugin(input, lines as u16, columns as u16)),
             (ProfileKind::Plugin { .. }, None) => Err("a plugin tab needs its plugin".to_string()),
             (ProfileKind::Local { program, args }, None) => {
-                let spec = launch_spec(program, args, size, cwd);
+                let spec = launch_spec(program, args, size, cwd, shell_integration);
                 Session::spawn(spec, id, output_tx).map_err(|err| err.to_string())
             }
         };
@@ -228,6 +230,10 @@ impl Pane {
 
     pub fn recent_lines(&self, from: usize, count: usize) -> Vec<String> {
         self.engine.recent_lines(from, count)
+    }
+
+    pub fn prompt_input(&self) -> Option<String> {
+        self.engine.prompt_input()
     }
 
     pub fn clear_selection(&mut self) {
@@ -554,6 +560,7 @@ fn launch_spec(
     args: &[String],
     size: TerminalSize,
     cwd: Option<PathBuf>,
+    shell_integration: bool,
 ) -> LaunchSpec {
     let (program, args) = match program {
         None => resolve_default_shell(),
@@ -569,6 +576,7 @@ fn launch_spec(
         rows: size.lines as u16,
         cols: size.columns as u16,
         cwd,
+        shell_integration,
     }
 }
 

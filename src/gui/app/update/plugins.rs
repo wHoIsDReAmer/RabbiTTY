@@ -3,8 +3,8 @@ use super::super::{App, Message};
 use crate::gui::settings::SettingsCategory;
 use crate::gui::settings::plugins::{PluginPermission, PluginState};
 use crate::plugin::{
-    Action, ConnectTarget, Event, IoClosed, PaneInfo, PluginError, ProfileTarget, Query,
-    ScrollbackChunk, ScrollbackRange, SelectionEvent,
+    Action, ConnectTarget, Event, IoClosed, PaneInfo, PluginError, ProfileTarget, PromptInputEvent,
+    Query, ScrollbackChunk, ScrollbackRange, SelectionEvent,
 };
 use iced::Task;
 
@@ -465,6 +465,12 @@ impl App {
                     .pane_by_id(pane)
                     .and_then(|target| target.selected_text())
                     .unwrap_or_default(),
+            }),
+            Query::PromptInput(pane) => Event::PromptInput(PromptInputEvent {
+                pane,
+                text: self
+                    .pane_by_id(pane)
+                    .and_then(|target| target.prompt_input()),
             }),
         }
     }

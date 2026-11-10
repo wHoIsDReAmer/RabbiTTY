@@ -33,6 +33,7 @@ Answers arrive as events, keyed by the id the plugin chose:
 | `query(panes)` | `panes(list<pane-info>)` |
 | `query(scrollback(range))` | `scrollback(chunk)` — `from` counts lines upward from the bottom of the grid (0 = newest line, viewport included), `count` lines ending there, capped at 10000; `lines` are top-to-bottom and `from` is echoed |
 | `query(selection(pane))` | `selection(selection-event)` |
+| `query(prompt-input(pane))` | `prompt-input(prompt-input-event)` — what is typed at the shell prompt, from the end of the prompt to the cursor, so a right prompt or a suggestion drawn past the cursor is left out; `none` when the shell does not mark its prompt, while a command runs, or on the alternate screen |
 | `connect(request)` | `connected(id)`, then `data(io-frame)` per read, `closed(io-closed)` at EOF or on error — a failed connect sends `closed` with a reason and no `connected` |
 | `open-tab(plugin(key))`, or the user picking a `plugin(key)` profile | `profile-opened(key)` |
 
@@ -52,12 +53,16 @@ a `plugin(key)` target is how a plugin offers these tabs in the new-tab picker:
 picking it sends `profile-opened(key)`, and the plugin answers with the
 `connect`.
 
-`command-finished` arrives when the shell emits OSC 133 `D` (shell integration
-must be installed in the shell for this). It carries the exit code and two
-`scrollback-range`s — the typed command (`input`, starting at `input-col`) and
-its output — but no text: fetch either with `query(scrollback)` in the same
-dispatch, since ranges are measured from the bottom of the grid at delivery
-time and shift as new output arrives.
+`command-finished` arrives when the shell emits OSC 133 `D`, and
+`prompt-input` needs the OSC 133 `B` mark at the end of the prompt. Rabbitty
+adds these marks to zsh and bash itself (Settings → Terminal, on by default,
+for new tabs): it loads the user's own startup files first and hooks in after
+them. bash needs 4.4 or later for `command-finished`; older bash, and other
+shells, only get what they emit on their own. `command-finished` carries the
+exit code and two `scrollback-range`s — the typed command (`input`, starting at
+`input-col`) and its output — but no text: fetch either with
+`query(scrollback)` in the same dispatch, since ranges are measured from the
+bottom of the grid at delivery time and shift as new output arrives.
 
 Terminal output is **not** streamed to you. Declare `output-pattern` records
 instead; the host matches every line natively and calls `on-event` only on a hit.
@@ -77,7 +82,7 @@ running anything else, then enforces the grant when executing actions:
 | Capability | Gates |
 |---|---|
 | `read-config` | The `read-config` import — ungranted returns `none` |
-| `read-screen` | `query(scrollback)` and `query(selection)` — ungranted is dropped, so no answer ever arrives |
+| `read-screen` | `query(scrollback)`, `query(selection)` and `query(prompt-input)` — ungranted is dropped, so no answer ever arrives |
 | `notify` | `notify` and `show-text` — ungranted is dropped |
 | `open-url`, `write-pty` | The action of the same name — ungranted is dropped |
 | `control` | `open-tab`, `focus-pane`, `close-pane`, `connect(tab)` |

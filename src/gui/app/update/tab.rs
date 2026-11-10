@@ -134,6 +134,7 @@ impl App {
             plugin_input: None,
             scrollback_lines: self.config.terminal.scrollback_lines,
             cwd,
+            shell_integration: self.config.terminal.shell_integration,
         });
         if let Some(tab) = self.tabs.get_mut(self.active_tab) {
             tab.split(axis, pane);
@@ -264,6 +265,7 @@ impl App {
             plugin_input,
             scrollback_lines: self.config.terminal.scrollback_lines,
             cwd: None,
+            shell_integration: self.config.terminal.shell_integration,
         });
         self.tabs
             .push(crate::gui::tab::TerminalTab::new(tab_id, pane));

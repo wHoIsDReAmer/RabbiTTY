@@ -413,6 +413,10 @@ impl App {
                 self.settings_draft.osc52_read = enabled;
                 return self.apply_settings(true);
             }
+            SettingsMessage::ShellIntegrationToggled(enabled) => {
+                self.settings_draft.shell_integration = enabled;
+                return self.apply_settings(true);
+            }
             SettingsMessage::WheelZoomToggled(enabled) => {
                 self.settings_draft.wheel_zoom = enabled;
                 return self.apply_settings(true);
