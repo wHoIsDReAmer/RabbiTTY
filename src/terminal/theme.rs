@@ -122,6 +122,9 @@ pub fn find_preset(name: &str) -> Option<&'static ColorPreset> {
 }
 
 fn load_custom_presets() -> Vec<ColorPreset> {
+    if cfg!(test) {
+        return vec![];
+    }
     let Some(themes_dir) = dirs::config_dir().map(|d| d.join("rabbitty").join("themes")) else {
         return vec![];
     };

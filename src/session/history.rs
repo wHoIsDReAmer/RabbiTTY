@@ -57,6 +57,9 @@ impl SessionHistory {
 }
 
 fn history_path() -> Option<PathBuf> {
+    if cfg!(test) {
+        return None;
+    }
     Some(
         dirs::config_dir()?
             .join("rabbitty")
