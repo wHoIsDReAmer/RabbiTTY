@@ -130,6 +130,11 @@ interface types {
         text: string,
     }
 
+    record prompt-input-event {
+        pane: u64,
+        text: option<string>,
+    }
+
     record menu-event {
         item: string,
         pane: u64,
@@ -203,6 +208,7 @@ interface types {
         tab-opened(u64),
         profile-opened(string),
         resized(io-size),
+        prompt-input(prompt-input-event),
     }
 
     record pane-write {
@@ -236,6 +242,7 @@ interface types {
         panes,
         scrollback(scrollback-range),
         selection(u64),
+        prompt-input(u64),
     }
 
     record tcp-target {

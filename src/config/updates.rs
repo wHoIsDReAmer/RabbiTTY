@@ -37,6 +37,7 @@ pub struct AppConfigUpdates {
     pub terminal_wheel_zoom: Option<bool>,
     pub terminal_osc52_write: Option<bool>,
     pub terminal_osc52_read: Option<bool>,
+    pub terminal_shell_integration: Option<bool>,
     pub terminal_bell_mode: Option<BellMode>,
     pub terminal_right_click_action: Option<RightClickAction>,
 }
@@ -111,6 +112,9 @@ impl AppConfig {
         }
         if let Some(enabled) = updates.terminal_osc52_read {
             self.terminal.osc52_read = enabled;
+        }
+        if let Some(enabled) = updates.terminal_shell_integration {
+            self.terminal.shell_integration = enabled;
         }
         if let Some(ratio) = updates.terminal_minimum_contrast {
             self.terminal.minimum_contrast = ratio.clamp(1.0, 21.0);

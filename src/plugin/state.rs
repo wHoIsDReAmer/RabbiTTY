@@ -53,7 +53,9 @@ pub(super) fn required_capability(action: &Action) -> Option<Capability> {
             ConnectTarget::Local(_) => Capability::LocalIpc,
             ConnectTarget::Tab(_) => Capability::Control,
         }),
-        Action::Query(Query::Scrollback(_) | Query::Selection(_)) => Some(Capability::ReadScreen),
+        Action::Query(Query::Scrollback(_) | Query::Selection(_) | Query::PromptInput(_)) => {
+            Some(Capability::ReadScreen)
+        }
         Action::SetClipboard(_) => Some(Capability::Clipboard),
         Action::SetStatus(_)
         | Action::Schedule(_)

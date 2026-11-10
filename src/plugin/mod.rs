@@ -15,9 +15,9 @@ wasmtime::component::bindgen!({
 
 pub(crate) use self::rabbitty::plugin::types::{
     Capability, CommandEvent, ConnectTarget, CwdEvent, IoClosed, IoFrame, IoSize, MatchEvent,
-    MenuContext, MenuEvent, MenuItem, OutputPattern, PaneInfo, PluginProfile, ProfileTarget, Query,
-    ScrollbackChunk, ScrollbackRange, SelectionEvent, SettingEvent, SettingField, SettingKind,
-    StatusItem, TcpTarget, TextPanel, Timer, TitleEvent,
+    MenuContext, MenuEvent, MenuItem, OutputPattern, PaneInfo, PluginProfile, ProfileTarget,
+    PromptInputEvent, Query, ScrollbackChunk, ScrollbackRange, SelectionEvent, SettingEvent,
+    SettingField, SettingKind, StatusItem, TcpTarget, TextPanel, Timer, TitleEvent,
 };
 pub use host::{PLUGIN_ABI_VERSION, PluginError, PluginHost};
 pub use lines::LineReader;

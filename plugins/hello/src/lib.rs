@@ -251,7 +251,8 @@ impl Plugin for HelloPlugin {
             | Event::Closed(_)
             | Event::TabOpened(_)
             | Event::ProfileOpened(_)
-            | Event::Resized(_) => Vec::new(),
+            | Event::Resized(_)
+            | Event::PromptInput(_) => Vec::new(),
         }
     }
 

@@ -182,7 +182,13 @@ impl TerminalEngine {
                 self.marks.input = None;
                 self.marks.output = None;
             }
-            Mark::InputStart => self.marks.input = Some((line, cursor.column.0)),
+            Mark::InputStart => {
+                let next = self.next_input_point();
+                self.marks.input = Some((
+                    self.term.grid().history_size() + next.line.0.max(0) as usize,
+                    next.column.0,
+                ));
+            }
             Mark::OutputStart => self.marks.output = Some(line),
             Mark::Finished(exit) => {
                 if let Some(output_start) = self.marks.output.take() {
@@ -377,6 +383,45 @@ impl TerminalEngine {
                     .bounds_to_string(Point::new(line, Column(0)), Point::new(line, last_col))
             })
             .collect()
+    }
+
+    pub fn prompt_input(&self) -> Option<String> {
+        if self.term.mode().contains(TermMode::ALT_SCREEN) || self.marks.output.is_some() {
+            return None;
+        }
+        let (line, column) = self.marks.input?;
+        let grid = self.term.grid();
+        let start = Point::new(
+            Line(line as i32 - grid.history_size() as i32),
+            Column(column),
+        );
+        let next = self.next_input_point();
+        if start.line < grid.topmost_line() || next < start {
+            return None;
+        }
+        if next == start {
+            return Some(String::new());
+        }
+        let end = if next.column.0 > 0 {
+            Point::new(next.line, next.column - 1)
+        } else {
+            Point::new(next.line - 1, grid.last_column())
+        };
+        Some(
+            self.term
+                .bounds_to_string(start, end)
+                .trim_end()
+                .to_string(),
+        )
+    }
+
+    fn next_input_point(&self) -> Point {
+        let cursor = &self.term.grid().cursor;
+        if cursor.input_needs_wrap {
+            Point::new(cursor.point.line + 1, Column(0))
+        } else {
+            cursor.point
+        }
     }
 
     /// Scroll to a relative position (0.0 = top of history, 1.0 = bottom/latest).
@@ -978,6 +1023,59 @@ mod tests {
 
         engine.feed_bytes(b"\x1b[?1049h\x1b]133;C\x07x\r\n\x1b]133;D;0\x07\x1b[?1049l");
         assert!(engine.take_finished_commands().is_empty());
+    }
+
+    #[test]
+    fn prompt_input_is_what_was_typed_after_the_prompt_and_before_the_cursor() {
+        let mut engine = wide_engine(5, 100);
+        engine.feed_bytes(b"\x1b]133;A\x07$ \x1b]133;B\x07");
+        assert_eq!(engine.prompt_input().as_deref(), Some(""));
+
+        engine.feed_bytes(b"find big");
+        engine.feed_bytes(b"\x1b7\x1b[31G[10:42]\x1b8");
+        engine.feed_bytes(b"gest files\x1b[10D");
+
+        assert_eq!(
+            engine.prompt_input().as_deref(),
+            Some("find big"),
+            "a right prompt and suggestion text past the cursor are not input"
+        );
+    }
+
+    #[test]
+    fn prompt_input_spans_wrapped_rows_and_starts_below_a_prompt_that_fills_the_row() {
+        let mut engine = TerminalEngine::new(
+            TerminalSize::new(10, 4),
+            100,
+            Arc::new(Mutex::new(Box::new(std::io::sink()))),
+            TerminalTheme::default(),
+        );
+        engine.feed_bytes(b"\x1b]133;A\x070123456789\x1b]133;B\x07");
+        assert_eq!(engine.prompt_input().as_deref(), Some(""));
+
+        engine.feed_bytes("큰 파일 찾기".as_bytes());
+
+        assert_eq!(engine.prompt_input().as_deref(), Some("큰 파일 찾기"));
+    }
+
+    #[test]
+    fn there_is_no_prompt_input_without_a_marked_prompt_or_while_a_command_runs() {
+        let mut engine = wide_engine(5, 100);
+        engine.feed_bytes(b"$ typed");
+        assert_eq!(engine.prompt_input(), None, "no shell integration");
+
+        engine.feed_bytes(b"\r\n\x1b]133;A\x07$ \x1b]133;B\x07sleep 9\r\n\x1b]133;C\x07");
+        assert_eq!(engine.prompt_input(), None, "a command is running");
+
+        engine.feed_bytes(b"\x1b]133;D;0\x07\x1b]133;A\x07$ \x1b]133;B\x07ls\x1b[?1049h");
+        assert_eq!(
+            engine.prompt_input(),
+            None,
+            "a full-screen program owns the screen"
+        );
+
+        engine.feed_bytes(b"\x1b[?1049l");
+        assert_eq!(engine.prompt_input().as_deref(), Some("ls"));
     }
 
     #[test]

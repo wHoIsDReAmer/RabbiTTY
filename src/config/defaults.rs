@@ -120,6 +120,8 @@ pub const DEFAULT_OSC52_WRITE: bool = true;
 /// for, as in xterm.
 pub const DEFAULT_OSC52_READ: bool = false;
 
+pub const DEFAULT_SHELL_INTEGRATION: bool = true;
+
 /// 1.0 disables it, as in iTerm2.
 pub const DEFAULT_MINIMUM_CONTRAST: f32 = 1.0;
 pub const DEFAULT_ANIMATIONS_ENABLED: bool = true;

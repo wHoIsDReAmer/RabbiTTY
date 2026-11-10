@@ -166,6 +166,7 @@ pub enum SettingsMessage {
     WheelZoomToggled(bool),
     Osc52WriteToggled(bool),
     Osc52ReadToggled(bool),
+    ShellIntegrationToggled(bool),
     BoldIsBrightToggled(bool),
     BellModeSelected(crate::config::BellMode),
     RightClickActionSelected(crate::config::RightClickAction),
