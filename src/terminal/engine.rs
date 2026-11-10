@@ -78,12 +78,17 @@ struct Command {
 }
 type ColorFormatter = Arc<dyn Fn(Rgb) -> String + Send + Sync>;
 
-/// OSC work the pty thread cannot finish on its own.
+enum Reply {
+    Text(String),
+    Color(usize, ColorFormatter),
+}
+
+/// Work the pty thread cannot finish on its own.
 #[derive(Default)]
 pub(super) struct OscPending {
     clipboard_write: Option<String>,
     clipboard_read: Option<ClipboardFormatter>,
-    colors: Vec<(usize, ColorFormatter)>,
+    replies: Vec<Reply>,
 }
 
 impl TerminalEngine {
@@ -106,7 +111,6 @@ impl TerminalEngine {
             config,
             &size,
             PtyEventProxy {
-                writer: Arc::clone(&writer),
                 size,
                 title: Arc::clone(&title),
                 bell_pending: Arc::clone(&bell_pending),
@@ -167,7 +171,7 @@ impl TerminalEngine {
             }
         }
         self.processor.advance(&mut self.term, &bytes[start..]);
-        self.answer_color_requests();
+        self.send_replies();
         self.cache_dirty.set(true);
     }
 
@@ -240,20 +244,23 @@ impl TerminalEngine {
     }
 
     /// Answered from the live palette, so an OSC 4 override wins over the theme.
-    fn answer_color_requests(&mut self) {
+    fn send_replies(&mut self) {
         let pending = match self.osc.lock() {
-            Ok(mut guard) if !guard.colors.is_empty() => std::mem::take(&mut guard.colors),
+            Ok(mut guard) if !guard.replies.is_empty() => std::mem::take(&mut guard.replies),
             _ => return,
         };
         let colors = self.term.colors();
-        let replies: Vec<String> = pending
-            .into_iter()
-            .map(|(index, format)| format(self.color_at(colors, index)))
-            .collect();
-        if let Ok(mut guard) = self.writer.lock() {
-            for reply in replies {
-                let _ = guard.write_all(reply.as_bytes());
+        let mut answer = String::new();
+        for reply in pending {
+            match reply {
+                Reply::Text(text) => answer.push_str(&text),
+                Reply::Color(index, format) => {
+                    answer.push_str(&format(self.color_at(colors, index)));
+                }
             }
+        }
+        if let Ok(mut guard) = self.writer.lock() {
+            let _ = guard.write_all(answer.as_bytes());
             let _ = guard.flush();
         }
     }
@@ -629,11 +636,18 @@ impl TerminalEngine {
 
 #[derive(Clone)]
 struct PtyEventProxy {
-    writer: Arc<Mutex<Box<dyn Write + Send>>>,
     size: TerminalSize,
     title: Arc<Mutex<Option<TitleChange>>>,
     bell_pending: Arc<AtomicBool>,
     osc: Arc<Mutex<OscPending>>,
+}
+
+impl PtyEventProxy {
+    fn reply(&self, reply: Reply) {
+        if let Ok(mut guard) = self.osc.lock() {
+            guard.replies.push(reply);
+        }
+    }
 }
 
 fn composed(lead: char, trailing: &[char]) -> char {
@@ -650,12 +664,7 @@ fn composed(lead: char, trailing: &[char]) -> char {
 impl EventListener for PtyEventProxy {
     fn send_event(&self, event: Event) {
         match event {
-            Event::PtyWrite(text) => {
-                if let Ok(mut guard) = self.writer.lock() {
-                    let _ = guard.write_all(text.as_bytes());
-                    let _ = guard.flush();
-                }
-            }
+            Event::PtyWrite(text) => self.reply(Reply::Text(text)),
             Event::TextAreaSizeRequest(formatter) => {
                 let ws = WindowSize {
                     num_lines: self.size.lines as u16,
@@ -663,11 +672,7 @@ impl EventListener for PtyEventProxy {
                     cell_width: 1,
                     cell_height: 1,
                 };
-                if let Ok(mut guard) = self.writer.lock() {
-                    let text = formatter(ws);
-                    let _ = guard.write_all(text.as_bytes());
-                    let _ = guard.flush();
-                }
+                self.reply(Reply::Text(formatter(ws)));
             }
             Event::Title(new_title) => {
                 if let Ok(mut guard) = self.title.lock() {
@@ -693,11 +698,7 @@ impl EventListener for PtyEventProxy {
                     guard.clipboard_read = Some(formatter);
                 }
             }
-            Event::ColorRequest(index, formatter) => {
-                if let Ok(mut guard) = self.osc.lock() {
-                    guard.colors.push((index, formatter));
-                }
-            }
+            Event::ColorRequest(index, formatter) => self.reply(Reply::Color(index, formatter)),
             _ => {}
         }
     }
@@ -778,6 +779,25 @@ mod tests {
         let reply = answered(&replies);
         assert!(reply.contains("10;"), "no foreground reply: {reply:?}");
         assert!(reply.contains("11;"), "no background reply: {reply:?}");
+    }
+
+    #[test]
+    fn replies_go_out_in_the_order_the_queries_came_in() {
+        let (mut engine, replies) = engine_with_replies();
+        engine.feed_bytes(b"\x1b]11;?\x1b\\\x1b[6n");
+        let reply = answered(&replies);
+        assert!(
+            reply.starts_with("\x1b]11;rgb:") && reply.ends_with("\x1b\\\x1b[1;1R"),
+            "a cursor report that overtakes the colour reads as \"no colour support\": {reply:?}"
+        );
+
+        let (mut engine, replies) = engine_with_replies();
+        engine.feed_bytes(b"\x1b[6n\x1b]11;?\x07");
+        let reply = answered(&replies);
+        assert!(
+            reply.starts_with("\x1b[1;1R\x1b]11;rgb:"),
+            "the cursor was asked for first: {reply:?}"
+        );
     }
 
     #[test]
