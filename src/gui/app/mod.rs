@@ -433,8 +433,12 @@ fn spawn_config_save_worker() -> std_mpsc::Sender<AppConfig> {
 
 impl App {
     pub fn new(config: AppConfig) -> Self {
-        let palette = crate::gui::theme::Palette::from_theme(&config.theme);
         let plugins = load_plugins(&config);
+        Self::with_plugins(config, plugins)
+    }
+
+    fn with_plugins(config: AppConfig, plugins: Option<crate::plugin::PluginRegistry>) -> Self {
+        let palette = crate::gui::theme::Palette::from_theme(&config.theme);
         let settings_draft = SettingsDraft::from_config(&config);
         let all_font_options = build_all_font_options(config.terminal.font_selection.as_deref());
         let show_all_fonts = false;
@@ -1408,9 +1412,13 @@ mod plugin_wiring_tests {
     fn a_missing_plugin_directory_is_not_an_error() {
         let app = App::new(AppConfig::default());
 
+        let registry = app
+            .plugins
+            .as_ref()
+            .expect("an absent plugin directory should still yield a live registry");
         assert!(
-            app.plugins.is_some(),
-            "an absent plugin directory should still yield a live registry"
+            !registry.root().exists(),
+            "a test must never be handed a plugin directory that exists"
         );
     }
 
@@ -1435,7 +1443,7 @@ mod plugin_wiring_tests {
             .find(|path| path.exists())
     }
 
-    fn app_with_hello() -> Option<(App, std::path::PathBuf)> {
+    pub(super) fn app_with_hello(config: AppConfig) -> Option<(App, std::path::PathBuf)> {
         let component = hello_component()?;
         let root = std::env::temp_dir().join(format!(
             "rabbitty-app-plugin-{}-{:?}",
@@ -1448,12 +1456,9 @@ mod plugin_wiring_tests {
         std::fs::copy(component, dir.join("plugin.wasm")).expect("copy component");
 
         let host = crate::plugin::PluginHost::with_root(root.clone()).expect("engine");
-        let mut registry =
-            crate::plugin::PluginRegistry::new(host, crate::config::plugins::PluginsConfig::new());
+        let mut registry = crate::plugin::PluginRegistry::new(host, config.plugins.clone());
         registry.load_all();
-        let mut app = App::new(AppConfig::default());
-        app.plugins = Some(registry);
-        Some((app, root))
+        Some((App::with_plugins(config, Some(registry)), root))
     }
 
     fn status_text(app: &App, id: &str) -> Option<String> {
@@ -1467,7 +1472,7 @@ mod plugin_wiring_tests {
 
     #[test]
     fn a_query_is_answered_as_an_event_in_the_same_dispatch() {
-        let Some((mut app, root)) = app_with_hello() else {
+        let Some((mut app, root)) = app_with_hello(AppConfig::default()) else {
             return;
         };
 
@@ -1487,7 +1492,7 @@ mod plugin_wiring_tests {
 
     #[test]
     fn a_shell_integration_mark_reaches_the_plugin_as_a_finished_command() {
-        let Some((mut app, root)) = app_with_hello() else {
+        let Some((mut app, root)) = app_with_hello(AppConfig::default()) else {
             return;
         };
         let (tx, _rx) = mpsc::unbounded();
@@ -1510,6 +1515,7 @@ mod plugin_wiring_tests {
 
 #[cfg(test)]
 mod command_palette_tests {
+    use super::plugin_wiring_tests::app_with_hello;
     use super::*;
     use crate::config::ShortcutId;
     use crate::gui::app::command_palette::CommandTarget;
@@ -1639,12 +1645,6 @@ mod command_palette_tests {
         );
     }
 
-    fn has_plugin_commands(app: &App) -> bool {
-        app.plugins
-            .as_ref()
-            .is_some_and(|registry| !registry.contributed_commands().is_empty())
-    }
-
     #[test]
     fn a_plugin_supplied_homepage_must_be_http() {
         use crate::terminal::url::is_openable;
@@ -1656,16 +1656,16 @@ mod command_palette_tests {
 
     #[test]
     fn a_declared_default_key_is_adopted_when_it_is_free() {
-        let app = App::new(AppConfig::default());
-        if !has_plugin_commands(&app) {
+        let Some((app, root)) = app_with_hello(AppConfig::default()) else {
             return;
-        }
+        };
 
         assert_eq!(
             app.config.shortcuts.plugin_binding("hello", "hello.hi"),
             Some("Ctrl+Shift+H"),
             "the plugin asked for a free key, so it should hold it"
         );
+        let _ = std::fs::remove_dir_all(root);
     }
 
     #[test]
@@ -1675,10 +1675,9 @@ mod command_palette_tests {
             .shortcuts
             .set(ShortcutId::NewTab, "Ctrl+Shift+H".to_string());
 
-        let app = App::new(config);
-        if !has_plugin_commands(&app) {
+        let Some((app, root)) = app_with_hello(config) else {
             return;
-        }
+        };
 
         assert_eq!(
             app.config.shortcuts.plugin_binding("hello", "hello.hi"),
@@ -1690,6 +1689,7 @@ mod command_palette_tests {
             "Ctrl+Shift+H",
             "the builtin must keep its binding"
         );
+        let _ = std::fs::remove_dir_all(root);
     }
 
     #[test]
@@ -1699,14 +1699,14 @@ mod command_palette_tests {
             .shortcuts
             .set_plugin_binding("hello", "hello.hi", "Ctrl+Alt+J".to_string());
 
-        let app = App::new(config);
-        if !has_plugin_commands(&app) {
+        let Some((app, root)) = app_with_hello(config) else {
             return;
-        }
+        };
 
         assert_eq!(
             app.config.shortcuts.plugin_binding("hello", "hello.hi"),
             Some("Ctrl+Alt+J")
         );
+        let _ = std::fs::remove_dir_all(root);
     }
 }

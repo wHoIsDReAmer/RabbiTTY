@@ -281,6 +281,13 @@ pub(super) fn abi_version_of(interface: &str) -> Option<&str> {
 /// beside `config.toml`. Only Linux differs — on macOS and Windows both paths
 /// resolve to the same directory.
 fn default_root() -> wasmtime::Result<PathBuf> {
+    if cfg!(test) {
+        return Ok(std::env::temp_dir().join(format!(
+            "rabbitty-no-plugins-{}-{:?}",
+            std::process::id(),
+            std::thread::current().id()
+        )));
+    }
     dirs::data_dir()
         .map(|dir| dir.join("rabbitty").join("plugins"))
         .ok_or_else(|| wasmtime::Error::msg("no data directory"))
