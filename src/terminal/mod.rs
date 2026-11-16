@@ -1,11 +1,13 @@
 mod engine;
 pub mod fallback;
 pub mod font;
+pub mod graphics;
 pub mod osc;
 pub mod theme;
 pub mod url;
 
 pub use engine::{ClipboardFormatter, CommandFinished, LineSpan, TerminalEngine, TitleChange};
+pub use graphics::ImageSlice;
 pub use theme::TerminalTheme;
 
 use alacritty_terminal::grid::Dimensions;

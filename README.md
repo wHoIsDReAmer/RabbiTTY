@@ -44,6 +44,7 @@ The Unix script installs the binary to `~/.local/bin/rabbitty`. On Linux it also
 - [x] i18n
 - [x] Easy file upload & download with SFTP
 - [x] Split terminal in single tab
+- [x] Inline images (kitty graphics protocol)
 
 ## Custom Themes
 

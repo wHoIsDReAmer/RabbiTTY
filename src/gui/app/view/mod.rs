@@ -261,6 +261,7 @@ impl App {
                         scroll_history: pane_history,
                         cells,
                         cells_generation,
+                        images: pane.render_images(),
                         grid_size: pane.size(),
                         selection: pane.selection,
                         display_offset: pane_offset,
