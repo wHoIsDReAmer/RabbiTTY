@@ -1,3 +1,6 @@
+mod images;
+
+use super::graphics::{Graphics, IMAGE_CELL, ImageSlice};
 use super::osc::{Mark, Notification, Osc, OscDecoder, OscScanner, Step};
 use super::theme::{enforce_min_contrast, resolve_rgb, rgb_to_rgba};
 use super::{CellVisual, TerminalSize, TerminalTheme};
@@ -13,6 +16,7 @@ use alacritty_terminal::term::{
 use alacritty_terminal::vte::ansi::{
     CursorShape, Handler, NamedColor, NamedPrivateMode, PrivateMode, Processor, Rgb,
 };
+use images::ImageRun;
 use std::cell::{Cell, RefCell};
 use std::io::Write;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -25,12 +29,16 @@ pub struct TerminalEngine {
     scanner: OscScanner,
     decoder: OscDecoder,
     marks: ShellMarks,
+    graphics: Graphics,
+    was_alt_screen: bool,
+    seen_history: usize,
     reported_cwd: Option<String>,
     notifications: Vec<Notification>,
     size: TerminalSize,
     cell_pixels: (u16, u16),
     theme: TerminalTheme,
     cells_cache: RefCell<Arc<Vec<CellVisual>>>,
+    images_cache: RefCell<Arc<Vec<ImageSlice>>>,
     cache_dirty: Cell<bool>,
     cache_size: Cell<TerminalSize>,
     /// Damage detection keys on this: a rebuild reuses the allocation in place.
@@ -80,6 +88,9 @@ struct Command {
 type ColorFormatter = Arc<dyn Fn(Rgb) -> String + Send + Sync>;
 type TextAreaFormatter = Arc<dyn Fn(WindowSize) -> String + Send + Sync>;
 
+const CORE_DEVICE_ATTRIBUTES: &str = "\x1b[?6c";
+const DEVICE_ATTRIBUTES: &str = "\x1b[?62;22c";
+
 enum Reply {
     Text(String),
     Color(usize, ColorFormatter),
@@ -126,12 +137,16 @@ impl TerminalEngine {
             scanner: OscScanner::default(),
             decoder: OscDecoder::default(),
             marks: ShellMarks::default(),
+            graphics: Graphics::default(),
+            was_alt_screen: false,
+            seen_history: 0,
             reported_cwd: None,
             notifications: Vec::new(),
             size,
             cell_pixels: (1, 1),
             theme,
             cells_cache: RefCell::new(Arc::new(Vec::new())),
+            images_cache: RefCell::new(Arc::new(Vec::new())),
             cache_dirty: Cell::new(true),
             cache_size: Cell::new(size),
             cells_generation: Cell::new(0),
@@ -158,24 +173,35 @@ impl TerminalEngine {
     pub fn feed_bytes(&mut self, bytes: &[u8]) {
         let mut start = 0;
         for (index, &byte) in bytes.iter().enumerate() {
-            if self.scanner.step(byte) != Step::Osc {
-                continue;
-            }
-            match self.decoder.decode(self.scanner.payload()) {
-                Some(Osc::Mark(mark)) => {
+            match self.scanner.step(byte) {
+                Step::Osc => match self.decoder.decode(self.scanner.payload()) {
+                    Some(Osc::Mark(mark)) => {
+                        self.processor
+                            .advance(&mut self.term, &bytes[start..=index]);
+                        start = index + 1;
+                        self.mark(mark);
+                    }
+                    Some(Osc::Cwd(path)) => self.reported_cwd = Some(path),
+                    Some(Osc::Notification(notification)) => self.notifications.push(notification),
+                    None => {}
+                },
+                Step::Graphics => {
                     self.processor
                         .advance(&mut self.term, &bytes[start..=index]);
                     start = index + 1;
-                    self.mark(mark);
+                    self.graphics_command();
                 }
-                Some(Osc::Cwd(path)) => self.reported_cwd = Some(path),
-                Some(Osc::Notification(notification)) => self.notifications.push(notification),
-                None => {}
+                Step::Text | Step::Skipped => {}
             }
         }
         self.processor.advance(&mut self.term, &bytes[start..]);
+        self.release_lost_images();
         self.send_replies();
         self.cache_dirty.set(true);
+    }
+
+    pub fn set_file_access(&mut self, allowed: bool) {
+        self.graphics.set_file_access(allowed);
     }
 
     fn mark(&mut self, mark: Mark) {
@@ -302,6 +328,9 @@ impl TerminalEngine {
     }
 
     pub fn resize(&mut self, new_size: TerminalSize) {
+        if new_size.columns < self.size.columns {
+            self.clip_images(new_size.columns);
+        }
         self.size = new_size;
         self.term.resize(new_size);
         self.cache_dirty.set(true);
@@ -322,13 +351,18 @@ impl TerminalEngine {
     pub fn render_cells_versioned(&self) -> (Arc<Vec<CellVisual>>, u64) {
         if self.cache_dirty.get() || self.cache_size.get() != self.size {
             let mut cache = self.cells_cache.borrow_mut();
-            if let Some(cells) = Arc::get_mut(&mut cache) {
-                self.build_cells_into(cells);
+            let images = if let Some(cells) = Arc::get_mut(&mut cache) {
+                self.build_cells_into(cells)
             } else {
                 let mut cells =
                     Vec::with_capacity(self.size.lines.saturating_mul(self.size.columns));
-                self.build_cells_into(&mut cells);
+                let images = self.build_cells_into(&mut cells);
                 *cache = Arc::new(cells);
+                images
+            };
+            let mut cached_images = self.images_cache.borrow_mut();
+            if !(images.is_empty() && cached_images.is_empty()) {
+                *cached_images = Arc::new(images);
             }
             self.cells_generation.set(self.cells_generation.get() + 1);
             self.cache_dirty.set(false);
@@ -338,6 +372,11 @@ impl TerminalEngine {
             self.cells_cache.borrow().clone(),
             self.cells_generation.get(),
         )
+    }
+
+    pub fn render_images(&self) -> Arc<Vec<ImageSlice>> {
+        let _ = self.render_cells_versioned();
+        self.images_cache.borrow().clone()
     }
 
     pub fn scroll(&mut self, delta: i32) {
@@ -386,7 +425,7 @@ impl TerminalEngine {
             return None;
         }
 
-        let text = self.term.bounds_to_string(start, end);
+        let text = without_images(self.term.bounds_to_string(start, end));
         (!text.is_empty()).then_some(text)
     }
 
@@ -403,8 +442,10 @@ impl TerminalEngine {
         (start..=end)
             .map(|line| {
                 let line = Line(line as i32);
-                self.term
-                    .bounds_to_string(Point::new(line, Column(0)), Point::new(line, last_col))
+                without_images(
+                    self.term
+                        .bounds_to_string(Point::new(line, Column(0)), Point::new(line, last_col)),
+                )
             })
             .collect()
     }
@@ -432,8 +473,7 @@ impl TerminalEngine {
             Point::new(next.line - 1, grid.last_column())
         };
         Some(
-            self.term
-                .bounds_to_string(start, end)
+            without_images(self.term.bounds_to_string(start, end))
                 .trim_end()
                 .to_string(),
         )
@@ -550,7 +590,7 @@ impl TerminalEngine {
         rgb_to_rgba(self.theme.cursor_rgb(), 1.0)
     }
 
-    fn build_cells_into(&self, cells: &mut Vec<CellVisual>) {
+    fn build_cells_into(&self, cells: &mut Vec<CellVisual>) -> Vec<ImageSlice> {
         let RenderableContent {
             display_iter,
             display_offset,
@@ -580,6 +620,8 @@ impl TerminalEngine {
         let idx = |row: usize, col: usize, cols: usize| row * cols + col;
 
         let mut contrast_memo: Vec<((Rgb, Rgb), Rgb)> = Vec::with_capacity(32);
+        let mut images = Vec::new();
+        let mut run: Option<ImageRun> = None;
 
         for indexed in display_iter {
             if let Some(point) = point_to_viewport(display_offset, indexed.point) {
@@ -587,6 +629,15 @@ impl TerminalEngine {
                 let row = point.line;
                 if row < self.size.lines && col < self.size.columns {
                     let slot = &mut cells[idx(row, col, self.size.columns)];
+                    if let Some(next) = ImageRun::at(indexed.cell, row, col) {
+                        slot.col = col;
+                        slot.row = row;
+                        if !run.as_mut().is_some_and(|open| open.absorbs(&next)) {
+                            let done = run.replace(next);
+                            images.extend(done.and_then(|done| self.image_slice(&done)));
+                        }
+                        continue;
+                    }
                     let mut fg_rgb = resolve_rgb(
                         indexed.cell.fg,
                         colors,
@@ -648,6 +699,18 @@ impl TerminalEngine {
                 }
             }
         }
+        if let Some(done) = run {
+            images.extend(self.image_slice(&done));
+        }
+        images
+    }
+}
+
+fn without_images(text: String) -> String {
+    if text.contains(IMAGE_CELL) {
+        text.replace(IMAGE_CELL, "")
+    } else {
+        text
     }
 }
 
@@ -680,6 +743,9 @@ fn composed(lead: char, trailing: &[char]) -> char {
 impl EventListener for PtyEventProxy {
     fn send_event(&self, event: Event) {
         match event {
+            Event::PtyWrite(text) if text == CORE_DEVICE_ATTRIBUTES => {
+                self.reply(Reply::Text(DEVICE_ATTRIBUTES.to_string()))
+            }
             Event::PtyWrite(text) => self.reply(Reply::Text(text)),
             Event::TextAreaSizeRequest(formatter) => self.reply(Reply::TextArea(formatter)),
             Event::Title(new_title) => {

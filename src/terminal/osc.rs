@@ -3,6 +3,8 @@ use std::collections::HashMap;
 use base64::Engine as _;
 
 const MAX_PAYLOAD: usize = 4 * 1024;
+const MAX_GRAPHICS_PAYLOAD: usize = 8 * 1024 * 1024;
+const KEPT_CAPACITY: usize = 64 * 1024;
 
 #[derive(Debug, Default)]
 pub struct OscScanner {
@@ -19,6 +21,9 @@ enum Escape {
     Csi,
     Osc,
     OscEsc,
+    Apc,
+    Graphics,
+    GraphicsEsc,
     Str,
     StrEsc,
 }
@@ -28,6 +33,7 @@ pub enum Step {
     Text,
     Skipped,
     Osc,
+    Graphics,
 }
 
 impl OscScanner {
@@ -45,11 +51,11 @@ impl OscScanner {
                 self.escape = match byte {
                     b'[' => Escape::Csi,
                     b']' => {
-                        self.payload.clear();
-                        self.overflow = false;
+                        self.start_payload();
                         Escape::Osc
                     }
-                    b'P' | b'_' | b'^' | b'X' => Escape::Str,
+                    b'_' => Escape::Apc,
+                    b'P' | b'^' | b'X' => Escape::Str,
                     _ => Escape::None,
                 };
                 Step::Skipped
@@ -63,30 +69,54 @@ impl OscScanner {
             Escape::Osc => match byte {
                 0x07 => {
                     self.escape = Escape::None;
-                    self.finished()
+                    self.finished(Step::Osc)
                 }
                 0x1b => {
                     self.escape = Escape::OscEsc;
                     Step::Skipped
                 }
                 _ => {
-                    if self.payload.len() < MAX_PAYLOAD {
-                        self.payload.push(byte);
-                    } else {
-                        self.overflow = true;
-                    }
+                    self.push(byte, MAX_PAYLOAD);
                     Step::Skipped
                 }
             },
             Escape::OscEsc => {
                 if byte == b'\\' {
                     self.escape = Escape::None;
-                    self.finished()
+                    self.finished(Step::Osc)
                 } else {
                     self.escape = Escape::Esc;
-                    let done = self.finished();
+                    let done = self.finished(Step::Osc);
                     self.step(byte);
                     done
+                }
+            }
+            Escape::Apc => {
+                self.escape = match byte {
+                    b'G' => {
+                        self.start_payload();
+                        Escape::Graphics
+                    }
+                    0x1b => Escape::StrEsc,
+                    _ => Escape::Str,
+                };
+                Step::Skipped
+            }
+            Escape::Graphics => {
+                match byte {
+                    0x1b => self.escape = Escape::GraphicsEsc,
+                    0x18 | 0x1a => self.escape = Escape::None,
+                    _ => self.push(byte, MAX_GRAPHICS_PAYLOAD),
+                }
+                Step::Skipped
+            }
+            Escape::GraphicsEsc => {
+                if byte == b'\\' {
+                    self.escape = Escape::None;
+                    self.finished(Step::Graphics)
+                } else {
+                    self.escape = Escape::Esc;
+                    self.step(byte)
                 }
             }
             Escape::Str => {
@@ -110,12 +140,25 @@ impl OscScanner {
         &self.payload
     }
 
-    fn finished(&self) -> Step {
-        if self.overflow {
-            Step::Skipped
+    fn start_payload(&mut self) {
+        if self.payload.capacity() > KEPT_CAPACITY {
+            self.payload = Vec::new();
         } else {
-            Step::Osc
+            self.payload.clear();
         }
+        self.overflow = false;
+    }
+
+    fn push(&mut self, byte: u8, limit: usize) {
+        if self.payload.len() < limit {
+            self.payload.push(byte);
+        } else {
+            self.overflow = true;
+        }
+    }
+
+    fn finished(&self, step: Step) -> Step {
+        if self.overflow { Step::Skipped } else { step }
     }
 }
 
@@ -437,5 +480,50 @@ mod tests {
             .map(|&byte| scanner.step(byte))
             .collect();
         assert_eq!(steps.iter().filter(|s| **s == Step::Text).count(), 1);
+    }
+
+    fn graphics_and_text(bytes: &[u8]) -> (Vec<Vec<u8>>, String) {
+        let mut scanner = OscScanner::default();
+        let mut commands = Vec::new();
+        let mut text = String::new();
+        for &byte in bytes {
+            match scanner.step(byte) {
+                Step::Graphics => commands.push(scanner.payload().to_vec()),
+                Step::Text => text.push(byte as char),
+                Step::Osc | Step::Skipped => {}
+            }
+        }
+        (commands, text)
+    }
+
+    #[test]
+    fn a_graphics_command_is_captured_whole_and_kept_out_of_the_text() {
+        let (commands, text) = graphics_and_text(b"ab\x1b_Ga=q,i=1;AAAA\x1b\\cd\x1b_Gm=0;\x1b\\");
+
+        assert_eq!(commands, vec![b"a=q,i=1;AAAA".to_vec(), b"m=0;".to_vec()]);
+        assert_eq!(text, "abcd");
+    }
+
+    #[test]
+    fn other_application_commands_and_cut_off_graphics_commands_are_ignored() {
+        let (other, _) = graphics_and_text(b"\x1b_Xa=q;AAAA\x1b\\");
+        let (cancelled, after_cancel) = graphics_and_text(b"\x1b_Ga=q;AA\x18ok");
+        let (interrupted, after_escape) = graphics_and_text(b"\x1b_Ga=q;AA\x1b[1mok\x1b\\");
+
+        assert_eq!(other, Vec::<Vec<u8>>::new());
+        assert_eq!((cancelled, after_cancel.as_str()), (vec![], "ok"));
+        assert_eq!((interrupted, after_escape.as_str()), (vec![], "ok"));
+    }
+
+    #[test]
+    fn a_graphics_command_past_the_size_limit_is_dropped_rather_than_cut_short() {
+        let mut scanner = OscScanner::default();
+        let body = std::iter::repeat_n(b'A', MAX_GRAPHICS_PAYLOAD + 1);
+        let mut dispatched = false;
+        for byte in b"\x1b_G".iter().copied().chain(body).chain(*b"\x1b\\") {
+            dispatched |= scanner.step(byte) == Step::Graphics;
+        }
+
+        assert!(!dispatched);
     }
 }

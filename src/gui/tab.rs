@@ -76,6 +76,7 @@ impl Pane {
         let pty_size = pty_size(size, cell_pixels);
 
         let title = profile.display_name();
+        let runs_here = matches!(profile.kind, ProfileKind::Local { .. }) && plugin_input.is_none();
 
         let spawned = match (&profile.kind, plugin_input) {
             (ProfileKind::Ssh(ssh), _) => {
@@ -105,6 +106,7 @@ impl Pane {
         // changing the setting later applies only to newly created tabs.
         let mut engine = TerminalEngine::new(size, scrollback_lines, writer, theme);
         engine.set_cell_pixels(cell_pixels);
+        engine.set_file_access(runs_here);
 
         Self {
             id,
@@ -193,6 +195,10 @@ impl Pane {
 
     pub fn render_cells_versioned(&self) -> (std::sync::Arc<Vec<CellVisual>>, u64) {
         self.engine.render_cells_versioned()
+    }
+
+    pub fn render_images(&self) -> std::sync::Arc<Vec<crate::terminal::ImageSlice>> {
+        self.engine.render_images()
     }
 
     pub fn set_theme(&mut self, theme: TerminalTheme) {

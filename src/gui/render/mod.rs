@@ -12,9 +12,11 @@ pub const SCROLLBAR_WIDTH: f32 = 8.0;
 
 mod bg;
 mod composite;
+mod images;
 mod text;
 use bg::BackgroundPipeline;
 use composite::CompositePipeline;
+use images::ImagePipeline;
 use text::TextPipelineData;
 
 const SELECTION_BG: [f32; 4] = [0.25, 0.38, 0.60, 1.0];
@@ -26,6 +28,7 @@ pub struct PaneView {
     pub scroll_history: usize,
     pub cells: Arc<Vec<CellVisual>>,
     pub cells_generation: u64,
+    pub images: Arc<Vec<crate::terminal::ImageSlice>>,
     pub grid_size: TerminalSize,
     pub selection: Option<Selection>,
     pub display_offset: usize,
@@ -697,6 +700,7 @@ impl ShaderProgram<Message> for TerminalProgram {
                 Some(PanePrimitive {
                     cells: Arc::clone(&pane.cells),
                     cells_generation: pane.cells_generation,
+                    images: Arc::clone(&pane.images),
                     origin: [inner.x, inner.y],
                     rect: [rect.x, rect.y, rect.width, rect.height],
                     scrollbar,
@@ -749,6 +753,7 @@ impl ShaderProgram<Message> for TerminalProgram {
 #[derive(Debug)]
 pub struct TerminalPipeline {
     bg: BackgroundPipeline,
+    images: ImagePipeline,
     text: TextPipelineData,
     composite: CompositePipeline,
     last_panes: Vec<PaneSignature>,
@@ -763,6 +768,7 @@ impl Pipeline for TerminalPipeline {
     fn new(device: &wgpu::Device, _queue: &wgpu::Queue, format: wgpu::TextureFormat) -> Self {
         Self {
             bg: BackgroundPipeline::new(device, format),
+            images: ImagePipeline::new(device, format),
             text: TextPipelineData::new(device, format),
             composite: CompositePipeline::new(device, format),
             last_panes: Vec::new(),
@@ -794,6 +800,7 @@ struct PaneSignature {
 pub struct PanePrimitive {
     cells: Arc<Vec<CellVisual>>,
     cells_generation: u64,
+    images: Arc<Vec<crate::terminal::ImageSlice>>,
     origin: [f32; 2],
     rect: [f32; 4],
     scrollbar: Option<[f32; 2]>,
@@ -900,6 +907,7 @@ impl Primitive for TerminalPrimitive {
 
         pipeline.text.recycle_atlas();
         pipeline.bg.begin();
+        pipeline.images.begin();
         pipeline.text.begin();
 
         for pane in &self.panes {
@@ -916,6 +924,9 @@ impl Primitive for TerminalPrimitive {
                 pane.link_row,
                 origin,
             );
+            pipeline
+                .images
+                .push_pane(device, queue, &pane.images, cell_size, origin);
             pipeline.text.push_pane(
                 device,
                 queue,
@@ -979,6 +990,7 @@ impl Primitive for TerminalPrimitive {
         }
 
         pipeline.bg.upload(device, queue);
+        pipeline.images.upload(device, queue, view);
         pipeline.text.upload(device, queue);
     }
 
@@ -1035,6 +1047,10 @@ impl Primitive for TerminalPrimitive {
 
             let instance_count = bg_pipeline.instance_count().max(1) as u32;
             offscreen_pass.draw(0..6, 0..instance_count);
+
+            pipeline
+                .images
+                .draw(&mut offscreen_pass, bg_pipeline.quad_buffer());
 
             if text_pipeline.instance_len() > 0 {
                 offscreen_pass.set_pipeline(text_pipeline.pipeline());
