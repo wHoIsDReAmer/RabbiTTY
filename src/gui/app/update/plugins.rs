@@ -392,7 +392,9 @@ impl App {
                     self.after_contributions_change();
                 }
             }
-            Action::SetClipboard(text) => self.plugin_tasks.push(iced::clipboard::write(text)),
+            Action::SetClipboard(text) => {
+                self.plugin_tasks.push(Self::program_clipboard_write(text))
+            }
         }
     }
 

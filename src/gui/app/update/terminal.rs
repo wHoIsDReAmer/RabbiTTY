@@ -7,10 +7,18 @@ use iced::widget::scrollable;
 use iced::{Size, Task};
 
 impl App {
+    pub(super) fn program_clipboard_write(text: String) -> Task<Message> {
+        #[cfg(not(any(target_os = "windows", target_os = "macos")))]
+        if crate::platform::copy_via_data_control(&text) {
+            return Task::none();
+        }
+        iced::clipboard::write(text)
+    }
+
     pub(super) fn take_clipboard_task(&mut self) -> Task<Message> {
         let mut tasks: Vec<Task<Message>> = Vec::new();
         if let Some(text) = self.osc_clipboard_write.take() {
-            tasks.push(iced::clipboard::write(text));
+            tasks.push(Self::program_clipboard_write(text));
         }
         if self.osc_clipboard_read.is_some() {
             tasks.push(
