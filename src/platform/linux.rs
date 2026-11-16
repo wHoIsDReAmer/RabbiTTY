@@ -38,6 +38,17 @@ pub fn apply_style(window: WindowHandle<'_>, display: DisplayHandle<'_>, theme: 
 /// No system bell API without extra dependencies; stay silent.
 pub fn ring_bell() {}
 
+pub fn copy_via_data_control(text: &str) -> bool {
+    use wl_clipboard_rs::copy::{MimeType, Options, Source};
+
+    if cfg!(test) {
+        return false;
+    }
+    Options::new()
+        .copy(Source::Bytes(text.as_bytes().into()), MimeType::Text)
+        .is_ok()
+}
+
 // ── X11 (KWin / picom): _KDE_NET_WM_BLUR_BEHIND_REGION ───────────────
 fn apply_x11_blur(window: u32, enabled: bool) {
     use x11rb::connection::Connection as _;
