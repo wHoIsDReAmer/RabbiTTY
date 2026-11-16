@@ -11,6 +11,9 @@ use std::io::BufReader;
 use std::path::PathBuf;
 
 pub fn config_path() -> Option<PathBuf> {
+    if cfg!(test) {
+        return None;
+    }
     dirs::home_dir().map(|h| h.join(".ssh/config"))
 }
 
