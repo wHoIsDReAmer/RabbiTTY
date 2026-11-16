@@ -1,7 +1,7 @@
 use crate::config::SshProfile;
 use crate::gui::pane::{Axis, Direction, PaneNode, neighbour};
 use crate::gui::sftp::SftpDrawerState;
-use crate::session::{LaunchSpec, OutputEvent, Session, SessionError};
+use crate::session::{LaunchSpec, OutputEvent, PtySize, Session, SessionError};
 use crate::terminal::{
     CellVisual, Selection, TerminalEngine, TerminalSize, TerminalTheme, TitleChange,
 };
@@ -46,6 +46,7 @@ pub struct PaneSpawn {
     pub profile: Profile,
     pub columns: usize,
     pub lines: usize,
+    pub cell_pixels: (u16, u16),
     pub theme: TerminalTheme,
     pub id: u64,
     pub output_tx: mpsc::UnboundedSender<OutputEvent>,
@@ -61,6 +62,7 @@ impl Pane {
             profile,
             columns,
             lines,
+            cell_pixels,
             theme,
             id,
             output_tx,
@@ -71,21 +73,18 @@ impl Pane {
         } = spec;
 
         let size = TerminalSize::new(columns, lines);
+        let pty_size = pty_size(size, cell_pixels);
 
         let title = profile.display_name();
 
         let spawned = match (&profile.kind, plugin_input) {
-            (ProfileKind::Ssh(ssh), _) => Ok(Session::spawn_ssh(
-                ssh.clone(),
-                id,
-                lines as u16,
-                columns as u16,
-                output_tx,
-            )),
+            (ProfileKind::Ssh(ssh), _) => {
+                Ok(Session::spawn_ssh(ssh.clone(), id, pty_size, output_tx))
+            }
             (_, Some(input)) => Ok(Session::spawn_plugin(input, lines as u16, columns as u16)),
             (ProfileKind::Plugin { .. }, None) => Err("a plugin tab needs its plugin".to_string()),
             (ProfileKind::Local { program, args }, None) => {
-                let spec = launch_spec(program, args, size, cwd, shell_integration);
+                let spec = launch_spec(program, args, pty_size, cwd, shell_integration);
                 Session::spawn(spec, id, output_tx).map_err(|err| err.to_string())
             }
         };
@@ -104,7 +103,8 @@ impl Pane {
 
         // scrollback_lines is read from config at tab creation time;
         // changing the setting later applies only to newly created tabs.
-        let engine = TerminalEngine::new(size, scrollback_lines, writer, theme);
+        let mut engine = TerminalEngine::new(size, scrollback_lines, writer, theme);
+        engine.set_cell_pixels(cell_pixels);
 
         Self {
             id,
@@ -201,6 +201,10 @@ impl Pane {
 
     pub fn size(&self) -> TerminalSize {
         self.engine.size()
+    }
+
+    pub fn cell_pixels(&self) -> (u16, u16) {
+        self.engine.cell_pixels()
     }
 
     pub fn scroll(&mut self, delta: i32) {
@@ -313,12 +317,13 @@ impl Pane {
         }
     }
 
-    pub fn resize(&mut self, columns: usize, lines: usize) {
+    pub fn resize(&mut self, columns: usize, lines: usize, cell_pixels: (u16, u16)) {
         let new_size = TerminalSize::new(columns, lines);
         self.engine.resize(new_size);
+        self.engine.set_cell_pixels(cell_pixels);
 
         if let TerminalSession::Active(session) = &mut self.session {
-            let _ = session.resize(lines as u16, columns as u16);
+            let _ = session.resize(pty_size(new_size, cell_pixels));
         }
     }
 
@@ -555,10 +560,19 @@ impl Profile {
     }
 }
 
+fn pty_size(size: TerminalSize, cell_pixels: (u16, u16)) -> PtySize {
+    PtySize {
+        rows: size.lines as u16,
+        cols: size.columns as u16,
+        cell_width: cell_pixels.0,
+        cell_height: cell_pixels.1,
+    }
+}
+
 fn launch_spec(
     program: &Option<String>,
     args: &[String],
-    size: TerminalSize,
+    size: PtySize,
     cwd: Option<PathBuf>,
     shell_integration: bool,
 ) -> LaunchSpec {
@@ -573,8 +587,7 @@ fn launch_spec(
         program,
         args,
         env,
-        rows: size.lines as u16,
-        cols: size.columns as u16,
+        size,
         cwd,
         shell_integration,
     }

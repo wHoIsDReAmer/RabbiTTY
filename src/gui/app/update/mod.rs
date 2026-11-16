@@ -487,6 +487,10 @@ impl App {
             Message::WindowResized(size) => {
                 return self.handle_window_resized(size);
             }
+            Message::WindowRescaled(factor) => {
+                self.scale_factor = factor;
+                self.resize_panes();
+            }
             Message::AnimationTick => {
                 let now = Instant::now();
                 if !self.modal_anim.is_animating(now) && !self.modal_anim.value() {
@@ -539,7 +543,12 @@ impl App {
                 return iced::exit();
             }
             Message::ApplyWindowStyle => {
-                return self.handle_apply_window_style();
+                return Task::batch([
+                    self.handle_apply_window_style(),
+                    iced::window::latest()
+                        .and_then(iced::window::scale_factor)
+                        .map(Message::WindowRescaled),
+                ]);
             }
             #[cfg(target_os = "windows")]
             Message::WindowMinimize => {

@@ -7,7 +7,7 @@ pub mod sftp;
 pub mod user_config;
 
 use crate::config::{SshAuthMethod, SshProfile};
-use crate::session::OutputEvent;
+use crate::session::{OutputEvent, PtySize};
 use async_trait::async_trait;
 use auth::authenticate_session;
 use cwd::{parse_osc7_cwd, shell_single_quote};
@@ -87,7 +87,7 @@ type SessionSlot = Arc<Mutex<Option<SharedSession>>>;
 #[derive(Clone)]
 pub struct SshSessionHandle {
     pub writer: Arc<Mutex<Box<dyn Write + Send>>>,
-    pub resize_tx: tokio_mpsc::UnboundedSender<(u16, u16)>,
+    pub resize_tx: tokio_mpsc::UnboundedSender<PtySize>,
     session_handle: SessionSlot,
 }
 
@@ -115,12 +115,11 @@ impl SshSessionHandle {
 pub fn spawn_ssh_session(
     profile: SshProfile,
     tab_id: u64,
-    rows: u16,
-    cols: u16,
+    size: PtySize,
     output_tx: futures_mpsc::UnboundedSender<OutputEvent>,
 ) -> SshSessionHandle {
     let (initial_write_tx, _initial_write_rx) = tokio_mpsc::unbounded_channel::<Vec<u8>>();
-    let (resize_tx, resize_rx) = tokio_mpsc::unbounded_channel::<(u16, u16)>();
+    let (resize_tx, resize_rx) = tokio_mpsc::unbounded_channel::<PtySize>();
 
     let writer: Arc<Mutex<Box<dyn Write + Send>>> = Arc::new(Mutex::new(Box::new(SshWriter {
         tx: initial_write_tx,
@@ -133,6 +132,7 @@ pub fn spawn_ssh_session(
         let mut otx = output_tx;
         let badge = ssh_badge();
         let mut resize_rx = resize_rx;
+        let mut size = size;
         // Last remote working directory seen via OSC 7; restored on reconnect.
         let mut last_cwd: Option<String> = None;
 
@@ -148,8 +148,7 @@ pub fn spawn_ssh_session(
             let result = ssh_task(
                 profile.clone(),
                 tab_id,
-                rows,
-                cols,
+                &mut size,
                 attempt_write_rx,
                 &mut resize_rx,
                 &mut otx,
@@ -280,10 +279,9 @@ fn send_status(output_tx: &mut futures_mpsc::UnboundedSender<OutputEvent>, tab_i
 async fn ssh_task(
     mut profile: SshProfile,
     tab_id: u64,
-    rows: u16,
-    cols: u16,
+    size: &mut PtySize,
     mut write_rx: tokio_mpsc::UnboundedReceiver<Vec<u8>>,
-    resize_rx: &mut tokio_mpsc::UnboundedReceiver<(u16, u16)>,
+    resize_rx: &mut tokio_mpsc::UnboundedReceiver<PtySize>,
     output_tx: &mut futures_mpsc::UnboundedSender<OutputEvent>,
     session_slot: &SessionSlot,
     last_cwd: &mut Option<String>,
@@ -460,7 +458,15 @@ async fn ssh_task(
     // --- Open channel with PTY + shell ---
     let mut channel = session.channel_open_session().await?;
     channel
-        .request_pty(false, "xterm-256color", cols as u32, rows as u32, 0, 0, &[])
+        .request_pty(
+            false,
+            "xterm-256color",
+            size.cols.into(),
+            size.rows.into(),
+            size.pixel_width(),
+            size.pixel_height(),
+            &[],
+        )
         .await?;
     channel.request_shell(false).await?;
 
@@ -500,7 +506,17 @@ async fn ssh_task(
             }
             resize = resize_rx.recv() => {
                 match resize {
-                    Some((r, c)) => channel.window_change(c as u32, r as u32, 0, 0).await?,
+                    Some(next) => {
+                        *size = next;
+                        channel
+                            .window_change(
+                                next.cols.into(),
+                                next.rows.into(),
+                                next.pixel_width(),
+                                next.pixel_height(),
+                            )
+                            .await?
+                    }
                     None => break,
                 }
             }

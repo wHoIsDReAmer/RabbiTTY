@@ -147,8 +147,12 @@ mod tests {
             program: program.to_string(),
             args: args.iter().map(|arg| arg.to_string()).collect(),
             env: Vec::new(),
-            rows: 24,
-            cols: 80,
+            size: crate::session::PtySize {
+                rows: 24,
+                cols: 80,
+                cell_width: 8,
+                cell_height: 16,
+            },
             cwd: None,
             shell_integration: true,
         }

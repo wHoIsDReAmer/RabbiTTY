@@ -129,6 +129,7 @@ pub enum Message {
     TerminalWheelScroll(f32),
 
     WindowResized(Size),
+    WindowRescaled(f32),
     TerminalAreaResized(Size),
     ResizeDebounce,
     AnimationTick,
@@ -270,6 +271,7 @@ pub struct App {
 
     // ── Window ──────────────────────────────────────────────────────────
     pub(super) window_size: Size,
+    pub(super) scale_factor: f32,
     pub(super) terminal_area: Size,
     pub(super) palette: crate::gui::theme::Palette,
     pub(super) window_style_applied: bool,
@@ -456,6 +458,7 @@ impl App {
             initial_shell_opened: false,
 
             window_size: Size::new(config.ui.window_width, config.ui.window_height),
+            scale_factor: 1.0,
             terminal_area: Size::new(0.0, 0.0),
             palette,
             window_style_applied: false,
@@ -546,6 +549,15 @@ impl App {
         let cols = ((rect.width - pad_x).max(1.0) / cell_width) as usize;
         let rows = ((rect.height - pad_y).max(1.0) / cell_height) as usize;
         (cols.max(10), rows.max(5))
+    }
+
+    pub(super) fn cell_pixels(&self) -> (u16, u16) {
+        let physical =
+            |logical: f32| (logical.max(1.0) * self.scale_factor).round().max(1.0) as u16;
+        (
+            physical(self.config.terminal.cell_width),
+            physical(self.config.terminal.cell_height),
+        )
     }
 
     pub(super) fn terminal_area_rect(&self) -> iced::Rectangle {
@@ -951,6 +963,34 @@ mod tests {
         let mut app = app_with_pty();
         let _ = app.update(Message::CreateTab(Profile::default_shell()));
         app
+    }
+
+    #[test]
+    fn a_new_scale_factor_reaches_panes_whose_grid_did_not_change() {
+        let mut app = app_with_pty();
+        let _ = app.update(Message::CreateTab(Profile {
+            name: "sh".to_string(),
+            icon: None,
+            kind: crate::gui::tab::ProfileKind::Local {
+                program: Some("/bin/sh".to_string()),
+                args: Vec::new(),
+            },
+        }));
+        let grid = app.tabs[0].panes[0].size();
+        let before = app.tabs[0].panes[0].cell_pixels();
+
+        let _ = app.update(Message::WindowRescaled(2.0));
+
+        let pane = &app.tabs[0].panes[0];
+        assert_eq!(pane.size(), grid);
+        assert_eq!(
+            pane.cell_pixels(),
+            (
+                (app.config.terminal.cell_width * 2.0).round() as u16,
+                (app.config.terminal.cell_height * 2.0).round() as u16,
+            )
+        );
+        assert_ne!(pane.cell_pixels(), before);
     }
 
     const ZOOM_MOD: Modifiers = Modifiers::CTRL;
