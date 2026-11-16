@@ -1,5 +1,5 @@
 use super::{
-    LaunchSpec, OutputEvent, PluginInput, SessionError, default_working_directory,
+    LaunchSpec, OutputEvent, PluginInput, PtySize, SessionError, default_working_directory,
     send_output_event,
 };
 use crate::ssh::SshSessionHandle;
@@ -25,12 +25,21 @@ use std::time::Duration;
 /// A connection backend behind a [`Session`](super::Session)
 pub(super) trait Transport: Send {
     fn writer(&self) -> Arc<Mutex<Box<dyn Write + Send>>>;
-    fn resize(&mut self, rows: u16, cols: u16) -> Result<(), SessionError>;
+    fn resize(&mut self, size: PtySize) -> Result<(), SessionError>;
     fn working_directory(&self) -> Option<PathBuf> {
         None
     }
     fn ssh_handle(&self) -> Option<&SshSessionHandle> {
         None
+    }
+}
+
+fn window_size(size: PtySize) -> WindowSize {
+    WindowSize {
+        num_lines: size.rows,
+        num_cols: size.cols,
+        cell_width: size.cell_width,
+        cell_height: size.cell_height,
     }
 }
 
@@ -217,12 +226,7 @@ impl LocalPty {
             ..Default::default()
         };
 
-        let window_size = WindowSize {
-            num_lines: spec.rows,
-            num_cols: spec.cols,
-            cell_width: 1,
-            cell_height: 1,
-        };
+        let window_size = window_size(spec.size);
 
         let pty = tty::new(&options, window_size, tab_id)
             .map_err(|err| SessionError::Spawn(format!("pty spawn failed: {err}")))?;
@@ -322,15 +326,9 @@ impl Transport for LocalPty {
         Arc::clone(&self.writer)
     }
 
-    fn resize(&mut self, rows: u16, cols: u16) -> Result<(), SessionError> {
+    fn resize(&mut self, size: PtySize) -> Result<(), SessionError> {
         if let Some(ref mut pty) = self.pty {
-            let window_size = WindowSize {
-                num_lines: rows,
-                num_cols: cols,
-                cell_width: 1,
-                cell_height: 1,
-            };
-            pty.on_resize(window_size);
+            pty.on_resize(window_size(size));
             Ok(())
         } else {
             Err(SessionError::Io("no pty".into()))
@@ -380,12 +378,7 @@ impl LocalPty {
             ..Default::default()
         };
 
-        let window_size = WindowSize {
-            num_lines: spec.rows,
-            num_cols: spec.cols,
-            cell_width: 1,
-            cell_height: 1,
-        };
+        let window_size = window_size(spec.size);
 
         let pty = tty::new(&options, window_size, tab_id)
             .map_err(|err| SessionError::Spawn(format!("pty spawn failed: {err}")))?;
@@ -455,21 +448,15 @@ impl Transport for LocalPty {
         Arc::clone(&self.writer)
     }
 
-    fn resize(&mut self, rows: u16, cols: u16) -> Result<(), SessionError> {
+    fn resize(&mut self, size: PtySize) -> Result<(), SessionError> {
         let pty = self
             .pty
             .as_ref()
             .ok_or_else(|| SessionError::Io("no pty".into()))?;
-        let window_size = WindowSize {
-            num_lines: rows,
-            num_cols: cols,
-            cell_width: 1,
-            cell_height: 1,
-        };
         let mut guard = pty
             .lock()
             .map_err(|err| SessionError::Io(format!("pty lock failed: {err}")))?;
-        guard.on_resize(window_size);
+        guard.on_resize(window_size(size));
         Ok(())
     }
 }
@@ -495,11 +482,10 @@ impl SshTransport {
     pub(super) fn spawn(
         profile: crate::config::SshProfile,
         tab_id: u64,
-        rows: u16,
-        cols: u16,
+        size: PtySize,
         output_tx: mpsc::UnboundedSender<OutputEvent>,
     ) -> Self {
-        let handle = crate::ssh::spawn_ssh_session(profile, tab_id, rows, cols, output_tx);
+        let handle = crate::ssh::spawn_ssh_session(profile, tab_id, size, output_tx);
         Self { handle }
     }
 }
@@ -509,8 +495,8 @@ impl Transport for SshTransport {
         Arc::clone(&self.handle.writer)
     }
 
-    fn resize(&mut self, rows: u16, cols: u16) -> Result<(), SessionError> {
-        let _ = self.handle.resize_tx.send((rows, cols));
+    fn resize(&mut self, size: PtySize) -> Result<(), SessionError> {
+        let _ = self.handle.resize_tx.send(size);
         Ok(())
     }
 
@@ -561,10 +547,11 @@ impl Transport for PluginTransport {
         Arc::clone(&self.writer)
     }
 
-    fn resize(&mut self, rows: u16, cols: u16) -> Result<(), SessionError> {
-        let _ = self
-            .input
-            .unbounded_send(PluginInput::Resize { rows, cols });
+    fn resize(&mut self, size: PtySize) -> Result<(), SessionError> {
+        let _ = self.input.unbounded_send(PluginInput::Resize {
+            rows: size.rows,
+            cols: size.cols,
+        });
         Ok(())
     }
 }
@@ -660,5 +647,52 @@ mod tests {
             let env = HashMap::from([(key.to_string(), "C".to_string())]);
             assert!(!needs_locale(&env), "{key}");
         }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_child_reads_the_grid_and_its_pixel_size_from_the_pty() {
+        use super::{LocalPty, Transport};
+        use crate::session::{LaunchSpec, PtySize};
+        use std::os::fd::AsRawFd;
+
+        fn winsize(pty: &LocalPty) -> (u16, u16, u16, u16) {
+            let fd = pty.pty.as_ref().expect("pty").file().as_raw_fd();
+            let mut size = libc::winsize {
+                ws_row: 0,
+                ws_col: 0,
+                ws_xpixel: 0,
+                ws_ypixel: 0,
+            };
+            let status = unsafe { libc::ioctl(fd, libc::TIOCGWINSZ, &mut size) };
+            assert_eq!(status, 0, "TIOCGWINSZ failed");
+            (size.ws_row, size.ws_col, size.ws_xpixel, size.ws_ypixel)
+        }
+
+        let (tx, _rx) = iced::futures::channel::mpsc::unbounded();
+        let spec = LaunchSpec {
+            program: "/bin/sh".to_string(),
+            args: Vec::new(),
+            env: Vec::new(),
+            size: PtySize {
+                rows: 24,
+                cols: 80,
+                cell_width: 9,
+                cell_height: 18,
+            },
+            cwd: None,
+            shell_integration: false,
+        };
+        let mut pty = LocalPty::spawn(spec, 1, tx).expect("sh starts");
+        assert_eq!(winsize(&pty), (24, 80, 720, 432));
+
+        pty.resize(PtySize {
+            rows: 30,
+            cols: 100,
+            cell_width: 10,
+            cell_height: 20,
+        })
+        .expect("resize");
+        assert_eq!(winsize(&pty), (30, 100, 1000, 600));
     }
 }

@@ -28,6 +28,7 @@ pub struct TerminalEngine {
     reported_cwd: Option<String>,
     notifications: Vec<Notification>,
     size: TerminalSize,
+    cell_pixels: (u16, u16),
     theme: TerminalTheme,
     cells_cache: RefCell<Arc<Vec<CellVisual>>>,
     cache_dirty: Cell<bool>,
@@ -77,10 +78,12 @@ struct Command {
     exit: Option<u32>,
 }
 type ColorFormatter = Arc<dyn Fn(Rgb) -> String + Send + Sync>;
+type TextAreaFormatter = Arc<dyn Fn(WindowSize) -> String + Send + Sync>;
 
 enum Reply {
     Text(String),
     Color(usize, ColorFormatter),
+    TextArea(TextAreaFormatter),
 }
 
 /// Work the pty thread cannot finish on its own.
@@ -111,7 +114,6 @@ impl TerminalEngine {
             config,
             &size,
             PtyEventProxy {
-                size,
                 title: Arc::clone(&title),
                 bell_pending: Arc::clone(&bell_pending),
                 osc: Arc::clone(&osc),
@@ -127,6 +129,7 @@ impl TerminalEngine {
             reported_cwd: None,
             notifications: Vec::new(),
             size,
+            cell_pixels: (1, 1),
             theme,
             cells_cache: RefCell::new(Arc::new(Vec::new())),
             cache_dirty: Cell::new(true),
@@ -257,6 +260,12 @@ impl TerminalEngine {
                 Reply::Color(index, format) => {
                     answer.push_str(&format(self.color_at(colors, index)));
                 }
+                Reply::TextArea(format) => answer.push_str(&format(WindowSize {
+                    num_lines: self.size.lines as u16,
+                    num_cols: self.size.columns as u16,
+                    cell_width: self.cell_pixels.0,
+                    cell_height: self.cell_pixels.1,
+                })),
             }
         }
         if let Ok(mut guard) = self.writer.lock() {
@@ -296,6 +305,14 @@ impl TerminalEngine {
         self.size = new_size;
         self.term.resize(new_size);
         self.cache_dirty.set(true);
+    }
+
+    pub fn set_cell_pixels(&mut self, cell_pixels: (u16, u16)) {
+        self.cell_pixels = cell_pixels;
+    }
+
+    pub fn cell_pixels(&self) -> (u16, u16) {
+        self.cell_pixels
     }
 
     pub fn render_cells(&self) -> Arc<Vec<CellVisual>> {
@@ -636,7 +653,6 @@ impl TerminalEngine {
 
 #[derive(Clone)]
 struct PtyEventProxy {
-    size: TerminalSize,
     title: Arc<Mutex<Option<TitleChange>>>,
     bell_pending: Arc<AtomicBool>,
     osc: Arc<Mutex<OscPending>>,
@@ -665,15 +681,7 @@ impl EventListener for PtyEventProxy {
     fn send_event(&self, event: Event) {
         match event {
             Event::PtyWrite(text) => self.reply(Reply::Text(text)),
-            Event::TextAreaSizeRequest(formatter) => {
-                let ws = WindowSize {
-                    num_lines: self.size.lines as u16,
-                    num_cols: self.size.columns as u16,
-                    cell_width: 1,
-                    cell_height: 1,
-                };
-                self.reply(Reply::Text(formatter(ws)));
-            }
+            Event::TextAreaSizeRequest(formatter) => self.reply(Reply::TextArea(formatter)),
             Event::Title(new_title) => {
                 if let Ok(mut guard) = self.title.lock() {
                     *guard = Some(TitleChange::Set(new_title));
@@ -798,6 +806,17 @@ mod tests {
             reply.starts_with("\x1b[1;1R\x1b]11;rgb:"),
             "the cursor was asked for first: {reply:?}"
         );
+    }
+
+    #[test]
+    fn a_text_area_query_reports_the_current_grid_in_pixels() {
+        let (mut engine, replies) = engine_with_replies();
+        engine.resize(TerminalSize::new(100, 30));
+        engine.set_cell_pixels((8, 17));
+
+        engine.feed_bytes(b"\x1b[14t");
+
+        assert_eq!(answered(&replies), "\x1b[4;510;800t");
     }
 
     #[test]

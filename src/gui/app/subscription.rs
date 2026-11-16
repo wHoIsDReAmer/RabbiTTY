@@ -99,6 +99,9 @@ impl App {
             event::listen_with(|event, status, _id| match event {
                 Event::Window(window::Event::CloseRequested) => Some(Message::Exit),
                 Event::Window(window::Event::Resized(size)) => Some(Message::WindowResized(size)),
+                Event::Window(window::Event::Rescaled(factor)) => {
+                    Some(Message::WindowRescaled(factor))
+                }
                 Event::Keyboard(keyboard::Event::KeyPressed {
                     key,
                     physical_key,

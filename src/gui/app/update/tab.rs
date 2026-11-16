@@ -90,12 +90,16 @@ impl App {
             })
             .collect();
 
+        let cell_pixels = self.cell_pixels();
         for (tab, grids) in self.tabs.iter_mut().zip(grids) {
             for (id, (cols, rows)) in grids {
                 if let Some(pane) = tab.pane_mut(id) {
                     let current = pane.size();
-                    if current.columns != cols || current.lines != rows {
-                        pane.resize(cols, rows);
+                    if current.columns != cols
+                        || current.lines != rows
+                        || pane.cell_pixels() != cell_pixels
+                    {
+                        pane.resize(cols, rows, cell_pixels);
                     }
                 }
             }
@@ -128,6 +132,7 @@ impl App {
             profile,
             columns: cols,
             lines: rows,
+            cell_pixels: self.cell_pixels(),
             theme,
             id: pane_id,
             output_tx: sender,
@@ -259,6 +264,7 @@ impl App {
             profile,
             columns: cols,
             lines: rows,
+            cell_pixels: self.cell_pixels(),
             theme,
             id: tab_id,
             output_tx: sender,

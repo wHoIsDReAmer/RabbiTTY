@@ -9,12 +9,29 @@ use std::sync::{Arc, Mutex};
 
 use transport::{LocalPty, PluginTransport, SshTransport, Transport};
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct PtySize {
+    pub rows: u16,
+    pub cols: u16,
+    pub cell_width: u16,
+    pub cell_height: u16,
+}
+
+impl PtySize {
+    pub fn pixel_width(&self) -> u32 {
+        u32::from(self.cols) * u32::from(self.cell_width)
+    }
+
+    pub fn pixel_height(&self) -> u32 {
+        u32::from(self.rows) * u32::from(self.cell_height)
+    }
+}
+
 pub struct LaunchSpec {
     pub program: String,
     pub args: Vec<String>,
     pub env: Vec<(String, String)>,
-    pub rows: u16,
-    pub cols: u16,
+    pub size: PtySize,
     pub cwd: Option<PathBuf>,
     pub shell_integration: bool,
 }
@@ -71,12 +88,11 @@ impl Session {
     pub fn spawn_ssh(
         profile: crate::config::SshProfile,
         tab_id: u64,
-        rows: u16,
-        cols: u16,
+        size: PtySize,
         output_tx: mpsc::UnboundedSender<OutputEvent>,
     ) -> Self {
         Self {
-            backend: Box::new(SshTransport::spawn(profile, tab_id, rows, cols, output_tx)),
+            backend: Box::new(SshTransport::spawn(profile, tab_id, size, output_tx)),
         }
     }
 
@@ -108,8 +124,8 @@ impl Session {
         self.backend.working_directory()
     }
 
-    pub fn resize(&mut self, rows: u16, cols: u16) -> Result<(), SessionError> {
-        self.backend.resize(rows, cols)
+    pub fn resize(&mut self, size: PtySize) -> Result<(), SessionError> {
+        self.backend.resize(size)
     }
 }
 
