@@ -1,4 +1,4 @@
-use crate::gui::pane::PaneNode;
+use crate::gui::pane::{Axis, Divider, PaneNode};
 use crate::terminal::{CellVisual, GridPos, Selection, SelectionPoint, TerminalSize};
 use iced::advanced::mouse::{Click, click};
 use iced::mouse;
@@ -274,6 +274,18 @@ impl TerminalProgram {
         let rect = regions.iter().find(|(rid, _)| *rid == id)?.1;
         self.pane(id).map(|pane| (pane, rect))
     }
+
+    fn divider_at(&self, pos: Point, bounds: Rectangle) -> Option<Divider> {
+        let dividers = self.layout.dividers(Rectangle::with_size(bounds.size()));
+        crate::gui::pane::divider_at(&dividers, pos)
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+struct DividerDrag {
+    leaf: u64,
+    axis: Axis,
+    grab: f32,
 }
 
 #[derive(Debug, Default)]
@@ -290,6 +302,7 @@ pub struct TerminalShaderState {
     last_click: Option<Click>,
     drag_pane: Option<u64>,
     scrollbar_drag: Option<u64>,
+    divider_drag: Option<DividerDrag>,
     last_bounds: Rectangle,
     modifiers: iced::keyboard::Modifiers,
 }
@@ -371,6 +384,13 @@ fn link_modifier(modifiers: iced::keyboard::Modifiers) -> bool {
     }
 }
 
+fn resize_cursor(axis: Axis) -> mouse::Interaction {
+    match axis {
+        Axis::Vertical => mouse::Interaction::ResizingColumn,
+        Axis::Horizontal => mouse::Interaction::ResizingRow,
+    }
+}
+
 impl ShaderProgram<Message> for TerminalProgram {
     type State = TerminalShaderState;
     type Primitive = TerminalPrimitive;
@@ -397,6 +417,15 @@ impl ShaderProgram<Message> for TerminalProgram {
             }
             Event::Mouse(mouse::Event::ButtonPressed(mouse::Button::Left)) => {
                 let pos = cursor.position_in(bounds)?;
+
+                if let Some(divider) = self.divider_at(pos, bounds) {
+                    state.divider_drag = Some(DividerDrag {
+                        leaf: divider.leaf,
+                        axis: divider.axis,
+                        grab: divider.axis.across(pos) - divider.position(),
+                    });
+                    return Some(Action::capture());
+                }
 
                 if let Some((id, _)) = self.scrollbar_at(pos, bounds) {
                     state.scrollbar_drag = Some(id);
@@ -510,6 +539,18 @@ impl ShaderProgram<Message> for TerminalProgram {
                 }
             }
             Event::Mouse(mouse::Event::CursorMoved { .. }) => {
+                if let Some(drag) = state.divider_drag {
+                    let pos = cursor
+                        .position_in(bounds)
+                        .or_else(|| cursor.position().map(|p| clamp_to_bounds(p, bounds)))?;
+                    return Some(
+                        Action::publish(Message::PaneDividerDragged {
+                            leaf: drag.leaf,
+                            position: drag.axis.across(pos) - drag.grab,
+                        })
+                        .and_capture(),
+                    );
+                }
                 // Use the absolute cursor position while dragging so the selection
                 // still extends after the cursor leaves the terminal bounds.
                 let pos_in = cursor.position_in(bounds);
@@ -626,6 +667,9 @@ impl ShaderProgram<Message> for TerminalProgram {
                 }
             }
             Event::Mouse(mouse::Event::ButtonReleased(mouse::Button::Left)) => {
+                if state.divider_drag.take().is_some() {
+                    return None;
+                }
                 if let Some(pos) = cursor.position_in(bounds)
                     && let Some((pane, rect)) = self.pane_under(pos, bounds)
                     && pane.mouse_mode
@@ -735,9 +779,15 @@ impl ShaderProgram<Message> for TerminalProgram {
         bounds: Rectangle,
         cursor: mouse::Cursor,
     ) -> mouse::Interaction {
+        if let Some(drag) = state.divider_drag {
+            return resize_cursor(drag.axis);
+        }
         let Some(pos) = cursor.position_in(bounds) else {
             return mouse::Interaction::default();
         };
+        if let Some(divider) = self.divider_at(pos, bounds) {
+            return resize_cursor(divider.axis);
+        }
         if link_modifier(state.modifiers)
             && let Some((pane, rect)) = self.pane_under(pos, bounds)
             && pane
@@ -1142,5 +1192,160 @@ mod tests {
     fn scrollbar_rel_is_offset_by_the_pane_position() {
         let inside_second_pane = scrollbar_rel(400.0, 400.0, 600.0, 60.0);
         assert_eq!(inside_second_pane, 0.0);
+    }
+
+    const AREA: Rectangle = Rectangle {
+        x: 0.0,
+        y: 40.0,
+        width: 801.0,
+        height: 601.0,
+    };
+
+    fn pane(id: u64, mouse_mode: bool) -> PaneView {
+        PaneView {
+            id,
+            scroll_history: 100,
+            cells: Arc::new(Vec::new()),
+            cells_generation: 0,
+            images: Arc::new(Vec::new()),
+            grid_size: TerminalSize::new(40, 20),
+            selection: None,
+            display_offset: 0,
+            cursor: None,
+            cursor_visible: false,
+            cursor_color: [1.0; 4],
+            mouse_mode,
+        }
+    }
+
+    fn split_program(axis: Axis, mouse_mode: bool) -> TerminalProgram {
+        let mut layout = PaneNode::Leaf(1);
+        layout.split(1, axis, 2);
+        TerminalProgram {
+            panes: vec![pane(1, mouse_mode), pane(2, mouse_mode)],
+            scrollbar_color: [0.0; 4],
+            focused: 1,
+            focus_color: [0.0; 4],
+            divider_color: [0.0; 4],
+            cell_size: [8.0, 16.0],
+            layout,
+            terminal_font_selection: None,
+            terminal_font_size: 14.0,
+            padding: [4.0, 4.0],
+            clear_color: [0.0; 4],
+            cursor_shape: crate::config::CursorShape::Block,
+            background_opacity: 1.0,
+            decorations: Vec::new(),
+        }
+    }
+
+    fn settled() -> TerminalShaderState {
+        TerminalShaderState {
+            last_bounds: AREA,
+            ..Default::default()
+        }
+    }
+
+    fn send(
+        program: &TerminalProgram,
+        state: &mut TerminalShaderState,
+        event: mouse::Event,
+        at: Point,
+    ) -> Option<Message> {
+        program
+            .update(
+                state,
+                &Event::Mouse(event),
+                AREA,
+                mouse::Cursor::Available(at),
+            )
+            .and_then(|action| action.into_inner().0)
+    }
+
+    fn dragged(message: Option<Message>) -> Option<(u64, f32)> {
+        match message {
+            Some(Message::PaneDividerDragged { leaf, position }) => Some((leaf, position)),
+            _ => None,
+        }
+    }
+
+    const PRESS: mouse::Event = mouse::Event::ButtonPressed(mouse::Button::Left);
+    const RELEASE: mouse::Event = mouse::Event::ButtonReleased(mouse::Button::Left);
+
+    fn moved() -> mouse::Event {
+        mouse::Event::CursorMoved {
+            position: Point::ORIGIN,
+        }
+    }
+
+    #[test]
+    fn dragging_a_divider_reports_where_its_edge_should_go_and_nothing_else() {
+        for mouse_mode in [false, true] {
+            let program = split_program(Axis::Vertical, mouse_mode);
+            let mut state = settled();
+
+            let pressed = send(&program, &mut state, PRESS, Point::new(402.0, 140.0));
+            assert!(
+                pressed.is_none(),
+                "the press reached the pane (mouse mode {mouse_mode})"
+            );
+
+            let inside = send(&program, &mut state, moved(), Point::new(502.0, 300.0));
+            assert_eq!(dragged(inside), Some((2, 500.0)));
+
+            let outside = send(&program, &mut state, moved(), Point::new(5000.0, 300.0));
+            assert_eq!(dragged(outside), Some((2, 799.0)));
+
+            let released = send(&program, &mut state, RELEASE, Point::new(502.0, 300.0));
+            assert!(
+                released.is_none(),
+                "the release reached the pane (mouse mode {mouse_mode})"
+            );
+            let after = send(&program, &mut state, moved(), Point::new(300.0, 300.0));
+            assert!(after.is_none(), "the drag went on after the release");
+        }
+    }
+
+    #[test]
+    fn the_scrollbar_beside_a_divider_still_scrolls() {
+        let program = split_program(Axis::Vertical, false);
+        let mut state = settled();
+
+        let pressed = send(&program, &mut state, PRESS, Point::new(395.0, 140.0));
+
+        assert!(matches!(
+            pressed,
+            Some(Message::PaneScrollTo { pane: 1, .. })
+        ));
+    }
+
+    #[test]
+    fn the_pointer_shows_which_way_a_divider_moves() {
+        let shape = |program: &TerminalProgram, state: &TerminalShaderState, at: Point| {
+            program.mouse_interaction(state, AREA, mouse::Cursor::Available(at))
+        };
+        let side_by_side = split_program(Axis::Vertical, false);
+        let stacked = split_program(Axis::Horizontal, false);
+        let mut state = settled();
+
+        assert_eq!(
+            shape(&side_by_side, &state, Point::new(400.5, 140.0)),
+            mouse::Interaction::ResizingColumn
+        );
+        assert_eq!(
+            shape(&stacked, &state, Point::new(200.0, 343.0)),
+            mouse::Interaction::ResizingRow
+        );
+        assert_eq!(
+            shape(&side_by_side, &state, Point::new(200.0, 140.0)),
+            mouse::Interaction::Text
+        );
+
+        send(&side_by_side, &mut state, PRESS, Point::new(400.5, 140.0));
+        assert_eq!(
+            shape(&side_by_side, &state, Point::new(200.0, 5000.0)),
+            mouse::Interaction::ResizingColumn,
+            "the cursor changed back in the middle of a drag"
+        );
     }
 }
