@@ -421,6 +421,15 @@ impl App {
                     pane.scroll_to_relative(rel);
                 }
             }
+            Message::PaneDividerDragged { leaf, position } => {
+                let area = self.terminal_area_rect();
+                let min = self.min_pane_size();
+                if let Some(tab) = self.tabs.get_mut(self.active_tab)
+                    && tab.layout.move_divider(leaf, area, position, min)
+                {
+                    self.resize_panes();
+                }
+            }
             Message::ModifiersChanged(modifiers) => {
                 self.modifiers = modifiers;
             }

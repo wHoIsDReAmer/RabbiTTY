@@ -1,6 +1,8 @@
-use iced::Rectangle;
+use iced::{Point, Rectangle, Size};
 
 const MIN_RATIO: f32 = 0.05;
+const GRAB_BEFORE: f32 = 2.0;
+const GRAB_AFTER: f32 = 4.0;
 pub const DIVIDER: f32 = 1.0;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -17,6 +19,13 @@ impl Axis {
             Self::Horizontal
         }
     }
+
+    pub fn across(self, point: Point) -> f32 {
+        match self {
+            Self::Vertical => point.x,
+            Self::Horizontal => point.y,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -25,6 +34,35 @@ pub enum Direction {
     Right,
     Up,
     Down,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Divider {
+    pub leaf: u64,
+    pub axis: Axis,
+    pub rect: Rectangle,
+}
+
+impl Divider {
+    pub fn position(&self) -> f32 {
+        self.axis.across(self.rect.position())
+    }
+
+    fn grab_area(&self) -> Rectangle {
+        let reach = GRAB_BEFORE + GRAB_AFTER;
+        match self.axis {
+            Axis::Vertical => Rectangle {
+                x: self.rect.x - GRAB_BEFORE,
+                width: self.rect.width + reach,
+                ..self.rect
+            },
+            Axis::Horizontal => Rectangle {
+                y: self.rect.y - GRAB_BEFORE,
+                height: self.rect.height + reach,
+                ..self.rect
+            },
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -111,6 +149,105 @@ impl PaneNode {
             }
         }
     }
+
+    fn first_leaf(&self) -> u64 {
+        match self {
+            Self::Leaf(id) => *id,
+            Self::Split { first, .. } => first.first_leaf(),
+        }
+    }
+
+    pub fn dividers(&self, bounds: Rectangle) -> Vec<Divider> {
+        let mut out = Vec::new();
+        self.collect_dividers(bounds, &mut out);
+        out
+    }
+
+    fn collect_dividers(&self, bounds: Rectangle, out: &mut Vec<Divider>) {
+        let Self::Split {
+            axis,
+            ratio,
+            first,
+            second,
+        } = self
+        else {
+            return;
+        };
+        let (a, b) = split_rect(bounds, *axis, *ratio);
+        let rect = match axis {
+            Axis::Vertical => Rectangle {
+                x: a.x + a.width,
+                width: DIVIDER,
+                ..bounds
+            },
+            Axis::Horizontal => Rectangle {
+                y: a.y + a.height,
+                height: DIVIDER,
+                ..bounds
+            },
+        };
+        out.push(Divider {
+            leaf: second.first_leaf(),
+            axis: *axis,
+            rect,
+        });
+        first.collect_dividers(a, out);
+        second.collect_dividers(b, out);
+    }
+
+    pub fn move_divider(&mut self, leaf: u64, bounds: Rectangle, position: f32, min: Size) -> bool {
+        let Self::Split {
+            axis,
+            ratio,
+            first,
+            second,
+        } = self
+        else {
+            return false;
+        };
+        if second.first_leaf() != leaf {
+            let (a, b) = split_rect(bounds, *axis, *ratio);
+            return first.move_divider(leaf, a, position, min)
+                || second.move_divider(leaf, b, position, min);
+        }
+        let (start, extent) = match axis {
+            Axis::Vertical => (bounds.x, bounds.width),
+            Axis::Horizontal => (bounds.y, bounds.height),
+        };
+        let usable = extent - DIVIDER;
+        let lowest = first.min_extent(*axis, min).max(usable * MIN_RATIO);
+        let highest = (usable - second.min_extent(*axis, min)).min(usable * (1.0 - MIN_RATIO));
+        if lowest > highest {
+            return false;
+        }
+        let moved = (position - start).clamp(lowest, highest) / usable;
+        let changed = moved != *ratio;
+        *ratio = moved;
+        changed
+    }
+
+    fn min_extent(&self, along: Axis, min: Size) -> f32 {
+        match self {
+            Self::Leaf(_) => match along {
+                Axis::Vertical => min.width,
+                Axis::Horizontal => min.height,
+            },
+            Self::Split {
+                axis,
+                ratio,
+                first,
+                second,
+            } => {
+                let (a, b) = (first.min_extent(along, min), second.min_extent(along, min));
+                if *axis == along {
+                    let ratio = ratio.clamp(MIN_RATIO, 1.0 - MIN_RATIO);
+                    (a / ratio).max(b / (1.0 - ratio)) + DIVIDER
+                } else {
+                    a.max(b)
+                }
+            }
+        }
+    }
 }
 
 fn split_rect(bounds: Rectangle, axis: Axis, ratio: f32) -> (Rectangle, Rectangle) {
@@ -154,6 +291,13 @@ pub fn pane_at(regions: &[(u64, Rectangle)], point: iced::Point) -> Option<u64> 
         .iter()
         .find(|(_, rect)| rect.contains(point))
         .map(|(id, _)| *id)
+}
+
+pub fn divider_at(dividers: &[Divider], point: Point) -> Option<Divider> {
+    dividers
+        .iter()
+        .copied()
+        .find(|divider| divider.grab_area().contains(point))
 }
 
 pub fn neighbour(regions: &[(u64, Rectangle)], from: u64, direction: Direction) -> Option<u64> {
@@ -420,5 +564,141 @@ mod tests {
             assert!(rect.width > 150.0, "{rect:?} is too narrow");
             assert!(rect.height > 100.0, "{rect:?} is too short");
         }
+    }
+
+    fn min() -> Size {
+        Size::new(100.0, 50.0)
+    }
+
+    fn widths(node: &PaneNode) -> Vec<f32> {
+        node.regions(area())
+            .iter()
+            .map(|(_, rect)| rect.width.round())
+            .collect()
+    }
+
+    #[test]
+    fn each_split_has_one_divider_named_after_the_pane_that_follows_it() {
+        let mut root = PaneNode::Leaf(1);
+        root.split(1, Axis::Vertical, 2);
+        root.split(2, Axis::Horizontal, 3);
+
+        assert_eq!(
+            root.dividers(area()),
+            vec![
+                Divider {
+                    leaf: 2,
+                    axis: Axis::Vertical,
+                    rect: Rectangle {
+                        x: 400.0,
+                        y: 0.0,
+                        width: DIVIDER,
+                        height: 601.0,
+                    },
+                },
+                Divider {
+                    leaf: 3,
+                    axis: Axis::Horizontal,
+                    rect: Rectangle {
+                        x: 401.0,
+                        y: 300.0,
+                        width: 400.0,
+                        height: DIVIDER,
+                    },
+                },
+            ]
+        );
+    }
+
+    #[test]
+    fn a_divider_is_grabbed_from_a_few_pixels_around_it_and_no_further() {
+        let mut root = PaneNode::Leaf(1);
+        root.split(1, Axis::Vertical, 2);
+        let dividers = root.dividers(area());
+        let grabbed = |x: f32| divider_at(&dividers, Point::new(x, 10.0)).map(|d| d.leaf);
+
+        assert_eq!(grabbed(398.5), Some(2));
+        assert_eq!(grabbed(404.5), Some(2));
+        assert_eq!(
+            grabbed(397.5),
+            None,
+            "the scrollbar keeps the rest of its width"
+        );
+        assert_eq!(grabbed(405.5), None);
+    }
+
+    #[test]
+    fn moving_a_divider_resizes_only_the_two_sides_it_separates() {
+        let mut root = PaneNode::Leaf(1);
+        root.split(1, Axis::Vertical, 2);
+        root.split(2, Axis::Vertical, 3);
+
+        assert!(root.move_divider(3, area(), 700.0, min()));
+
+        assert_eq!(widths(&root), vec![400.0, 299.0, 100.0]);
+        let dividers = root.dividers(area());
+        assert_eq!(dividers[1].position().round(), 700.0);
+    }
+
+    #[test]
+    fn a_horizontal_divider_follows_the_vertical_position() {
+        let mut root = PaneNode::Leaf(1);
+        root.split(1, Axis::Horizontal, 2);
+
+        assert!(root.move_divider(2, area(), 150.0, min()));
+
+        let regions = root.regions(area());
+        assert_eq!(regions[0].1.height.round(), 150.0);
+        assert_eq!(regions[1].1.y.round(), 151.0);
+    }
+
+    #[test]
+    fn a_divider_stops_where_a_pane_on_either_side_would_get_too_small() {
+        let mut root = PaneNode::Leaf(1);
+        root.split(1, Axis::Vertical, 2);
+
+        root.move_divider(2, area(), -50.0, min());
+        assert_eq!(widths(&root), vec![100.0, 700.0]);
+
+        root.move_divider(2, area(), 5000.0, min());
+        assert_eq!(widths(&root), vec![700.0, 100.0]);
+    }
+
+    #[test]
+    fn panes_nested_on_the_shrinking_side_each_keep_their_minimum() {
+        let mut side_by_side = PaneNode::Leaf(1);
+        side_by_side.split(1, Axis::Vertical, 2);
+        side_by_side.split(2, Axis::Vertical, 3);
+        side_by_side.move_divider(2, area(), 5000.0, min());
+        assert_eq!(widths(&side_by_side), vec![599.0, 100.0, 100.0]);
+
+        let mut stacked = PaneNode::Leaf(1);
+        stacked.split(1, Axis::Vertical, 2);
+        stacked.split(2, Axis::Horizontal, 3);
+        stacked.move_divider(2, area(), 5000.0, min());
+        assert_eq!(widths(&stacked), vec![700.0, 100.0, 100.0]);
+
+        let mut uneven = PaneNode::Leaf(1);
+        uneven.split(1, Axis::Vertical, 2);
+        uneven.split(2, Axis::Vertical, 3);
+        uneven.move_divider(3, area(), 501.0, min());
+        uneven.move_divider(2, area(), 5000.0, min());
+        assert_eq!(widths(&uneven), vec![400.0, 100.0, 299.0]);
+    }
+
+    #[test]
+    fn a_divider_stays_put_when_there_is_no_room_or_its_pane_is_gone() {
+        let cramped = Rectangle {
+            width: 150.0,
+            ..area()
+        };
+        let mut root = PaneNode::Leaf(1);
+        root.split(1, Axis::Vertical, 2);
+        let before = root.regions(cramped);
+
+        assert!(!root.move_divider(2, cramped, 120.0, min()));
+        assert!(!root.move_divider(9, area(), 120.0, min()));
+
+        assert_eq!(root.regions(cramped), before);
     }
 }

@@ -22,6 +22,8 @@ pub(crate) mod update;
 mod view;
 
 pub(super) const SETTINGS_TAB_INDEX: usize = usize::MAX;
+const MIN_COLUMNS: usize = 10;
+const MIN_LINES: usize = 5;
 
 pub(super) struct PendingInstall {
     pub path: std::path::PathBuf,
@@ -125,6 +127,10 @@ pub enum Message {
     PaneScrollTo {
         pane: u64,
         rel: f32,
+    },
+    PaneDividerDragged {
+        leaf: u64,
+        position: f32,
     },
     TerminalWheelScroll(f32),
 
@@ -548,7 +554,16 @@ impl App {
         let cell_height = self.config.terminal.cell_height.max(1.0);
         let cols = ((rect.width - pad_x).max(1.0) / cell_width) as usize;
         let rows = ((rect.height - pad_y).max(1.0) / cell_height) as usize;
-        (cols.max(10), rows.max(5))
+        (cols.max(MIN_COLUMNS), rows.max(MIN_LINES))
+    }
+
+    pub(super) fn min_pane_size(&self) -> Size {
+        Size::new(
+            self.config.terminal.padding_x * 2.0
+                + MIN_COLUMNS as f32 * self.config.terminal.cell_width.max(1.0),
+            self.config.terminal.padding_y * 2.0
+                + MIN_LINES as f32 * self.config.terminal.cell_height.max(1.0),
+        )
     }
 
     pub(super) fn cell_pixels(&self) -> (u16, u16) {
@@ -963,6 +978,52 @@ mod tests {
         let mut app = app_with_pty();
         let _ = app.update(Message::CreateTab(Profile::default_shell()));
         app
+    }
+
+    #[test]
+    fn dragging_a_divider_moves_columns_from_one_pane_to_the_other() {
+        let mut app = app_with_pty();
+        let _ = app.update(Message::CreateTab(Profile {
+            name: "cat".to_string(),
+            icon: None,
+            kind: crate::gui::tab::ProfileKind::Local {
+                program: Some("/bin/cat".to_string()),
+                args: Vec::new(),
+            },
+        }));
+        app.terminal_area = Size::new(1000.0, 600.0);
+        app.resize_panes();
+        let _ = app.split_focused(crate::gui::pane::Axis::Vertical);
+        let ids = app.tabs[0].layout.leaves();
+        let columns = |app: &mut App| {
+            ids.iter()
+                .map(|id| app.tabs[0].pane_mut(*id).unwrap().size().columns)
+                .collect::<Vec<_>>()
+        };
+        let before = columns(&mut app);
+
+        let _ = app.update(Message::PaneDividerDragged {
+            leaf: ids[1],
+            position: 700.0,
+        });
+        let after = columns(&mut app);
+        assert!(
+            after[0] > before[0] && after[1] < before[1],
+            "{before:?} became {after:?}"
+        );
+
+        let _ = app.update(Message::PaneDividerDragged {
+            leaf: ids[1],
+            position: 5000.0,
+        });
+        let narrow = app.tabs[0].layout.regions(app.terminal_area_rect())[1].1;
+        let needed = columns(&mut app)[1] as f32 * app.config.terminal.cell_width
+            + app.config.terminal.padding_x * 2.0;
+        assert!(
+            needed <= narrow.width + 0.01,
+            "a pane {} wide was told it has room for {needed}",
+            narrow.width
+        );
     }
 
     #[test]
