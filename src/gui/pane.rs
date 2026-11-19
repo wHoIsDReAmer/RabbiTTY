@@ -93,13 +93,13 @@ impl PaneNode {
         }
     }
 
-    pub fn regions(&self, bounds: Rectangle) -> Vec<(u64, Rectangle)> {
+    pub fn regions(&self, bounds: Rectangle, min: Size) -> Vec<(u64, Rectangle)> {
         let mut out = Vec::new();
-        self.collect_regions(bounds, &mut out);
+        self.collect_regions(bounds, min, &mut out);
         out
     }
 
-    fn collect_regions(&self, bounds: Rectangle, out: &mut Vec<(u64, Rectangle)>) {
+    fn collect_regions(&self, bounds: Rectangle, min: Size, out: &mut Vec<(u64, Rectangle)>) {
         match self {
             Self::Leaf(id) => out.push((*id, bounds)),
             Self::Split {
@@ -108,9 +108,9 @@ impl PaneNode {
                 first,
                 second,
             } => {
-                let (a, b) = split_rect(bounds, *axis, *ratio);
-                first.collect_regions(a, out);
-                second.collect_regions(b, out);
+                let (a, b) = split_rect(bounds, *axis, *ratio, first, second, min);
+                first.collect_regions(a, min, out);
+                second.collect_regions(b, min, out);
             }
         }
     }
@@ -157,13 +157,13 @@ impl PaneNode {
         }
     }
 
-    pub fn dividers(&self, bounds: Rectangle) -> Vec<Divider> {
+    pub fn dividers(&self, bounds: Rectangle, min: Size) -> Vec<Divider> {
         let mut out = Vec::new();
-        self.collect_dividers(bounds, &mut out);
+        self.collect_dividers(bounds, min, &mut out);
         out
     }
 
-    fn collect_dividers(&self, bounds: Rectangle, out: &mut Vec<Divider>) {
+    fn collect_dividers(&self, bounds: Rectangle, min: Size, out: &mut Vec<Divider>) {
         let Self::Split {
             axis,
             ratio,
@@ -173,7 +173,7 @@ impl PaneNode {
         else {
             return;
         };
-        let (a, b) = split_rect(bounds, *axis, *ratio);
+        let (a, b) = split_rect(bounds, *axis, *ratio, first, second, min);
         let rect = match axis {
             Axis::Vertical => Rectangle {
                 x: a.x + a.width,
@@ -191,8 +191,8 @@ impl PaneNode {
             axis: *axis,
             rect,
         });
-        first.collect_dividers(a, out);
-        second.collect_dividers(b, out);
+        first.collect_dividers(a, min, out);
+        second.collect_dividers(b, min, out);
     }
 
     pub fn move_divider(&mut self, leaf: u64, bounds: Rectangle, position: f32, min: Size) -> bool {
@@ -206,7 +206,7 @@ impl PaneNode {
             return false;
         };
         if second.first_leaf() != leaf {
-            let (a, b) = split_rect(bounds, *axis, *ratio);
+            let (a, b) = split_rect(bounds, *axis, *ratio, first, second, min);
             return first.move_divider(leaf, a, position, min)
                 || second.move_divider(leaf, b, position, min);
         }
@@ -234,14 +234,13 @@ impl PaneNode {
             },
             Self::Split {
                 axis,
-                ratio,
                 first,
                 second,
+                ..
             } => {
                 let (a, b) = (first.min_extent(along, min), second.min_extent(along, min));
                 if *axis == along {
-                    let ratio = ratio.clamp(MIN_RATIO, 1.0 - MIN_RATIO);
-                    (a / ratio).max(b / (1.0 - ratio)) + DIVIDER
+                    a + b + DIVIDER
                 } else {
                     a.max(b)
                 }
@@ -250,39 +249,48 @@ impl PaneNode {
     }
 }
 
-fn split_rect(bounds: Rectangle, axis: Axis, ratio: f32) -> (Rectangle, Rectangle) {
+fn split_rect(
+    bounds: Rectangle,
+    axis: Axis,
+    ratio: f32,
+    first: &PaneNode,
+    second: &PaneNode,
+    min: Size,
+) -> (Rectangle, Rectangle) {
     let ratio = ratio.clamp(MIN_RATIO, 1.0 - MIN_RATIO);
+    let extent = match axis {
+        Axis::Vertical => bounds.width,
+        Axis::Horizontal => bounds.height,
+    };
+    let usable = (extent - DIVIDER).max(0.0);
+    let (first_min, second_min) = (first.min_extent(axis, min), second.min_extent(axis, min));
+    let mut cut = (usable * ratio).max(0.0);
+    if first_min + second_min <= usable {
+        cut = cut.clamp(first_min, usable - second_min);
+    }
     match axis {
-        Axis::Vertical => {
-            let usable = (bounds.width - DIVIDER).max(0.0);
-            let first = (usable * ratio).max(0.0);
-            (
-                Rectangle {
-                    width: first,
-                    ..bounds
-                },
-                Rectangle {
-                    x: bounds.x + first + DIVIDER,
-                    width: (usable - first).max(0.0),
-                    ..bounds
-                },
-            )
-        }
-        Axis::Horizontal => {
-            let usable = (bounds.height - DIVIDER).max(0.0);
-            let first = (usable * ratio).max(0.0);
-            (
-                Rectangle {
-                    height: first,
-                    ..bounds
-                },
-                Rectangle {
-                    y: bounds.y + first + DIVIDER,
-                    height: (usable - first).max(0.0),
-                    ..bounds
-                },
-            )
-        }
+        Axis::Vertical => (
+            Rectangle {
+                width: cut,
+                ..bounds
+            },
+            Rectangle {
+                x: bounds.x + cut + DIVIDER,
+                width: (usable - cut).max(0.0),
+                ..bounds
+            },
+        ),
+        Axis::Horizontal => (
+            Rectangle {
+                height: cut,
+                ..bounds
+            },
+            Rectangle {
+                y: bounds.y + cut + DIVIDER,
+                height: (usable - cut).max(0.0),
+                ..bounds
+            },
+        ),
     }
 }
 
@@ -361,7 +369,7 @@ mod tests {
     #[test]
     fn a_single_pane_fills_the_area() {
         let root = PaneNode::Leaf(1);
-        let regions = root.regions(area());
+        let regions = root.regions(area(), Size::ZERO);
 
         assert_eq!(regions.len(), 1);
         assert_eq!(regions[0].0, 1);
@@ -373,7 +381,7 @@ mod tests {
         let mut root = PaneNode::Leaf(1);
         assert!(root.split(1, Axis::Vertical, 2));
 
-        let regions = root.regions(area());
+        let regions = root.regions(area(), Size::ZERO);
         let (left, right) = (regions[0].1, regions[1].1);
 
         assert_eq!(left.width + right.width + DIVIDER, area().width);
@@ -386,7 +394,7 @@ mod tests {
         let mut root = PaneNode::Leaf(1);
         assert!(root.split(1, Axis::Horizontal, 2));
 
-        let regions = root.regions(area());
+        let regions = root.regions(area(), Size::ZERO);
         let (top, bottom) = (regions[0].1, regions[1].1);
 
         assert_eq!(top.height + bottom.height + DIVIDER, area().height);
@@ -401,7 +409,7 @@ mod tests {
         assert!(root.split(2, Axis::Horizontal, 3));
 
         assert_eq!(ids(&root), vec![1, 2, 3]);
-        assert_eq!(root.regions(area()).len(), 3);
+        assert_eq!(root.regions(area(), Size::ZERO).len(), 3);
     }
 
     #[test]
@@ -418,7 +426,7 @@ mod tests {
         assert!(root.remove(1));
 
         assert_eq!(ids(&root), vec![2]);
-        assert_eq!(root.regions(area())[0].1, area());
+        assert_eq!(root.regions(area(), Size::ZERO)[0].1, area());
     }
 
     #[test]
@@ -445,7 +453,7 @@ mod tests {
         root.split(2, Axis::Horizontal, 3);
         root.split(1, Axis::Horizontal, 4);
 
-        let regions = root.regions(area());
+        let regions = root.regions(area(), Size::ZERO);
         for (i, (_, a)) in regions.iter().enumerate() {
             for (_, b) in regions.iter().skip(i + 1) {
                 let overlap = a.x < b.x + b.width
@@ -461,7 +469,7 @@ mod tests {
     fn a_point_maps_to_the_pane_under_it() {
         let mut root = PaneNode::Leaf(1);
         root.split(1, Axis::Vertical, 2);
-        let regions = root.regions(area());
+        let regions = root.regions(area(), Size::ZERO);
 
         assert_eq!(pane_at(&regions, iced::Point::new(10.0, 10.0)), Some(1));
         assert_eq!(pane_at(&regions, iced::Point::new(790.0, 10.0)), Some(2));
@@ -472,7 +480,7 @@ mod tests {
     fn navigation_finds_the_pane_in_that_direction() {
         let mut root = PaneNode::Leaf(1);
         root.split(1, Axis::Vertical, 2);
-        let regions = root.regions(area());
+        let regions = root.regions(area(), Size::ZERO);
 
         assert_eq!(neighbour(&regions, 1, Direction::Right), Some(2));
         assert_eq!(neighbour(&regions, 2, Direction::Left), Some(1));
@@ -498,7 +506,7 @@ mod tests {
         let mut root = PaneNode::Leaf(1);
         root.split(1, Axis::Vertical, 2);
         root.split(2, Axis::Horizontal, 3);
-        let regions = root.regions(area());
+        let regions = root.regions(area(), Size::ZERO);
 
         assert_eq!(neighbour(&regions, 2, Direction::Down), Some(3));
         assert_eq!(neighbour(&regions, 3, Direction::Up), Some(2));
@@ -509,7 +517,7 @@ mod tests {
     fn a_vertical_split_gives_each_side_about_half_the_width() {
         let mut root = PaneNode::Leaf(1);
         root.split(1, Axis::Vertical, 2);
-        let regions = root.regions(area());
+        let regions = root.regions(area(), Size::ZERO);
 
         let half = (area().width - DIVIDER) / 2.0;
         assert!((regions[0].1.width - half).abs() < 1.0);
@@ -521,10 +529,10 @@ mod tests {
     fn nested_splits_shrink_only_the_side_that_was_split() {
         let mut root = PaneNode::Leaf(1);
         root.split(1, Axis::Vertical, 2);
-        let before = root.regions(area())[0].1;
+        let before = root.regions(area(), Size::ZERO)[0].1;
 
         root.split(2, Axis::Horizontal, 3);
-        let after = root.regions(area());
+        let after = root.regions(area(), Size::ZERO);
 
         assert_eq!(after[0].1.width, before.width);
         assert_eq!(after[0].1.height, before.height);
@@ -551,12 +559,12 @@ mod tests {
     fn repeated_auto_splits_alternate_direction() {
         let mut root = PaneNode::Leaf(1);
         for next in (2..).take(3) {
-            let regions = root.regions(area());
+            let regions = root.regions(area(), Size::ZERO);
             let focused = regions.last().expect("region").1;
             root.split(next - 1, Axis::for_rect(focused), next);
         }
 
-        let regions = root.regions(area());
+        let regions = root.regions(area(), Size::ZERO);
         assert_eq!(regions.len(), 4);
         // No pane should be a thin sliver: an always-vertical split of a
         // 801px area would leave the last pane around 100px wide.
@@ -571,7 +579,7 @@ mod tests {
     }
 
     fn widths(node: &PaneNode) -> Vec<f32> {
-        node.regions(area())
+        node.regions(area(), min())
             .iter()
             .map(|(_, rect)| rect.width.round())
             .collect()
@@ -584,7 +592,7 @@ mod tests {
         root.split(2, Axis::Horizontal, 3);
 
         assert_eq!(
-            root.dividers(area()),
+            root.dividers(area(), min()),
             vec![
                 Divider {
                     leaf: 2,
@@ -614,7 +622,7 @@ mod tests {
     fn a_divider_is_grabbed_from_a_few_pixels_around_it_and_no_further() {
         let mut root = PaneNode::Leaf(1);
         root.split(1, Axis::Vertical, 2);
-        let dividers = root.dividers(area());
+        let dividers = root.dividers(area(), min());
         let grabbed = |x: f32| divider_at(&dividers, Point::new(x, 10.0)).map(|d| d.leaf);
 
         assert_eq!(grabbed(398.5), Some(2));
@@ -636,7 +644,7 @@ mod tests {
         assert!(root.move_divider(3, area(), 700.0, min()));
 
         assert_eq!(widths(&root), vec![400.0, 299.0, 100.0]);
-        let dividers = root.dividers(area());
+        let dividers = root.dividers(area(), min());
         assert_eq!(dividers[1].position().round(), 700.0);
     }
 
@@ -647,7 +655,7 @@ mod tests {
 
         assert!(root.move_divider(2, area(), 150.0, min()));
 
-        let regions = root.regions(area());
+        let regions = root.regions(area(), min());
         assert_eq!(regions[0].1.height.round(), 150.0);
         assert_eq!(regions[1].1.y.round(), 151.0);
     }
@@ -683,6 +691,8 @@ mod tests {
         uneven.split(2, Axis::Vertical, 3);
         uneven.move_divider(3, area(), 501.0, min());
         uneven.move_divider(2, area(), 5000.0, min());
+        assert_eq!(widths(&uneven), vec![599.0, 100.0, 100.0]);
+        uneven.move_divider(2, area(), 400.0, min());
         assert_eq!(widths(&uneven), vec![400.0, 100.0, 299.0]);
     }
 
@@ -694,11 +704,78 @@ mod tests {
         };
         let mut root = PaneNode::Leaf(1);
         root.split(1, Axis::Vertical, 2);
-        let before = root.regions(cramped);
+        let before = root.regions(cramped, min());
 
         assert!(!root.move_divider(2, cramped, 120.0, min()));
         assert!(!root.move_divider(9, area(), 120.0, min()));
 
-        assert_eq!(root.regions(cramped), before);
+        assert_eq!(root.regions(cramped, min()), before);
+    }
+
+    #[test]
+    fn a_pane_dragged_to_its_minimum_keeps_it_while_the_area_shrinks() {
+        let mut side_by_side = PaneNode::Leaf(1);
+        side_by_side.split(1, Axis::Vertical, 2);
+        side_by_side.move_divider(2, area(), 5000.0, min());
+        let narrower = Rectangle {
+            width: 401.0,
+            ..area()
+        };
+        let shrunk: Vec<f32> = side_by_side
+            .regions(narrower, min())
+            .iter()
+            .map(|(_, rect)| rect.width.round())
+            .collect();
+        assert_eq!(shrunk, vec![300.0, 100.0]);
+
+        let mut stacked = PaneNode::Leaf(1);
+        stacked.split(1, Axis::Horizontal, 2);
+        stacked.move_divider(2, area(), -50.0, min());
+        let shorter = Rectangle {
+            height: 201.0,
+            ..area()
+        };
+        let heights: Vec<f32> = stacked
+            .regions(shorter, min())
+            .iter()
+            .map(|(_, rect)| rect.height.round())
+            .collect();
+        assert_eq!(heights, vec![50.0, 150.0]);
+    }
+
+    #[test]
+    fn a_nested_pane_keeps_its_minimum_while_the_area_shrinks() {
+        let mut root = PaneNode::Leaf(1);
+        root.split(1, Axis::Vertical, 2);
+        root.split(2, Axis::Vertical, 3);
+        root.move_divider(3, area(), 501.0, min());
+        let narrower = Rectangle {
+            width: 501.0,
+            ..area()
+        };
+
+        let shrunk: Vec<f32> = root
+            .regions(narrower, min())
+            .iter()
+            .map(|(_, rect)| rect.width.round())
+            .collect();
+        assert_eq!(shrunk, vec![250.0, 100.0, 149.0]);
+    }
+
+    #[test]
+    fn a_divider_inside_a_side_held_back_by_the_minimum_follows_the_pointer() {
+        let mut root = PaneNode::Leaf(1);
+        root.split(1, Axis::Vertical, 3);
+        root.split(1, Axis::Vertical, 2);
+        root.move_divider(3, area(), 5000.0, min());
+        let narrower = Rectangle {
+            width: 501.0,
+            ..area()
+        };
+
+        assert!(root.move_divider(2, narrower, 250.0, min()));
+
+        let inner = root.dividers(narrower, min())[1];
+        assert_eq!(inner.position().round(), 250.0);
     }
 }

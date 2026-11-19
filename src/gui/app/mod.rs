@@ -1016,7 +1016,10 @@ mod tests {
             leaf: ids[1],
             position: 5000.0,
         });
-        let narrow = app.tabs[0].layout.regions(app.terminal_area_rect())[1].1;
+        let narrow = app.tabs[0]
+            .layout
+            .regions(app.terminal_area_rect(), app.min_pane_size())[1]
+            .1;
         let needed = columns(&mut app)[1] as f32 * app.config.terminal.cell_width
             + app.config.terminal.padding_x * 2.0;
         assert!(
@@ -1024,6 +1027,43 @@ mod tests {
             "a pane {} wide was told it has room for {needed}",
             narrow.width
         );
+    }
+
+    #[test]
+    fn a_pane_at_its_minimum_still_fits_its_text_after_the_window_narrows() {
+        let mut app = app_with_pty();
+        let _ = app.update(Message::CreateTab(Profile {
+            name: "cat".to_string(),
+            icon: None,
+            kind: crate::gui::tab::ProfileKind::Local {
+                program: Some("/bin/cat".to_string()),
+                args: Vec::new(),
+            },
+        }));
+        app.terminal_area = Size::new(1000.0, 600.0);
+        app.resize_panes();
+        let _ = app.split_focused(crate::gui::pane::Axis::Vertical);
+        let right = app.tabs[0].layout.leaves()[1];
+        let _ = app.update(Message::PaneDividerDragged {
+            leaf: right,
+            position: 5000.0,
+        });
+
+        let _ = app.update(Message::TerminalAreaResized(Size::new(400.0, 600.0)));
+
+        let regions = app.tabs[0]
+            .layout
+            .regions(app.terminal_area_rect(), app.min_pane_size());
+        for (id, rect) in regions {
+            let columns = app.tabs[0].pane_mut(id).unwrap().size().columns as f32;
+            let needed =
+                columns * app.config.terminal.cell_width + app.config.terminal.padding_x * 2.0;
+            assert!(
+                needed <= rect.width + 0.01,
+                "pane {id} is {} wide but its text needs {needed}",
+                rect.width
+            );
+        }
     }
 
     #[test]
@@ -1412,7 +1452,9 @@ mod tests {
             });
         }
 
-        let regions = app.tabs[0].layout.regions(app.terminal_area_rect());
+        let regions = app.tabs[0]
+            .layout
+            .regions(app.terminal_area_rect(), app.min_pane_size());
         assert_eq!(regions.len(), 4);
         for (_, rect) in &regions {
             assert!(

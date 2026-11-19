@@ -5,7 +5,7 @@ use iced::mouse;
 use iced::wgpu;
 use iced::widget::shader::Program as ShaderProgram;
 use iced::widget::shader::{Action, Pipeline, Primitive, Shader, Viewport};
-use iced::{Event, Length, Point, Rectangle};
+use iced::{Event, Length, Point, Rectangle, Size};
 use std::sync::Arc;
 
 pub const SCROLLBAR_WIDTH: f32 = 8.0;
@@ -53,6 +53,7 @@ pub struct TerminalProgram {
     pub cursor_shape: crate::config::CursorShape,
     pub background_opacity: f32,
     pub decorations: Vec<crate::plugin::ClickablePattern>,
+    pub min_pane: Size,
 }
 
 impl PaneView {
@@ -227,12 +228,15 @@ impl TerminalProgram {
     }
 
     fn regions(&self, bounds: Rectangle) -> Vec<(u64, Rectangle)> {
-        self.layout.regions(Rectangle {
-            x: 0.0,
-            y: 0.0,
-            width: bounds.width,
-            height: bounds.height,
-        })
+        self.layout.regions(
+            Rectangle {
+                x: 0.0,
+                y: 0.0,
+                width: bounds.width,
+                height: bounds.height,
+            },
+            self.min_pane,
+        )
     }
 
     fn pane(&self, id: u64) -> Option<&PaneView> {
@@ -276,7 +280,9 @@ impl TerminalProgram {
     }
 
     fn divider_at(&self, pos: Point, bounds: Rectangle) -> Option<Divider> {
-        let dividers = self.layout.dividers(Rectangle::with_size(bounds.size()));
+        let dividers = self
+            .layout
+            .dividers(Rectangle::with_size(bounds.size()), self.min_pane);
         crate::gui::pane::divider_at(&dividers, pos)
     }
 }
@@ -1236,6 +1242,7 @@ mod tests {
             cursor_shape: crate::config::CursorShape::Block,
             background_opacity: 1.0,
             decorations: Vec::new(),
+            min_pane: Size::ZERO,
         }
     }
 
@@ -1347,5 +1354,29 @@ mod tests {
             mouse::Interaction::ResizingColumn,
             "the cursor changed back in the middle of a drag"
         );
+    }
+
+    #[test]
+    fn a_layout_held_back_by_the_minimum_pane_size_is_hit_where_it_is_drawn() {
+        let mut program = split_program(Axis::Vertical, false);
+        program.layout = PaneNode::Split {
+            axis: Axis::Vertical,
+            ratio: 0.95,
+            first: Box::new(PaneNode::Leaf(1)),
+            second: Box::new(PaneNode::Leaf(2)),
+        };
+        program.min_pane = Size::new(100.0, 50.0);
+
+        let mut state = settled();
+        let clicked = send(&program, &mut state, PRESS, Point::new(730.0, 140.0));
+        assert!(matches!(
+            clicked,
+            Some(Message::SelectionChanged { pane: 2, .. })
+        ));
+
+        let mut state = settled();
+        send(&program, &mut state, PRESS, Point::new(702.0, 140.0));
+        let dragging = send(&program, &mut state, moved(), Point::new(652.0, 300.0));
+        assert_eq!(dragged(dragging), Some((2, 650.0)));
     }
 }

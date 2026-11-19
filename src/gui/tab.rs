@@ -820,8 +820,13 @@ impl TerminalTab {
         true
     }
 
-    pub fn focus_direction(&mut self, direction: Direction, area: iced::Rectangle) {
-        let regions = self.layout.regions(area);
+    pub fn focus_direction(
+        &mut self,
+        direction: Direction,
+        area: iced::Rectangle,
+        min: iced::Size,
+    ) {
+        let regions = self.layout.regions(area, min);
         if let Some(next) = neighbour(&regions, self.focused, direction) {
             self.focused = next;
         }

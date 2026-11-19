@@ -22,6 +22,7 @@ pub struct CursorCell {
     pub padding: [f32; 2],
     pub layout: PaneNode,
     pub focused: u64,
+    pub min_pane: Size,
 }
 
 /// A wrapper widget that enables IME input for its child.
@@ -195,7 +196,7 @@ fn cursor_pixel_rect(cell: &CursorCell, bounds: Rectangle) -> Rectangle {
     // Anchor to the focused pane's region using the renderer's cell metrics.
     let region = cell
         .layout
-        .regions(bounds)
+        .regions(bounds, cell.min_pane)
         .into_iter()
         .find(|(id, _)| *id == cell.focused)
         .map(|(_, rect)| rect)
