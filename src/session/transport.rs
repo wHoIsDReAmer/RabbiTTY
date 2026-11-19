@@ -344,14 +344,20 @@ impl Transport for LocalPty {
 #[cfg(unix)]
 impl Drop for LocalPty {
     fn drop(&mut self) {
-        // Drop the PTY first — kills the child, so the reader drains what is left
-        // and sees EOF. The flag then covers the case where EOF never comes.
-        self.pty.take();
-        self.shutdown.store(true, Ordering::Relaxed);
-
-        if let Some(handle) = self.reader.take() {
-            let _ = handle.join();
-        }
+        let pty = self.pty.take();
+        let shutdown = Arc::clone(&self.shutdown);
+        let reader = self.reader.take();
+        let _ = thread::Builder::new()
+            .name("pty-cleanup".to_string())
+            .spawn(move || {
+                // Drop the PTY first — kills the child, so the reader drains what is left
+                // and sees EOF. The flag then covers the case where EOF never comes.
+                drop(pty);
+                shutdown.store(true, Ordering::Relaxed);
+                if let Some(handle) = reader {
+                    let _ = handle.join();
+                }
+            });
     }
 }
 
@@ -694,5 +700,53 @@ mod tests {
         })
         .expect("resize");
         assert_eq!(winsize(&pty), (30, 100, 1000, 600));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn closing_a_pty_does_not_wait_for_a_program_that_ignores_hangup() {
+        use super::LocalPty;
+        use crate::session::{LaunchSpec, OutputEvent, PtySize};
+        use std::time::{Duration, Instant};
+
+        let (tx, mut rx) = iced::futures::channel::mpsc::unbounded();
+        let spec = LaunchSpec {
+            program: "/bin/sh".to_string(),
+            args: vec![
+                "-c".to_string(),
+                "trap '' HUP; echo ready; sleep 5".to_string(),
+            ],
+            env: Vec::new(),
+            size: PtySize {
+                rows: 24,
+                cols: 80,
+                cell_width: 9,
+                cell_height: 18,
+            },
+            cwd: None,
+            shell_integration: false,
+        };
+        let pty = LocalPty::spawn(spec, 1, tx).expect("sh starts");
+
+        let deadline = Instant::now() + Duration::from_secs(10);
+        let mut output = Vec::new();
+        while !String::from_utf8_lossy(&output).contains("ready") {
+            assert!(Instant::now() < deadline, "sh never reported its trap");
+            match rx.try_recv() {
+                Ok(OutputEvent::Data { bytes, .. }) => output.extend(bytes),
+                Ok(_) => panic!("sh exited before it trapped SIGHUP"),
+                Err(_) => std::thread::sleep(Duration::from_millis(10)),
+            }
+        }
+
+        let (closed_tx, closed_rx) = std::sync::mpsc::channel();
+        std::thread::spawn(move || {
+            drop(pty);
+            let _ = closed_tx.send(());
+        });
+        assert!(
+            closed_rx.recv_timeout(Duration::from_secs(2)).is_ok(),
+            "closing the pty waited for a program that ignores SIGHUP"
+        );
     }
 }
