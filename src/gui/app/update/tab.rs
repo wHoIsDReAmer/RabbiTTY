@@ -62,7 +62,7 @@ impl App {
     pub(in crate::gui) fn focused_pane_rect(&self) -> Option<iced::Rectangle> {
         let tab = self.tabs.get(self.active_tab)?;
         tab.layout
-            .regions(self.terminal_area_rect())
+            .regions(self.terminal_area_rect(), self.min_pane_size())
             .into_iter()
             .find(|(id, _)| *id == tab.focused)
             .map(|(_, rect)| rect)
@@ -78,12 +78,13 @@ impl App {
 
     pub(in crate::gui) fn resize_panes(&mut self) {
         let area = self.terminal_area_rect();
+        let min = self.min_pane_size();
         let grids: Vec<Vec<(u64, (usize, usize))>> = self
             .tabs
             .iter()
             .map(|tab| {
                 tab.layout
-                    .regions(area)
+                    .regions(area, min)
                     .into_iter()
                     .map(|(id, rect)| (id, self.grid_for_rect(rect)))
                     .collect()
@@ -517,8 +518,9 @@ impl App {
             }
             ShortcutAction::FocusPane(direction) => {
                 let area = self.terminal_area();
+                let min = self.min_pane_size();
                 if let Some(tab) = self.tabs.get_mut(self.active_tab) {
-                    tab.focus_direction(direction, area);
+                    tab.focus_direction(direction, area, min);
                 }
                 Task::none()
             }

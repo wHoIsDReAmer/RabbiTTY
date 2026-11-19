@@ -308,6 +308,7 @@ impl App {
             clear_color,
             cursor_shape: self.config.terminal.cursor_shape,
             background_opacity: self.config.theme.background_opacity,
+            min_pane: self.min_pane_size(),
         }
         .widget()
         .width(Length::Fill)
@@ -389,6 +390,7 @@ impl App {
             ],
             layout: tab.layout.clone(),
             focused: tab.focused,
+            min_pane: self.min_pane_size(),
         };
 
         if self.overlay_owns_keyboard() {
